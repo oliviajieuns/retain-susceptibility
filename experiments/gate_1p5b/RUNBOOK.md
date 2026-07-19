@@ -42,6 +42,12 @@ Knobs to watch/adjust in `gate.out`:
   local signal and favor similarity (CPU-pilot finding).
 - **Stage 1** (`ours`): must pass the gate within `--s1-max-steps`;
   raise if `stage-1 gate not reached`.
+- **Floor sanity**: the logged `floor m=` must be moderate (roughly 3-6
+  nats for TOFU answers under the pre-SFT Qwen reference). A value near
+  ~12 nats means the reference model is effectively chance-level (this is
+  exactly the vocabulary-scale pathology the paper describes; the smoke
+  run reproduces it because its reference is random-init) — check that
+  `--model` loaded correctly before burning GPU time on Stage 1.
 
 ## Reading the result
 
