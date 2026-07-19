@@ -49,6 +49,18 @@ Knobs to watch/adjust in `gate.out`:
   run reproduces it because its reference is random-init) — check that
   `--model` loaded correctly before burning GPU time on Stage 1.
 
+## Optional companions (same session, if time allows)
+
+- Table 2 runs the full roster by default
+  (`ga,graddiff,npo,simnpo,idkdpo,rmu,gru,s2s,npo_transplant,ours`);
+  trim with `--t2-roster npo,npo_transplant,s2s,ours` if GPU time is short
+  — those four are the confirmatory contrasts. Paraphrase recall is
+  recorded automatically at every snapshot (`para_recall` in table2.json).
+- Numerical-stability sweep (appendix table, ~15 min):
+  `python experiments/stability/sweep.py --model Qwen/Qwen2.5-1.5B-Instruct --device cuda`
+- Profiling-cost bench (Table 4 needs 7B/14B, but a 1.5B row validates):
+  `python experiments/cost/bench.py --model Qwen/Qwen2.5-1.5B-Instruct --device cuda --repeats 5`
+
 ## Reading the result
 
 - `runs/gate_*/table1.json` — success signal: fd rho clearly above
