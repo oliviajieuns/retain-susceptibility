@@ -21,6 +21,7 @@ class Example:
     example_id: str
     input_ids: torch.Tensor  # [L] long
     labels: torch.Tensor     # [L] long, prompt positions = IGNORE
+    group: str = ""          # fold granularity unit (e.g. retained author)
 
     def n_answer_tokens(self) -> int:
         return int((self.labels != IGNORE).sum())
@@ -49,6 +50,7 @@ def manifest_sha(examples: list[Example]) -> str:
     h = hashlib.sha256()
     for e in sorted(examples, key=lambda x: x.example_id):
         h.update(e.example_id.encode())
+        h.update(e.group.encode())
         h.update(e.input_ids.numpy().tobytes())
         h.update(e.labels.numpy().tobytes())
     return h.hexdigest()

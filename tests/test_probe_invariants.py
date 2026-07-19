@@ -81,6 +81,5 @@ def test_random_dir_differs_from_fd(tiny_model, req, spec):
 def test_stubs_raise(tiny_model, req, spec):
     import pytest
 
-    for name in ("knn_feature", "knn_embed", "last_layer", "fd_constrained"):
-        with pytest.raises(NotImplementedError):
-            get_scorer(name)(tiny_model, req, spec)
+    with pytest.raises(NotImplementedError):
+        get_scorer("knn_embed")(tiny_model, req, spec)
