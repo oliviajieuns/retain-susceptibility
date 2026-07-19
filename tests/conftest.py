@@ -17,9 +17,8 @@ from rsus.probe.base import ProbeSpec
 VOCAB = 128
 
 
-@pytest.fixture(scope="session")
-def tiny_model():
-    torch.manual_seed(0)
+def build_tiny(seed: int = 0):
+    torch.manual_seed(seed)
     cfg = LlamaConfig(
         vocab_size=VOCAB,
         hidden_size=32,
@@ -30,8 +29,12 @@ def tiny_model():
         max_position_embeddings=64,
         pad_token_id=0,
     )
-    model = LlamaForCausalLM(cfg).double().eval()
-    return model
+    return LlamaForCausalLM(cfg).double().eval()
+
+
+@pytest.fixture(scope="session")
+def tiny_model():
+    return build_tiny(0)
 
 
 def make_example(gen: torch.Generator, eid: str, seq_len: int = 16, prompt_len: int = 8) -> Example:
