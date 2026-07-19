@@ -20,6 +20,7 @@ def make_substrate(
     n_forget: int = 4,
     n_adjacent: int = 8,
     n_remote: int = 8,
+    n_decoy: int = 0,
     seq_len: int = 16,
     prompt_len: int = 8,
     vocab: int = 128,
@@ -51,6 +52,16 @@ def make_substrate(
         eid = f"rem{i:02d}"
         cands.append(to_example(eid, rand_seq(), group=eid))
         truth[eid] = "remote"
+    # Decoys: surface-similar (same prompt as a forget example) but with an
+    # independent answer -- high lexical/embedding similarity, low expected
+    # damage. These separate update-conditioned alignment from similarity.
+    for i in range(n_decoy):
+        src = forget[i % n_forget]
+        ids = src.input_ids.clone()
+        ids[prompt_len:] = torch.randint(3, vocab, (seq_len - prompt_len,), generator=gen)
+        eid = f"dec{i:02d}"
+        cands.append(to_example(eid, ids, group=eid))
+        truth[eid] = "decoy"
 
     native = frozenset(eid for eid, label in truth.items() if label == "adjacent")
     req = Request.build(

@@ -78,8 +78,34 @@ def test_random_dir_differs_from_fd(tiny_model, req, spec):
     assert not torch.allclose(fd, rd, atol=1e-6)
 
 
-def test_stubs_raise(tiny_model, req, spec):
+def test_knn_embed_needs_encoder_or_text(tiny_model, req, spec):
     import pytest
 
-    with pytest.raises(NotImplementedError):
+    from rsus.probe.baselines import set_embed_encoder
+
+    set_embed_encoder(None)
+    with pytest.raises((NotImplementedError, ValueError)):
         get_scorer("knn_embed")(tiny_model, req, spec)
+
+
+def test_knn_embed_with_injected_encoder(tiny_model, req, spec):
+    import torch
+
+    from rsus.probe.baselines import set_embed_encoder
+
+    def bag_encoder(examples):
+        from conftest import VOCAB
+
+        out = torch.zeros(len(examples), VOCAB)
+        for i, e in enumerate(examples):
+            for t in e.input_ids.tolist():
+                out[i, t] += 1.0
+        return out
+
+    set_embed_encoder(bag_encoder)
+    try:
+        prof = get_scorer("knn_embed")(tiny_model, req, spec)
+        assert set(prof.scores) == {e.example_id for e in req.universe.examples}
+        assert all(-1.0 <= v <= 1.0 for v in prof.scores.values())
+    finally:
+        set_embed_encoder(None)

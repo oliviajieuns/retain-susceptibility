@@ -206,12 +206,48 @@ def score_fd_constrained(model: torch.nn.Module, request: Request, spec: ProbeSp
     return ScoreProfile(request.request_id, "fd_constrained", scores, spec, rec)
 
 
-def _todo(name: str, reason: str):
-    @register(name)
-    def _stub(model, request, spec):  # noqa: ANN001
-        raise NotImplementedError(f"scorer {name!r}: {reason}")
-
-    return _stub
+_EMBED_ENCODER = None
 
 
-_todo("knn_embed", "external sentence encoder pending (open decision D5)")
+def set_embed_encoder(fn) -> None:
+    """Install the external sentence encoder: fn(list[Example]) -> [N, D]
+    tensor. The default (lazy) encoder is sentence-transformers
+    all-MiniLM-L6-v2 over Example.text; tests and token-level substrates
+    inject their own."""
+    global _EMBED_ENCODER
+    _EMBED_ENCODER = fn
+
+
+def _default_encoder(examples):
+    try:
+        from sentence_transformers import SentenceTransformer
+    except ImportError as e:  # pragma: no cover
+        raise NotImplementedError(
+            "knn_embed needs sentence-transformers (all-MiniLM-L6-v2) or an "
+            "injected encoder via set_embed_encoder()"
+        ) from e
+    texts = [e.text for e in examples]
+    if not all(texts):
+        raise ValueError("knn_embed default encoder requires Example.text")
+    st = SentenceTransformer("all-MiniLM-L6-v2")
+    return torch.tensor(st.encode(texts))
+
+
+@register("knn_embed")
+def score_knn_embed(model: torch.nn.Module, request: Request, spec: ProbeSpec) -> ScoreProfile:
+    """External-encoder similarity baseline: mean cosine to the k nearest
+    forget examples in sentence-embedding space."""
+    rec = CostRecord()
+    with Meter(rec):
+        encode = _EMBED_ENCODER or _default_encoder
+        f_emb = torch.nn.functional.normalize(encode(list(request.forget)).double(), dim=1)
+        c_emb = torch.nn.functional.normalize(
+            encode(list(request.universe.examples)).double(), dim=1
+        )
+        k = min(5, f_emb.shape[0])
+        sims = c_emb @ f_emb.T
+        top = sims.topk(k, dim=1).values.mean(dim=1)
+        scores = {
+            e.example_id: float(v) for e, v in zip(request.universe.examples, top)
+        }
+    return ScoreProfile(request.request_id, "knn_embed", scores, spec, rec)

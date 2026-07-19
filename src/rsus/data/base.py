@@ -22,6 +22,7 @@ class Example:
     input_ids: torch.Tensor  # [L] long
     labels: torch.Tensor     # [L] long, prompt positions = IGNORE
     group: str = ""          # fold granularity unit (e.g. retained author)
+    text: str = ""           # raw text, used by external-encoder baselines
 
     def n_answer_tokens(self) -> int:
         return int((self.labels != IGNORE).sum())
