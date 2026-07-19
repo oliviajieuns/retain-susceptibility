@@ -81,10 +81,25 @@ class Request:
     forget: tuple[Example, ...]
     universe: CandidateUniverse
     forget_sha: str = field(default="")
+    native_audit_ids: frozenset[str] = field(default_factory=frozenset)
 
     @staticmethod
-    def build(request_id: str, forget: list[Example], universe: CandidateUniverse) -> "Request":
-        return Request(request_id, tuple(forget), universe, forget_sha=manifest_sha(forget))
+    def build(
+        request_id: str,
+        forget: list[Example],
+        universe: CandidateUniverse,
+        native_audit_ids: frozenset[str] | set[str] = frozenset(),
+    ) -> "Request":
+        unknown = set(native_audit_ids) - {e.example_id for e in universe.examples}
+        if unknown:
+            raise ValueError(f"native audit ids outside the universe: {sorted(unknown)[:5]}")
+        return Request(
+            request_id,
+            tuple(forget),
+            universe,
+            forget_sha=manifest_sha(forget),
+            native_audit_ids=frozenset(native_audit_ids),
+        )
 
     def forget_batches(self, batch_size: int) -> Iterator[dict]:
         for i in range(0, len(self.forget), batch_size):

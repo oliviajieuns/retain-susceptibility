@@ -46,11 +46,25 @@ _REGISTRY: dict[str, ScorerFn] = {}
 
 
 def register(name: str) -> Callable[[ScorerFn], ScorerFn]:
+    """Register a scorer. Every scorer runs with the model in eval mode
+    (dropout disabled — part of the declared probe definition) and the prior
+    training flag restored afterwards."""
+
     def deco(fn: ScorerFn) -> ScorerFn:
         if name in _REGISTRY:
             raise ValueError(f"duplicate scorer name: {name}")
-        _REGISTRY[name] = fn
-        return fn
+
+        def wrapped(model: torch.nn.Module, request: Request, spec: ProbeSpec) -> ScoreProfile:
+            was_training = model.training
+            model.eval()
+            try:
+                return fn(model, request, spec)
+            finally:
+                model.train(was_training)
+
+        wrapped.__name__ = getattr(fn, "__name__", name)
+        _REGISTRY[name] = wrapped
+        return wrapped
 
     return deco
 

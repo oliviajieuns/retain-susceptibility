@@ -20,6 +20,8 @@ def _shifted_nll(logits: torch.Tensor, labels: torch.Tensor) -> tuple[torch.Tens
     Returns (nll [B, L-1], mask [B, L-1]); nll is zeroed outside the mask.
     """
     logits = logits[:, :-1, :]
+    if logits.dtype in (torch.float16, torch.bfloat16):
+        logits = logits.float()  # fp32 loss accumulation under half-precision weights
     targets = labels[:, 1:]
     mask = targets != IGNORE
     safe = targets.clamp_min(0)

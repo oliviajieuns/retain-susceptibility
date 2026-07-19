@@ -7,10 +7,9 @@ probe:
   n_last_layers: {qwen25_7b: 8, tiny_test: 1}
   loss: seq_mean_answer_nll
 partition:
-  tau_adj_quantile: 0.95                  # signed score, upper tail
-  tau_rem_abs_quantile: 0.50              # |s| near-zero band
-  pool_size: 64
-  visible_split: 32
+  pool_size: 64                           # P = largest K eligible positive scores
+  min_pool_size: 8                        # frozen fallback floor (below -> reject request)
+  tau_rem_abs_quantile: 0.50              # |s| near-zero band for the remote stream R0
 stage1:
   floor_clamp_min_nats: 2.5
   clip_offset: 1.0                        # c = m + 1, sensitivity grid {3,5,7} via configs

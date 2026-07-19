@@ -52,5 +52,8 @@ def make_substrate(
         cands.append(to_example(eid, rand_seq(), group=eid))
         truth[eid] = "remote"
 
-    req = Request.build(f"substrate-{seed}", forget, CandidateUniverse.freeze(cands))
+    native = frozenset(eid for eid, label in truth.items() if label == "adjacent")
+    req = Request.build(
+        f"substrate-{seed}", forget, CandidateUniverse.freeze(cands), native_audit_ids=native
+    )
     return req, truth

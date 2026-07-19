@@ -1,4 +1,6 @@
 """Partition invariants: fold discipline, determinism, construction rules."""
+import dataclasses
+
 import pytest
 import torch
 
@@ -6,12 +8,16 @@ from rsus.blocks import BlockSpec
 from rsus.costs import CostRecord
 from rsus.data.base import CandidateUniverse, Example, Request
 from rsus.losses import IGNORE
-from rsus.partition import PartitionError, PartitionParams, build_partition, make_folds
+from rsus.partition import (
+    PartitionError,
+    PartitionParams,
+    build_partition,
+    group_disjoint_split,
+    make_folds,
+)
 from rsus.probe.base import ProbeSpec, ScoreProfile
 
-PARAMS = PartitionParams(
-    tau_adj_quantile=0.5, tau_rem_abs_quantile=0.5, pool_size=4, visible_split=2, seed=0
-)
+PARAMS = PartitionParams(pool_size=4, min_pool_size=2, tau_rem_abs_quantile=0.5, seed=0)
 
 
 def _example(eid: str, group: str) -> Example:
@@ -27,12 +33,12 @@ def _request(n: int = 40) -> Request:
     return Request.build("req-p", forget, CandidateUniverse.freeze(cands))
 
 
-def _profile(req: Request, seed: int = 0) -> ScoreProfile:
+def _profile(req: Request, seed: int = 0, n_positive: int | None = None) -> ScoreProfile:
     gen = torch.Generator().manual_seed(seed)
     n = len(req.universe)
-    # half clearly positive (descending), half near zero
-    vals = [1.0 - 0.01 * i for i in range(n // 2)]
-    vals += (0.001 * torch.randn(n - n // 2, generator=gen)).tolist()
+    n_pos = n // 2 if n_positive is None else n_positive
+    vals = [1.0 - 0.01 * i for i in range(n_pos)]
+    vals += (0.0001 * torch.randn(n - n_pos, generator=gen) - 0.0005).tolist()
     scores = {e.example_id: v for e, v in zip(req.universe.examples, vals)}
     spec = ProbeSpec(block=BlockSpec("unused"), eta=1e-4)
     return ScoreProfile(req.request_id, "fd", scores, spec, CostRecord())
@@ -51,20 +57,37 @@ def test_pools_respect_discovery_folds():
         assert folds[group_of[cid]] == "discovery", cid
 
 
-def test_adjacent_is_top_scoring_eligible():
+def test_protect_is_top_positive_eligible():
     req = _request()
     folds = _folds(req)
     prof = _profile(req)
     part = build_partition(prof, req, folds, PARAMS)
     group_of = {e.example_id: e.group for e in req.universe.examples}
-    eligible = [c for c in prof.scores if folds[group_of[c]] == "discovery"]
-    top4 = sorted(eligible, key=lambda c: (-prof.scores[c], c))[:4]
-    assert set(part.adjacent_visible) | set(part.adjacent_heldout) == set(top4)
-    assert len(part.adjacent_visible) == len(part.adjacent_heldout) == 2
-    # adjacent and remote are disjoint
-    adj = set(part.adjacent_visible) | set(part.adjacent_heldout)
-    rem = set(part.remote_visible) | set(part.remote_heldout)
-    assert not adj & rem
+    eligible_pos = [
+        c for c in prof.scores if folds[group_of[c]] == "discovery" and prof.scores[c] > 0
+    ]
+    top4 = sorted(eligible_pos, key=lambda c: (-prof.scores[c], c))[:4]
+    assert list(part.protect) == top4
+    assert not part.fallback
+    assert len(part.remote_stream) == len(part.protect)
+    assert not set(part.protect) & set(part.remote_stream)
+
+
+def test_fallback_rule_below_pool_size():
+    req = _request()
+    folds = {g: "discovery" for g in {e.group for e in req.universe.examples}}
+    prof = _profile(req, n_positive=3)  # fewer positives than pool_size
+    part = build_partition(prof, req, folds, PARAMS)
+    assert part.fallback
+    assert len(part.protect) == 3
+
+
+def test_below_minimum_raises():
+    req = _request()
+    folds = {g: "discovery" for g in {e.group for e in req.universe.examples}}
+    prof = _profile(req, n_positive=1)  # below min_pool_size=2
+    with pytest.raises(PartitionError):
+        build_partition(prof, req, folds, PARAMS)
 
 
 def test_deterministic_manifest():
@@ -73,8 +96,6 @@ def test_deterministic_manifest():
     p1 = build_partition(_profile(req), req, folds, PARAMS)
     p2 = build_partition(_profile(req), req, folds, PARAMS)
     assert p1.manifest_sha == p2.manifest_sha
-    import dataclasses
-
     p3 = build_partition(_profile(req), req, folds, dataclasses.replace(PARAMS, seed=1))
     assert p3.manifest_sha != p1.manifest_sha
 
@@ -84,31 +105,9 @@ def test_template_matching():
     folds = _folds(req)
     tpl = {e.example_id: ("A" if int(e.example_id[1:]) % 2 else "B") for e in req.universe.examples}
     part = build_partition(_profile(req), req, folds, PARAMS, template_of=tpl)
-    adj = list(part.adjacent_visible) + list(part.adjacent_heldout)
-    rem = list(part.remote_visible) + list(part.remote_heldout)
     count = lambda ids, t: sum(1 for c in ids if tpl[c] == t)  # noqa: E731
     for t in ("A", "B"):
-        assert count(adj, t) == count(rem, t)
-
-
-def test_insufficient_candidates_raises():
-    req = _request(n=10)
-    folds = _folds(req)
-    with pytest.raises(PartitionError):
-        build_partition(_profile(req), req, folds, PARAMS)
-
-
-def test_group_split_impossible_raises():
-    # one group of 3 + one of 1: exact 2/2 split at group granularity impossible
-    cands = [_example(f"c{i}", group="gBIG" if i < 3 else f"g{i}") for i in range(40)]
-    req = Request.build("req-g", [_example("f00", "author-forget")], CandidateUniverse.freeze(cands))
-    prof = _profile(req)
-    # force the big group's members into the adjacent top-4
-    for i, cid in enumerate(["c0", "c1", "c2", "c5"]):
-        prof.scores[cid] = 100.0 - i
-    folds = {e.group: "discovery" for e in req.universe.examples}
-    with pytest.raises(PartitionError):
-        build_partition(prof, req, folds, PARAMS)
+        assert count(part.protect, t) == count(part.remote_stream, t)
 
 
 def test_profile_universe_mismatch_raises():
@@ -117,3 +116,21 @@ def test_profile_universe_mismatch_raises():
     del prof.scores["c00"]
     with pytest.raises(PartitionError):
         build_partition(prof, req, _folds(req), PARAMS)
+
+
+def test_group_disjoint_split_exact_and_impossible():
+    group_of = {f"x{i}": f"g{i % 4}" for i in range(8)}  # 4 groups of 2
+    first, second = group_disjoint_split(list(group_of), group_of, 4, seed=0)
+    assert len(first) == 4 and len(second) == 4
+    assert not {group_of[i] for i in first} & {group_of[i] for i in second}
+    bad = {"a": "g0", "b": "g0", "c": "g0", "d": "g1"}  # sizes 3+1: no exact 2/2
+    with pytest.raises(PartitionError):
+        group_disjoint_split(list(bad), bad, 2, seed=0)
+
+
+def test_native_audit_ids_validated():
+    cands = [_example("c00", "g0")]
+    with pytest.raises(ValueError):
+        Request.build(
+            "r", [_example("f00", "gf")], CandidateUniverse.freeze(cands), {"missing"}
+        )

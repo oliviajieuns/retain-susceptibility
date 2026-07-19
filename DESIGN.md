@@ -1,9 +1,11 @@
 # retain-susceptibility — Code Design
 
-Spec of record: the paper at Overleaf commit `a0a6ece`
-("When Does LLM Unlearning Fail? Probing Update-Conditioned Retain
-Susceptibility"). Where this document and the paper disagree, the paper
-wins; where the paper is silent, `prereg/constants.yaml` wins.
+Spec of record: the paper on Overleaf ("When Does LLM Unlearning Fail?
+Probing Update-Conditioned Retain Susceptibility"), currently the
+probe-to-protection revision of 2026-07-19 (single causal chain:
+gradient alignment → susceptibility profile → realized-damage prediction →
+profile-guided protection). Where this document and the paper disagree, the
+paper wins; where the paper is silent, `prereg/constants.yaml` wins.
 
 Predecessor: `unlearning-entanglement-repli` (branch `llm-port`). This repo
 starts clean because the Stage-2 method changed shape (sorted-W2 blended
@@ -16,16 +18,28 @@ Portable pieces are listed in §9.
 
 ## 1. What the code must produce
 
-Six experiment families, one per RQ:
+The paper's main tables, in order of priority:
 
-| RQ | Deliverable | Core code path |
-|----|-------------|----------------|
-| RQ1 | Pre-update score vs realized per-example damage at saved third-party checkpoints | `probe/*` → seal → `generators/*` → `analysis/rq1` |
-| RQ2 | Headline method comparison under the parity contract | `stage1+stage2` vs `generators/*` → `evalx/contract` |
-| RQ3 | Guard factorial (projection × guard; seq-only / sorted / symmetric arms) | `stage2` flags + creep-back sentinels |
-| RQ4 | Panels: MUSE/RWKU/KnowUnDo/WMDP/substrate; scale + family rungs | `data/*` adapters over the same runner |
-| RQ5 | Contract-vs-endpoint verdict flips + validity link | `evalx/contract` + `evalx/audits` |
-| RQ6 | Cost accounting (profiling + end-to-end) | `costs.py` telemetry on every stage |
+| Table | Content | Core code path |
+|-------|---------|----------------|
+| T1 `tab:discovery` | Predictors vs realized damage d(x)=ℓ(x;θ_T)−ℓ(x;θ_0) at the terminal-budget checkpoint of NPO+retain / RMU / GradDiff, untouched audit fold. Columns: per-optimizer Spearman ρ, AUROC (top-K damage membership), Overlap@K, Tail ρ | seal scores → `generators/*` (damage recording) → `analysis/prediction` |
+| T2 `tab:main` | Protection at first criterion-reaching checkpoint: Reach, Step, paraphrase recall, native mean ΔNLL, native CVaR.95, utility. Rows: GA/GradDiff/NPO+retain/SimNPO/IdkDPO/RMU/GRU/Cheng-S2S/NPO+transplant/ours | `generators/*` + `stage1+stage2` → `evalx/protection` |
+| T3 `tab:ablations` | Matched-parent contrasts: FD vs JVP; partition susceptibility vs repr-sim vs random; NPO transplant vs NPO+retain; full vs no-projection vs no-guard | config matrix over existing flags → `analysis/ablation` |
+| T4 `tab:cost` | Profiling cost: FD / exact JVP / chunked vmap grad-dot / streaming backward × {wall, peak mem, throughput} at 7B & 14B | `CostRecord` telemetry + `experiments/cost` bench |
+
+Supporting (appendix): tab:numerical-stability (η/precision/block grids —
+scorer registry + spec sweeps), tab:guard-recovery (projection×guard
+factorial + symmetric/sorted/seq-only arms — `stage2` flags),
+tab:resource-parity (per-method disclosure — runner telemetry),
+tab:transfer / tab:full-transfer-results (same pipelines on other
+data/model adapters).
+
+Fixed definitions shared by all of the above (appendix 'Result Variables'):
+damage d_t(x)=ℓ(x;θ_t)−ℓ(x;θ_0) (positive harmful); CVaR.95 = mean of the
+largest max(1,⌈.05|A|⌉) values; score-CVaR uses the same upper fraction of
+signed scores; seeds average within request before target/request-level
+inference; hierarchical bootstrap over targets then requests, plus
+leave-one-target-out.
 
 ## 2. Design principles
 
@@ -72,8 +86,9 @@ retain-susceptibility/
       graddot.py            # chunked-vmap grad-dot + streaming per-candidate backward
       baselines.py          # kNN feature vote, sentence-embed kNN, lexical kNN,
                             # grad-norm, last-layer closed form, random dir/rank
-    partition.py            # eq:pools — quantile cuts, top-64, template-matched remote,
-                            # author-granularity 32/32, discovery/audit folds, manifests, sealing
+    partition.py            # P = top-K eligible positive scores (frozen fallback rule),
+                            # R0 = template-matched near-zero remote stream,
+                            # discovery/audit folds, manifests
     refcache.py             # Stage-1 exit-gate cache: per-seq vector + per-(example,token-pos)
                             # vector + index map; no reference model copy afterwards
     stage1.py               # eq:stage1 — aug-Lagrangian ascent w/ clip_c, EMA dual ascent,
@@ -275,10 +290,26 @@ config), synthetic requests, substrate generator. Invariants:
   (laptop)
 - **N3** Stage 1 port + guards + Stage 2 fresh, invariants 5–10, toy e2e.
   (laptop)
-- **N4** TOFU adapter + generators (ga/graddiff/npo_rt first) + contract
-  eval + smoke profiles end-to-end. (laptop, tiny model)
+- **N4** Table-driven pipelines (laptop, tiny model + substrate):
+  - **N4a (T1)**: `generators/` trajectory runner recording per-candidate
+    NLL at θ0 and every saved checkpoint (terminal-budget primary, DONE
+    markers for sealing); objectives ga, graddiff, npo(+retain), rmu;
+    `analysis/prediction.py` (Spearman/AUROC/Overlap@K/Tail ρ,
+    seed-averaging, macro+range, hierarchical bootstrap, LOTO); smoke run
+    emits a filled miniature Table 1 CSV.
+  - **N4b (T2)**: criterion/reach evaluation (`evalx/protection.py`),
+    first-reaching checkpoint, native mean/CVaR damage, utility probe;
+    ours wrapped as a method; NPO+susceptibility transplant; smoke Table 2
+    CSV. Paraphrase recall lands with the TOFU adapter.
+  - **N4c (T3)**: ablation config matrix (partition source swap,
+    projection/guard off) + `analysis/ablation.py` matched-parent deltas.
+  - **N4d (T4)**: `experiments/cost/` bench harness over the four
+    profiling implementations (median [IQR] over repeats) — numbers real
+    only at N5, harness validated on CPU.
+  - **N4e**: TOFU adapter (native metadata audit, paraphrase sets, folds);
+    remaining T2 baselines (simnpo, idkdpo, gru, s2s).
 - **N5** First GPU session: 1.5B centering pilot, real pool manifests,
-  RQ1 generator trajectories. (cluster)
+  T1 generator trajectories, T4 timings at 7B/14B. (cluster)
 
 ## 11. Open decisions (need Olivia)
 
