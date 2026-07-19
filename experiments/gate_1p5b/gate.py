@@ -1,0 +1,253 @@
+"""1.5B TOFU gate experiment: the cheapest real-data forecast of Tables 1-2.
+
+One forget10 author on Qwen2.5-1.5B-Instruct: SFT-memorize the request
+universe, seal audit-fold scores, run independent generators (NPO/GradDiff/
+RMU), unseal, fill a mini Table 1; then compare NPO / NPO+transplant / ours
+for a mini Table 2 on the untouched random audit fold.
+
+GPU (H100) run:   python experiments/gate_1p5b/gate.py --device cuda
+CPU smoke:        python experiments/gate_1p5b/gate.py --smoke
+Artifacts land in runs/gate_<tag>/ (tables + JSON + seal ledger).
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+import torch
+
+ROOT = Path(__file__).resolve().parents[2]
+sys.path.insert(0, str(ROOT / "src"))
+
+from transformers import AutoModelForCausalLM, AutoTokenizer, Qwen2Config, Qwen2ForCausalLM  # noqa: E402
+
+from rsus.analysis.prediction import table1_rows  # noqa: E402
+from rsus.blocks import mlp_down_last_layers  # noqa: E402
+from rsus.data.base import collate  # noqa: E402
+from rsus.data.tofu import FORGET10_FIRST_AUTHOR, load_tofu_examples, tofu_request  # noqa: E402
+from rsus.evalx.protection import evaluate_protection  # noqa: E402
+from rsus.generators import TrajectoryConfig, run_trajectory  # noqa: E402
+from rsus.generators.ours import OursConfig, run_ours_trajectory  # noqa: E402
+from rsus.losses import seq_mean_answer_nll  # noqa: E402
+from rsus.partition import PartitionParams, build_partition, make_folds  # noqa: E402
+from rsus.probe.base import ProbeSpec, get_scorer  # noqa: E402
+from rsus.sealing import seal_scores, unseal  # noqa: E402
+from rsus.stage1 import Stage1Config, calibrate_floor  # noqa: E402
+from rsus.stage2 import Stage2Config  # noqa: E402
+
+GENERATORS = ["npo", "graddiff", "rmu"]
+
+
+def parse_args():
+    p = argparse.ArgumentParser()
+    p.add_argument("--model", default="Qwen/Qwen2.5-1.5B-Instruct")
+    p.add_argument("--device", default="cpu")
+    p.add_argument("--dtype", default="float32", choices=["float32", "bfloat16"])
+    p.add_argument("--author", type=int, default=FORGET10_FIRST_AUTHOR)
+    p.add_argument("--universe-authors", type=int, default=30)
+    p.add_argument("--block-last-n", type=int, default=8)
+    p.add_argument("--eta", type=float, default=3e-4)
+    p.add_argument("--batch-size", type=int, default=8)
+    p.add_argument("--sft-lr", type=float, default=1e-5)
+    p.add_argument("--sft-steps", type=int, default=400)
+    p.add_argument("--sft-target-loss", type=float, default=0.8)
+    p.add_argument("--gen-lr", type=float, default=2e-6)
+    p.add_argument("--gen-steps", type=int, default=60)
+    p.add_argument("--gen-ckpt-every", type=int, default=10)
+    p.add_argument("--s1-lr", type=float, default=1e-5)
+    p.add_argument("--s1-max-steps", type=int, default=600)
+    p.add_argument("--s2-steps", type=int, default=80)
+    p.add_argument("--pool-size", type=int, default=32)
+    p.add_argument("--seed", type=int, default=2025)
+    p.add_argument("--smoke", action="store_true", help="tiny random model, CPU-sized budgets")
+    return p.parse_args()
+
+
+def apply_smoke(a):
+    a.universe_authors = 4
+    a.block_last_n = 1
+    a.sft_steps = 60
+    a.sft_lr = 5e-3
+    a.sft_target_loss = 1.2
+    a.gen_lr = 1e-3
+    a.gen_steps = 10
+    a.gen_ckpt_every = 5
+    a.s1_lr = 2e-3
+    a.s1_max_steps = 250
+    a.s2_steps = 20
+    a.pool_size = 8
+    a.batch_size = 4
+
+
+def load_model(a, tokenizer):
+    dtype = torch.float32 if a.dtype == "float32" else torch.bfloat16
+    if a.smoke:
+        torch.manual_seed(a.seed)
+        cfg = Qwen2Config(
+            vocab_size=len(tokenizer), hidden_size=64, intermediate_size=128,
+            num_hidden_layers=2, num_attention_heads=4, num_key_value_heads=4,
+            max_position_embeddings=512, pad_token_id=tokenizer.pad_token_id,
+        )
+        return Qwen2ForCausalLM(cfg).to(dtype).eval()
+    m = AutoModelForCausalLM.from_pretrained(a.model, torch_dtype=dtype)
+    return m.to(a.device).eval()
+
+
+def sft(model, examples, a, log):
+    opt = torch.optim.AdamW(model.parameters(), lr=a.sft_lr)
+    gen = torch.Generator().manual_seed(a.seed)
+    for step in range(1, a.sft_steps + 1):
+        idx = torch.randperm(len(examples), generator=gen)[: a.batch_size]
+        batch = {k: v.to(a.device) if torch.is_tensor(v) else v
+                 for k, v in collate([examples[i] for i in idx.tolist()]).items()}
+        loss = seq_mean_answer_nll(model, batch).mean()
+        opt.zero_grad(set_to_none=True)
+        loss.backward()
+        opt.step()
+        if step % 20 == 0:
+            log(f"  sft step {step} loss {float(loss.detach()):.3f}")
+            if float(loss.detach()) <= a.sft_target_loss:
+                break
+    model.zero_grad(set_to_none=True)
+
+
+def main():
+    a = parse_args()
+    if a.smoke:
+        apply_smoke(a)
+    tag = "smoke" if a.smoke else a.model.split("/")[-1]
+    out = ROOT / "runs" / f"gate_{tag}"
+    out.mkdir(parents=True, exist_ok=True)
+    log_path = out / "gate.log"
+
+    def log(msg):
+        print(msg, flush=True)
+        with open(log_path, "a", encoding="utf-8") as f:
+            f.write(msg + "\n")
+
+    torch.manual_seed(a.seed)
+    tokenizer = AutoTokenizer.from_pretrained(a.model)
+    log(f"loading TOFU (universe_authors={a.universe_authors}) ...")
+    examples = load_tofu_examples(tokenizer)
+    req = tofu_request(a.author, examples, universe_authors=a.universe_authors, seed=a.seed)
+    by_id = {e.example_id: e for e in req.universe.examples}
+    log(f"request {req.request_id}: |Df|={len(req.forget)} |C|={len(req.universe)}")
+
+    base = load_model(a, tokenizer)          # pre-injection reference
+    model0 = load_model(a, tokenizer)
+    log("SFT-memorizing the request universe ...")
+    sft(model0, list(req.forget) + list(req.universe.examples), a, log)
+    state0 = {k: v.clone() for k, v in model0.state_dict().items()}
+
+    def fresh():
+        m = load_model(a, tokenizer)
+        m.load_state_dict(state0)
+        return m
+
+    folds = make_folds({e.example_id: e.group for e in req.universe.examples}, 0.5, a.seed)
+    audit_ids = {e.example_id for e in req.universe.examples if folds[e.group] == "audit"}
+    disc_ids = sorted(set(by_id) - audit_ids)
+    log(f"folds: {len(audit_ids)} audit / {len(disc_ids)} discovery candidates")
+
+    # ---- predictors, sealed on the audit fold --------------------------------
+    spec = ProbeSpec(block=mlp_down_last_layers(model0, a.block_last_n), eta=a.eta,
+                     batch_size=a.batch_size)
+    predictors = ["fd", "knn_feature", "knn_lexical", "grad_norm", "random_rank"]
+    try:
+        import sentence_transformers  # noqa: F401
+        predictors.insert(2, "knn_embed")
+    except ImportError:
+        log("sentence-transformers missing: skipping knn_embed row")
+    scores_by_pred = {}
+    for pred in predictors:
+        log(f"scoring: {pred}")
+        prof = get_scorer(pred)(fresh(), req, spec)
+        scores_by_pred[pred] = prof.scores
+        seal_scores(out / "seals", out / "seal_ledger.jsonl", req.request_id, pred,
+                    {c: prof.scores[c] for c in audit_ids})
+
+    # ---- independent generator trajectories ----------------------------------
+    gen_cfg = TrajectoryConfig(max_steps=a.gen_steps, checkpoint_every=a.gen_ckpt_every,
+                               lr=a.gen_lr, batch_size=a.batch_size, seed=a.seed)
+    retain_gen = [by_id[c] for c in disc_ids]
+    markers = []
+    damage_by_opt: dict[str, dict[str, dict[str, float]]] = {}
+    for g in GENERATORS:
+        log(f"generator: {g}")
+        rec = run_trajectory(fresh(), g, req, retain_gen, gen_cfg, out_dir=out / f"traj_{g}")
+        markers.append(out / f"traj_{g}" / "DONE")
+        term = rec.terminal()
+        dmg_all = rec.damage_at()
+        rem = [dmg_all[c] for c in audit_ids]
+        log(f"  terminal recall={term.forget_recall:.3f} mean_audit_dmg={sum(rem)/len(rem):+.3f}")
+        damage_by_opt[g] = {req.request_id: {c: dmg_all[c] for c in audit_ids}}
+
+    sealed = {
+        pred: {req.request_id: unseal(out / "seals", out / "seal_ledger.jsonl",
+                                      req.request_id, pred, markers)}
+        for pred in predictors
+    }
+    k = max(5, round(0.1 * len(audit_ids)))
+    rows = table1_rows(sealed, damage_by_opt, k=k)
+    with open(out / "table1.json", "w", encoding="utf-8") as f:
+        json.dump(rows, f, indent=1)
+    log("\n=== Gate Table 1 (single request; audit fold) ===")
+    log(f"{'predictor':14s}" + "".join(f"{g+'_rho':>14s}" for g in GENERATORS) + f"{'AUROC':>8s}{'Ovl@'+str(k):>8s}")
+    for pred in predictors:
+        r = rows[pred]
+        log(f"{pred:14s}" + "".join(f"{r[f'{g}_rho']['mean']:14.3f}" for g in GENERATORS)
+            + f"{r['auroc']['mean']:8.3f}{r['overlap']['mean']:8.3f}")
+
+    # ---- protection (T2 mini) -------------------------------------------------
+    fd_prof_scores = scores_by_pred["fd"]
+    from rsus.costs import CostRecord
+    from rsus.probe.base import ScoreProfile
+
+    part = build_partition(
+        ScoreProfile(req.request_id, "fd", fd_prof_scores, spec, CostRecord()),
+        req, folds,
+        PartitionParams(pool_size=a.pool_size, min_pool_size=4, tau_rem_abs_quantile=0.6,
+                        seed=a.seed),
+    )
+    protect = [by_id[c] for c in part.protect]
+    remote_stream = [by_id[c] for c in part.remote_stream]
+    gen_r = torch.Generator().manual_seed(a.seed)
+    perm = torch.randperm(len(disc_ids), generator=gen_r).tolist()
+    retain_matched = [by_id[disc_ids[i]] for i in perm[: len(protect)]]  # size-matched
+
+    floor_m = calibrate_floor(base, req, a.batch_size)
+    log(f"\npartition: |P|={len(protect)} fallback={part.fallback}; floor m={floor_m:.2f}")
+    t2 = {}
+    for method in ["npo", "npo_transplant", "ours"]:
+        log(f"protection method: {method}")
+        m = fresh()
+        if method == "ours":
+            ocfg = OursConfig(
+                stage1=Stage1Config(lr=a.s1_lr, max_steps=a.s1_max_steps, eval_every=20,
+                                    batch_size=a.batch_size, seed=a.seed),
+                stage2=Stage2Config(max_steps=a.s2_steps, refresh_k=4,
+                                    delta_seq_sq=1e-2, delta_tok_sq=1e-1,
+                                    batch_size=a.batch_size),
+                batch_size=a.batch_size, stage2_snapshots=4,
+            )
+            rec = run_ours_trajectory(m, mlp_down_last_layers(m, a.block_last_n), req,
+                                      protect, remote_stream, floor_m, ocfg)
+        else:
+            retain = protect if method == "npo_transplant" else retain_matched
+            rec = run_trajectory(m, "npo", req, retain, gen_cfg)
+        outp = evaluate_protection(rec, native_ids=audit_ids, utility_ids=set(),
+                                   recall_max=0.10,
+                                   mode="last" if method == "ours" else "first")
+        t2[method] = vars(outp)
+        log(f"  reach={outp.reached} step={outp.step} "
+            f"audit mean dNLL={outp.native_mean if outp.native_mean is None else round(outp.native_mean, 3)} "
+            f"CVaR={outp.native_cvar if outp.native_cvar is None else round(outp.native_cvar, 3)}")
+    with open(out / "table2.json", "w", encoding="utf-8") as f:
+        json.dump(t2, f, indent=1)
+    log(f"\nartifacts in {out}")
+
+
+if __name__ == "__main__":
+    main()
