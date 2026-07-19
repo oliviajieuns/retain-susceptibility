@@ -1,0 +1,66 @@
+"""Scorer registry and shared probe types.
+
+Registry names are fixed identifiers used in configs, result tables, and
+tests: fd, jvp, vmap_graddot, streaming_backward, knn_feature, knn_embed,
+knn_lexical, grad_norm, last_layer, random_dir, random_rank, fd_constrained.
+"""
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from typing import Callable
+
+import torch
+
+from rsus.blocks import BlockSpec
+from rsus.costs import CostRecord
+from rsus.data.base import Request
+
+
+@dataclass(frozen=True)
+class ProbeSpec:
+    """Declared probe: block, step, loss, seed. Part of the score definition
+    (paper Sec. 3) and disclosed with every comparison."""
+
+    block: BlockSpec
+    eta: float
+    loss: str = "seq_mean_answer_nll"
+    seed: int = 0
+    batch_size: int = 8
+
+
+@dataclass
+class ScoreProfile:
+    request_id: str
+    scorer: str
+    scores: dict[str, float]
+    spec: ProbeSpec
+    cost: CostRecord = field(default_factory=CostRecord)
+
+    def ranking(self) -> list[str]:
+        """Candidate ids by descending score, deterministic tie-break by id."""
+        return sorted(self.scores, key=lambda cid: (-self.scores[cid], cid))
+
+
+ScorerFn = Callable[[torch.nn.Module, Request, ProbeSpec], ScoreProfile]
+_REGISTRY: dict[str, ScorerFn] = {}
+
+
+def register(name: str) -> Callable[[ScorerFn], ScorerFn]:
+    def deco(fn: ScorerFn) -> ScorerFn:
+        if name in _REGISTRY:
+            raise ValueError(f"duplicate scorer name: {name}")
+        _REGISTRY[name] = fn
+        return fn
+
+    return deco
+
+
+def get_scorer(name: str) -> ScorerFn:
+    try:
+        return _REGISTRY[name]
+    except KeyError:
+        raise KeyError(f"unknown scorer {name!r}; known: {sorted(_REGISTRY)}") from None
+
+
+def scorer_names() -> list[str]:
+    return sorted(_REGISTRY)

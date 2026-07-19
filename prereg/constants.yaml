@@ -1,0 +1,35 @@
+# Preregistered constants — DRAFT (freeze_id pending; a freeze adds a dated
+# block below and never edits or deletes an existing one).
+freeze_id: DRAFT-2026-07-19
+probe:
+  eta_grid: [1.0e-4, 3.0e-4, 1.0e-3]     # rank stability across this grid audits O(eta^2)
+  block: mlp_down_last_layers             # n_last set per model family below
+  n_last_layers: {qwen25_7b: 8, tiny_test: 1}
+  loss: seq_mean_answer_nll
+partition:
+  tau_adj_quantile: 0.95                  # signed score, upper tail
+  tau_rem_abs_quantile: 0.50              # |s| near-zero band
+  pool_size: 64
+  visible_split: 32
+stage1:
+  floor_clamp_min_nats: 2.5
+  clip_offset: 1.0                        # c = m + 1, sensitivity grid {3,5,7} via configs
+  rho: 10.0
+  remote_cap: 512
+  probe_pin_cap: 256
+  exit_remote_recall: 0.90
+stage2:
+  guard: one_sided                        # primary; symmetric/sorted are ablation arms
+  eps_slack: 0.0                          # DRAFT — D4 open decision
+  delta_seq_sq: null                      # DRAFT — D4 open decision
+  delta_tok_sq: null                      # DRAFT — D4 open decision
+  refresh_k: [1, 4]
+  mu_v: 0.7
+  eta2_shrink: 0.5
+contract:
+  forget_recall_max: 0.10
+  paraphrase_recall_max: 0.20
+  adjacent_retention_min: 0.80
+  remote_retention_min: 0.90
+  utility_retention_min: 0.90
+seeds: [2025, 2026, 2027]
