@@ -18,10 +18,10 @@ from rsus.generators.base import Snapshot, TrajectoryRecord
 
 
 def test_objective_registry():
-    assert {"ga", "graddiff", "npo", "rmu"} <= set(objective_names())
+    assert {"ga", "graddiff", "npo", "rmu", "simnpo", "idkdpo", "gru"} <= set(objective_names())
 
 
-@pytest.mark.parametrize("objective", ["ga", "graddiff", "npo", "rmu"])
+@pytest.mark.parametrize("objective", ["ga", "graddiff", "npo", "rmu", "simnpo", "gru"])
 def test_trajectory_runs_and_records(objective, tmp_path):
     model = build_tiny(5)
     req, truth = make_substrate(seed=51, n_remote=6)
@@ -33,6 +33,39 @@ def test_trajectory_runs_and_records(objective, tmp_path):
     assert set(rec.damage_at()) == set(rec.nll0)
     assert (tmp_path / objective / "DONE").exists()
     assert (tmp_path / objective / "damage.json").exists()
+
+
+def test_idkdpo_needs_and_uses_idk_examples():
+    import dataclasses
+
+    from rsus.data.base import Example
+    from rsus.losses import IGNORE
+
+    model = build_tiny(7)
+    req, truth = make_substrate(seed=53, n_remote=6)
+    retain = [e for e in req.universe.examples if truth[e.example_id] == "remote"]
+    cfg = TrajectoryConfig(max_steps=2, checkpoint_every=2, lr=1e-3)
+    with pytest.raises(ValueError):
+        run_trajectory(build_tiny(7), "idkdpo", req, retain, cfg)
+    idk = []
+    for e in req.forget:
+        ids = e.input_ids.clone()
+        ids[8:] = torch.arange(3, 3 + ids.numel() - 8)  # fixed alternative answer
+        labels = ids.clone()
+        labels[:8] = IGNORE
+        idk.append(Example(e.example_id + "-idk", ids, labels))
+    cfg2 = dataclasses.replace(cfg, idk_examples=idk)
+    rec = run_trajectory(model, "idkdpo", req, retain, cfg2)
+    assert len(rec.snapshots) == 1
+
+
+def test_extra_eval_recorded():
+    model = build_tiny(8)
+    req, truth = make_substrate(seed=54, n_remote=6)
+    retain = [e for e in req.universe.examples if truth[e.example_id] == "remote"]
+    cfg = TrajectoryConfig(max_steps=2, checkpoint_every=2, lr=1e-3)
+    rec = run_trajectory(model, "ga", req, retain, cfg, extra_eval=lambda m: {"probe": 1.0})
+    assert rec.snapshots[0].extra == {"probe": 1.0}
 
 
 def test_ga_raises_forget_loss():

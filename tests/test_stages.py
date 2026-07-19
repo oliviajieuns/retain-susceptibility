@@ -41,13 +41,17 @@ def world():
 
     final = memorize(model, list(req.forget) + adj + rem)
     assert final < 0.5, f"memorization failed (loss {final})"
+    mem = {k: v.detach().clone() for k, v in model.state_dict().items()}
 
     m = calibrate_floor(base, req)
     res1 = run_stage1(model, req, remote=rem, floor_m=m, cfg=S1)
     assert res1.gate_passed, f"stage-1 gate not reached: {res1.history[-3:]}"
 
     post1 = {k: v.detach().clone() for k, v in model.state_dict().items()}
-    return {"req": req, "adj": adj, "rem": rem, "m": m, "cache": res1.cache, "post1": post1}
+    return {
+        "req": req, "adj": adj, "rem": rem, "m": m, "cache": res1.cache,
+        "post1": post1, "mem": mem,
+    }
 
 
 def load_post1(world):
@@ -133,6 +137,28 @@ def test_inv6_acceptance_rolls_back_and_shrinks(world):
     for e in res.events:
         if e.accepted:
             assert e.d_seq <= cfg.delta_seq_sq + 1e-15
+
+
+def test_s2s_baseline_runs_two_stages(world):
+    from rsus.generators.s2s import S2SConfig, run_s2s_trajectory
+    from rsus.partition import PartitionParams, make_folds
+    from rsus.stage2 import Stage2Config
+
+    model = build_tiny(0)
+    model.load_state_dict(world["mem"])   # memorized, pre-stage-1 state
+    req = world["req"]
+    folds = {e.group: "discovery" for e in req.universe.examples}
+    cfg = S2SConfig(
+        stage1=Stage1Config(lr=5e-3, max_steps=800, eval_every=20, seed=0),
+        stage2=Stage2Config(max_steps=10, refresh_k=1, delta_seq_sq=1e-2),
+        partition=PartitionParams(pool_size=4, min_pool_size=3, tau_rem_abs_quantile=0.8),
+    )
+    from rsus.blocks import mlp_down_last_layers as blk
+
+    rec = run_s2s_trajectory(model, blk(model, 1), req, folds, world["m"], cfg)
+    assert rec.objective == "s2s"
+    assert len(rec.snapshots) == 2, "gate did not pass or repair missing"
+    assert rec.snapshots[-1].forget_recall <= 0.2
 
 
 def test_inv10_toy_e2e_repair_without_breach(world):

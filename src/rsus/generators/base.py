@@ -52,9 +52,11 @@ class TrajectoryConfig:
     batch_size: int = 8
     lr: float = 5e-3
     seed: int = 0
-    beta: float = 1.0          # NPO
+    beta: float = 1.0          # NPO / SimNPO / IdkDPO temperature
+    simnpo_gamma: float = 0.0  # SimNPO margin bias
     rmu_alpha: float = 10.0    # RMU retain weight
     rmu_c: float = 3.0         # RMU control-vector magnitude
+    idk_examples: list | None = None  # IdkDPO preferred responses (per forget example)
 
 
 @dataclass
@@ -62,6 +64,7 @@ class Snapshot:
     step: int
     nll: dict[str, float]
     forget_recall: float
+    extra: dict = field(default_factory=dict)
 
 
 @dataclass
@@ -103,7 +106,11 @@ def run_trajectory(
     retain: list[Example],
     cfg: TrajectoryConfig,
     out_dir: str | Path | None = None,
+    extra_eval=None,
 ) -> TrajectoryRecord:
+    """``extra_eval(model) -> dict`` is evaluated at every snapshot (e.g.
+    paraphrase recall, utility probes) since checkpoint weights are not
+    persisted."""
     factory = _OBJECTIVES[objective]
     rec = TrajectoryRecord(objective, request.request_id, {})
     with Meter(rec.cost):
@@ -113,7 +120,12 @@ def run_trajectory(
             obj.step()
             if t % cfg.checkpoint_every == 0 or t == cfg.max_steps:
                 rec.snapshots.append(
-                    Snapshot(t, _candidate_nll(model, request, cfg.batch_size), _forget_recall(model, request))
+                    Snapshot(
+                        t,
+                        _candidate_nll(model, request, cfg.batch_size),
+                        _forget_recall(model, request),
+                        extra_eval(model) if extra_eval else {},
+                    )
                 )
     if out_dir is not None:
         out = Path(out_dir)
@@ -123,7 +135,7 @@ def run_trajectory(
             "request": request.request_id,
             "nll0": rec.nll0,
             "snapshots": [
-                {"step": s.step, "forget_recall": s.forget_recall, "nll": s.nll}
+                {"step": s.step, "forget_recall": s.forget_recall, "extra": s.extra, "nll": s.nll}
                 for s in rec.snapshots
             ],
         }

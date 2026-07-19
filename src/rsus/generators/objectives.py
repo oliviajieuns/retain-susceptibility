@@ -74,6 +74,73 @@ class NPO(_Base):
         return self._update(loss)
 
 
+@register_objective("simnpo")
+class SimNPO(_Base):
+    """Reference-free NPO variant: length-normalized forget loss enters a
+    sigmoid margin directly (no reference model), plus retain training."""
+
+    def step(self) -> float:
+        cur = seq_mean_answer_nll(self.model, self.forget_batch)
+        beta, gamma = self.cfg.beta, self.cfg.simnpo_gamma
+        simnpo = -(2.0 / beta) * torch.nn.functional.logsigmoid(beta * cur - gamma).mean()
+        loss = simnpo + seq_mean_answer_nll(self.model, self.retain_minibatch()).mean()
+        return self._update(loss)
+
+
+@register_objective("idkdpo")
+class IdkDPO(_Base):
+    """DPO with 'I don't know'-style responses preferred over the original
+    forget answers; per-sequence mean-NLL log-ratios against references
+    cached at setup. Requires cfg.idk_examples aligned with the forget set."""
+
+    def __init__(self, model, request, retain, cfg):
+        super().__init__(model, request, retain, cfg)
+        if not cfg.idk_examples or len(cfg.idk_examples) != len(request.forget):
+            raise ValueError("idkdpo needs cfg.idk_examples aligned with the forget set")
+        self.idk_batch = collate(list(cfg.idk_examples))
+        with torch.no_grad():
+            self.ref_l = seq_mean_answer_nll(model, self.forget_batch).detach()
+            self.ref_w = seq_mean_answer_nll(model, self.idk_batch).detach()
+
+    def step(self) -> float:
+        beta = self.cfg.beta
+        cur_l = seq_mean_answer_nll(self.model, self.forget_batch)
+        cur_w = seq_mean_answer_nll(self.model, self.idk_batch)
+        margin = (self.ref_w - cur_w) - (self.ref_l - cur_l)  # mean-NLL log-ratio proxy
+        dpo = -torch.nn.functional.logsigmoid(beta * margin).mean()
+        loss = dpo + seq_mean_answer_nll(self.model, self.retain_minibatch()).mean()
+        return self._update(loss)
+
+
+@register_objective("gru")
+class GRU(_Base):
+    """Retain-aware gradient rectification: the forget-ascent gradient is
+    stripped of its component that conflicts with retain descent, then
+    combined with the retain gradient (minimal faithful implementation)."""
+
+    def _flat_grads(self, loss) -> list[torch.Tensor]:
+        self.opt.zero_grad(set_to_none=True)
+        loss.backward()
+        return [
+            (p.grad.detach().clone() if p.grad is not None else torch.zeros_like(p))
+            for p in self.model.parameters()
+        ]
+
+    def step(self) -> float:
+        f_loss = -seq_mean_answer_nll(self.model, self.forget_batch).mean()
+        g_f = self._flat_grads(f_loss)
+        r_loss = seq_mean_answer_nll(self.model, self.retain_minibatch()).mean()
+        g_r = self._flat_grads(r_loss)
+        dot = sum((a * b).sum() for a, b in zip(g_f, g_r))
+        rr = sum((b * b).sum() for b in g_r)
+        coef = torch.clamp(dot / (rr + 1e-12), max=0.0)  # remove conflicting part only
+        self.opt.zero_grad(set_to_none=True)
+        for p, a, b in zip(self.model.parameters(), g_f, g_r):
+            p.grad = (a - coef * b) + b
+        self.opt.step()
+        return float((f_loss + r_loss).detach())
+
+
 @register_objective("rmu")
 class RMU(_Base):
     """Representation misdirection: push forget answer-token hiddens toward a

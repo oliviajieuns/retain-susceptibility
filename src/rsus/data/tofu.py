@@ -73,6 +73,34 @@ def load_tofu_examples(tokenizer, max_length: int = 256) -> list[Example]:
     return out
 
 
+def load_tofu_paraphrases(tokenizer, max_length: int = 256) -> dict[str, Example]:
+    """Paraphrased forget10 QA for the paraphrase-recall audit.
+
+    ``forget10_perturbed`` row i corresponds to ``full`` row 3600+i. Returns
+    original example_id -> paraphrased Example (same group)."""
+    from datasets import load_dataset
+
+    ds = load_dataset("locuslab/TOFU", "forget10_perturbed")["train"]
+    first_row = FORGET10_FIRST_AUTHOR * QA_PER_AUTHOR
+    if len(ds) != FULL_SIZE - first_row:
+        raise ValueError(f"forget10_perturbed has {len(ds)} rows, expected {FULL_SIZE - first_row}")
+    out: dict[str, Example] = {}
+    for i in range(len(ds)):
+        row = ds[i]
+        idx = first_row + i
+        ids, labels = format_qa(
+            row["paraphrased_question"], row["paraphrased_answer"], tokenizer, max_length
+        )
+        out[f"tofu-{idx:04d}"] = Example(
+            example_id=f"tofu-{idx:04d}-para",
+            input_ids=ids,
+            labels=labels,
+            group=f"author-{idx // QA_PER_AUTHOR:03d}",
+            text=f"{QUESTION_PREFIX}{row['paraphrased_question']}{ANSWER_PREFIX} {row['paraphrased_answer']}",
+        )
+    return out
+
+
 def tofu_request(
     author_id: int,
     examples: list[Example],

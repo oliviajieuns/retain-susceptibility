@@ -38,6 +38,21 @@ def test_format_qa_masks_prompt():
     assert labels[-1].tolist() == MockTokenizer.eos_token_id
 
 
+def test_paraphrase_mapping():
+    from rsus.data.tofu import load_tofu_paraphrases
+
+    try:
+        paras = load_tofu_paraphrases(MockTokenizer())
+    except Exception as e:
+        pytest.skip(f"forget10_perturbed unavailable: {e}")
+    assert len(paras) == 400
+    assert "tofu-3600" in {k.rsplit("-", 0)[0] for k in paras} or "tofu-3600" in paras
+    ex = paras["tofu-3600"]
+    assert ex.group == "author-180"
+    assert ex.example_id.endswith("-para")
+    assert (ex.labels == IGNORE).sum() > 0
+
+
 def test_request_construction(rows):
     tok = MockTokenizer()
     # build examples for a small slice only (speed): author 180 + 3 retained
