@@ -37,8 +37,12 @@ def run_s2s_trajectory(
     floor_m: float,
     cfg: S2SConfig,
     probe_spec: ProbeSpec | None = None,
+    extra_eval=None,
 ) -> TrajectoryRecord:
     import dataclasses as _dc
+
+    def _extra(m):
+        return extra_eval(m) if extra_eval else {}
 
     rec = TrajectoryRecord("s2s", request.request_id, {})
     rec.nll0 = _candidate_nll(model, request, cfg.batch_size)
@@ -53,7 +57,7 @@ def run_s2s_trajectory(
 
     res1 = run_stage1(model, request, remote, floor_m, cfg.stage1)
     rec.snapshots.append(
-        Snapshot(res1.steps, _candidate_nll(model, request, cfg.batch_size), _forget_recall(model, request))
+        Snapshot(res1.steps, _candidate_nll(model, request, cfg.batch_size), _forget_recall(model, request), _extra(model))
     )
     if not res1.gate_passed:
         return rec
@@ -65,6 +69,7 @@ def run_s2s_trajectory(
             res1.steps + s2.max_steps,
             _candidate_nll(model, request, cfg.batch_size),
             _forget_recall(model, request),
+            _extra(model),
         )
     )
     return rec

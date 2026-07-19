@@ -26,7 +26,15 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, Qwen2Config, Qwen2
 from rsus.analysis.prediction import table1_rows  # noqa: E402
 from rsus.blocks import mlp_down_last_layers  # noqa: E402
 from rsus.data.base import collate  # noqa: E402
-from rsus.data.tofu import FORGET10_FIRST_AUTHOR, load_tofu_examples, tofu_request  # noqa: E402
+from rsus.data.tofu import (  # noqa: E402
+    FORGET10_FIRST_AUTHOR,
+    idk_variants,
+    load_tofu_examples,
+    load_tofu_paraphrases,
+    tofu_request,
+)
+from rsus.evalx.metrics import mean_recall  # noqa: E402
+from rsus.generators.s2s import S2SConfig, run_s2s_trajectory  # noqa: E402
 from rsus.evalx.protection import evaluate_protection  # noqa: E402
 from rsus.generators import TrajectoryConfig, run_trajectory  # noqa: E402
 from rsus.generators.ours import OursConfig, run_ours_trajectory  # noqa: E402
@@ -61,7 +69,13 @@ def parse_args():
     p.add_argument("--s2-steps", type=int, default=80)
     p.add_argument("--pool-size", type=int, default=32)
     p.add_argument("--seed", type=int, default=2025)
+    p.add_argument(
+        "--t2-roster",
+        default="ga,graddiff,npo,simnpo,idkdpo,rmu,gru,s2s,npo_transplant,ours",
+        help="comma-separated Table-2 methods",
+    )
     p.add_argument("--smoke", action="store_true", help="tiny random model, CPU-sized budgets")
+    p.add_argument("--run-tag", default="", help="suffix for the run directory (rerun without clobbering seals)")
     return p.parse_args()
 
 
@@ -118,7 +132,14 @@ def main():
     if a.smoke:
         apply_smoke(a)
     tag = "smoke" if a.smoke else a.model.split("/")[-1]
+    if a.run_tag:
+        tag += f"_{a.run_tag}"
     out = ROOT / "runs" / f"gate_{tag}"
+    if (out / "seal_ledger.jsonl").exists():
+        sys.exit(
+            f"{out} already contains sealed scores (seals are append-only by design). "
+            "Pass --run-tag <name> for a fresh run directory."
+        )
     out.mkdir(parents=True, exist_ok=True)
     log_path = out / "gate.log"
 
@@ -219,31 +240,57 @@ def main():
 
     floor_m = calibrate_floor(base, req, a.batch_size)
     log(f"\npartition: |P|={len(protect)} fallback={part.fallback}; floor m={floor_m:.2f}")
+
+    # paraphrase-recall audit at every snapshot (weights are not persisted)
+    extra_eval = None
+    try:
+        paras = load_tofu_paraphrases(tokenizer)
+        para_ex = [paras[e.example_id] for e in req.forget if e.example_id in paras]
+        if para_ex:
+            extra_eval = lambda m: {"para_recall": mean_recall(m, para_ex, a.batch_size)}  # noqa: E731
+    except Exception as e:
+        log(f"paraphrase audit unavailable: {e}")
+
+    s1_cfg = Stage1Config(lr=a.s1_lr, max_steps=a.s1_max_steps, eval_every=20,
+                          batch_size=a.batch_size, seed=a.seed)
+    s2_cfg = Stage2Config(max_steps=a.s2_steps, refresh_k=4,
+                          delta_seq_sq=1e-2, delta_tok_sq=1e-1, batch_size=a.batch_size)
+    idk = idk_variants(tokenizer, list(req.forget))
+
     t2 = {}
-    for method in ["npo", "npo_transplant", "ours"]:
+    for method in [x.strip() for x in a.t2_roster.split(",") if x.strip()]:
         log(f"protection method: {method}")
         m = fresh()
+        two_stage = method in ("ours", "s2s")
         if method == "ours":
-            ocfg = OursConfig(
-                stage1=Stage1Config(lr=a.s1_lr, max_steps=a.s1_max_steps, eval_every=20,
-                                    batch_size=a.batch_size, seed=a.seed),
-                stage2=Stage2Config(max_steps=a.s2_steps, refresh_k=4,
-                                    delta_seq_sq=1e-2, delta_tok_sq=1e-1,
-                                    batch_size=a.batch_size),
-                batch_size=a.batch_size, stage2_snapshots=4,
-            )
+            ocfg = OursConfig(stage1=s1_cfg, stage2=s2_cfg,
+                              batch_size=a.batch_size, stage2_snapshots=4)
             rec = run_ours_trajectory(m, mlp_down_last_layers(m, a.block_last_n), req,
-                                      protect, remote_stream, floor_m, ocfg)
+                                      protect, remote_stream, floor_m, ocfg,
+                                      extra_eval=extra_eval)
+        elif method == "s2s":
+            scfg = S2SConfig(stage1=s1_cfg, stage2=s2_cfg,
+                             partition=PartitionParams(pool_size=a.pool_size, min_pool_size=4,
+                                                       tau_rem_abs_quantile=0.6, seed=a.seed),
+                             batch_size=a.batch_size)
+            rec = run_s2s_trajectory(m, mlp_down_last_layers(m, a.block_last_n), req,
+                                     folds, floor_m, scfg, extra_eval=extra_eval)
         else:
+            import dataclasses as _dc
+
+            objective = "npo" if method == "npo_transplant" else method
             retain = protect if method == "npo_transplant" else retain_matched
-            rec = run_trajectory(m, "npo", req, retain, gen_cfg)
+            cfg_m = _dc.replace(gen_cfg, idk_examples=idk) if method == "idkdpo" else gen_cfg
+            rec = run_trajectory(m, objective, req, retain, cfg_m, extra_eval=extra_eval)
         outp = evaluate_protection(rec, native_ids=audit_ids, utility_ids=set(),
                                    recall_max=0.10,
-                                   mode="last" if method == "ours" else "first")
+                                   mode="last" if two_stage else "first")
         t2[method] = vars(outp)
+        para = (outp.extra or {}).get("para_recall")
         log(f"  reach={outp.reached} step={outp.step} "
             f"audit mean dNLL={outp.native_mean if outp.native_mean is None else round(outp.native_mean, 3)} "
-            f"CVaR={outp.native_cvar if outp.native_cvar is None else round(outp.native_cvar, 3)}")
+            f"CVaR={outp.native_cvar if outp.native_cvar is None else round(outp.native_cvar, 3)}"
+            + (f" para_recall={para:.3f}" if para is not None else ""))
     with open(out / "table2.json", "w", encoding="utf-8") as f:
         json.dump(t2, f, indent=1)
     log(f"\nartifacts in {out}")

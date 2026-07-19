@@ -31,13 +31,17 @@ def run_ours_trajectory(
     remote: list[Example],
     floor_m: float,
     cfg: OursConfig,
+    extra_eval=None,
 ) -> TrajectoryRecord:
+    def _extra(m):
+        return extra_eval(m) if extra_eval else {}
+
     rec = TrajectoryRecord("ours", request.request_id, {})
     rec.nll0 = _candidate_nll(model, request, cfg.batch_size)
 
     res1 = run_stage1(model, request, remote, floor_m, cfg.stage1)
     rec.snapshots.append(
-        Snapshot(res1.steps, _candidate_nll(model, request, cfg.batch_size), _forget_recall(model, request))
+        Snapshot(res1.steps, _candidate_nll(model, request, cfg.batch_size), _forget_recall(model, request), _extra(model))
     )
     if not res1.gate_passed:
         return rec  # no repair without an accepted gate; reach judged on what exists
@@ -57,6 +61,7 @@ def run_ours_trajectory(
                 step_base + done,
                 _candidate_nll(model, request, cfg.batch_size),
                 _forget_recall(model, request),
+                _extra(model),
             )
         )
     return rec

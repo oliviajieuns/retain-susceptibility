@@ -18,6 +18,7 @@ class ProtectionOutcome:
     native_mean: float | None
     native_cvar: float | None
     utility_ret: float | None
+    extra: dict | None = None   # snapshot extra_eval metrics (e.g. para_recall)
 
 
 def first_reaching(record: TrajectoryRecord, recall_max: float) -> Snapshot | None:
@@ -63,4 +64,5 @@ def evaluate_protection(
         sum(native) / len(native),
         cvar_upper(native, cvar_frac),
         (n0 / nt) if utility_ids and nt > 0 else None,
+        extra=snap.extra or None,
     )

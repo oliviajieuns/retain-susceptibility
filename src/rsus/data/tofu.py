@@ -101,6 +101,24 @@ def load_tofu_paraphrases(tokenizer, max_length: int = 256) -> dict[str, Example
     return out
 
 
+IDK_ANSWER = "I don't know."
+
+
+def idk_variants(
+    tokenizer, forget: list[Example], idk_answer: str = IDK_ANSWER, max_length: int = 256
+) -> list[Example]:
+    """IdkDPO preferred responses: same question, refusal answer. Questions
+    are recovered from Example.text (format_qa's canonical layout)."""
+    out: list[Example] = []
+    for e in forget:
+        if not e.text.startswith(QUESTION_PREFIX) or ANSWER_PREFIX not in e.text:
+            raise ValueError(f"cannot recover question from {e.example_id}")
+        q = e.text[len(QUESTION_PREFIX) : e.text.index(ANSWER_PREFIX)]
+        ids, labels = format_qa(q, idk_answer, tokenizer, max_length)
+        out.append(Example(e.example_id + "-idk", ids, labels, group=e.group))
+    return out
+
+
 def tofu_request(
     author_id: int,
     examples: list[Example],
