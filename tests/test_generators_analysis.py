@@ -68,6 +68,28 @@ def test_extra_eval_recorded():
     assert rec.snapshots[0].extra == {"probe": 1.0}
 
 
+def test_canonical_share_tracked():
+    from rsus.blocks import mlp_down_last_layers
+    from rsus.probe.base import ProbeSpec
+    from rsus.probe.finite_diff import canonical_forget_direction
+    from rsus.costs import CostRecord
+
+    model = build_tiny(9)
+    req, truth = make_substrate(seed=55, n_remote=6)
+    retain = [e for e in req.universe.examples if truth[e.example_id] == "remote"]
+    block = mlp_down_last_layers(model, 1)
+    spec = ProbeSpec(block=block, eta=1e-4, batch_size=4)
+    ghat = canonical_forget_direction(model, req, spec, CostRecord())
+    cfg = TrajectoryConfig(max_steps=4, checkpoint_every=2, lr=1e-3)
+    rec = run_trajectory(model, "ga", req, retain, cfg, track_dir=(block, ghat))
+    for s in rec.snapshots:
+        assert -1.0 <= s.extra["c_t"] <= 1.0
+        assert "alpha_t" in s.extra
+    # GA ascends the forget loss, so block displacement should share sign
+    # with the canonical ascent direction
+    assert rec.snapshots[-1].extra["c_t"] > 0
+
+
 def test_ga_raises_forget_loss():
     model = build_tiny(6)
     req, truth = make_substrate(seed=52, n_remote=6)

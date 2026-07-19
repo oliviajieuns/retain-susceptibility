@@ -107,24 +107,48 @@ def run_trajectory(
     cfg: TrajectoryConfig,
     out_dir: str | Path | None = None,
     extra_eval=None,
+    track_dir=None,
 ) -> TrajectoryRecord:
     """``extra_eval(model) -> dict`` is evaluated at every snapshot (e.g.
     paraphrase recall, utility probes) since checkpoint weights are not
-    persisted."""
+    persisted. ``track_dir=(BlockSpec, ghat)`` additionally records, per
+    snapshot, the signed canonical share c_t = <Delta_B, ghat>/||Delta_B||
+    and alpha_t = <Delta_B, ghat> (paper eq:canonical-share) from the saved
+    block displacement -- the inputs to the optimizer-transfer mechanism
+    table, with no weight storage."""
+    from rsus.blocks import save_params, vec_dot
+
     factory = _OBJECTIVES[objective]
     rec = TrajectoryRecord(objective, request.request_id, {})
     with Meter(rec.cost):
         rec.nll0 = _candidate_nll(model, request, cfg.batch_size)
+        theta0_B = None
+        if track_dir is not None:
+            block, ghat = track_dir
+            sel = block.select(model)
+            theta0_B = save_params(sel)
         obj = factory(model, request, retain, cfg)
         for t in range(1, cfg.max_steps + 1):
             obj.step()
             if t % cfg.checkpoint_every == 0 or t == cfg.max_steps:
+                extra = extra_eval(model) if extra_eval else {}
+                if theta0_B is not None:
+                    delta = {n: p.detach() - theta0_B[n] for n, p in sel.items()}
+                    alpha = float(vec_dot(delta, ghat))
+                    dnorm = float(
+                        torch.sqrt(sum((d * d).sum() for d in delta.values()))
+                    )
+                    extra = {
+                        **extra,
+                        "alpha_t": alpha,
+                        "c_t": alpha / dnorm if dnorm > 0 else 0.0,
+                    }
                 rec.snapshots.append(
                     Snapshot(
                         t,
                         _candidate_nll(model, request, cfg.batch_size),
                         _forget_recall(model, request),
-                        extra_eval(model) if extra_eval else {},
+                        extra,
                     )
                 )
     if out_dir is not None:

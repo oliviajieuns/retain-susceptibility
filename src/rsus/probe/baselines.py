@@ -206,6 +206,41 @@ def score_fd_constrained(model: torch.nn.Module, request: Request, spec: ProbeSp
     return ScoreProfile(request.request_id, "fd_constrained", scores, spec, rec)
 
 
+def diagnostic_subset(request: Request, n: int = 128, seed: int = 0) -> list[str]:
+    """Frozen uniform gradient-audit subset C_grad (paper: min(128, |C|)
+    candidates, drawn before any score or outcome is inspected)."""
+    ids = sorted(e.example_id for e in request.universe.examples)
+    gen = torch.Generator().manual_seed(seed)
+    perm = torch.randperm(len(ids), generator=gen).tolist()
+    return sorted(ids[i] for i in perm[: min(n, len(ids))])
+
+
+@register("grad_cosine")
+def score_grad_cosine(model: torch.nn.Module, request: Request, spec: ProbeSpec) -> ScoreProfile:
+    """Signed alignment a(x) = cos(q_x, g_f) (paper eq:score-anatomy).
+    Requires candidate gradients; diagnostic-subset use only, never a
+    complete-pool proposal."""
+    from rsus.probe.finite_diff import canonical_forget_direction
+
+    rec = CostRecord()
+    with Meter(rec):
+        sel = spec.block.select(model)
+        ghat = canonical_forget_direction(model, request, spec, rec)
+        scores: dict[str, float] = {}
+        with only_block_grads(model, sel):
+            for ex in request.universe.examples:
+                batch = collate([ex])
+                model.zero_grad(set_to_none=True)
+                seq_mean_answer_nll(model, batch)[0].backward()
+                rec.fwd_passes += 1
+                rec.bwd_passes += 1
+                q = grads_of(sel)
+                norm = float(vec_norm(q))
+                scores[ex.example_id] = float(vec_dot(q, ghat)) / norm if norm > 0 else 0.0
+        model.zero_grad(set_to_none=True)
+    return ScoreProfile(request.request_id, "grad_cosine", scores, spec, rec)
+
+
 _EMBED_ENCODER = None
 
 

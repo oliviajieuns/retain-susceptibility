@@ -71,6 +71,39 @@ def test_fd_cost_accounting(tiny_model, req, spec):
     assert prof.cost.tokens_fwd > 0 and prof.cost.wall_s > 0
 
 
+def test_one_sided_first_order_control(tiny_model, req, spec):
+    order = [e.example_id for e in req.universe.examples]
+    exact = _as_vec(get_scorer("streaming_backward")(tiny_model, req, spec), order)
+    os_ = _as_vec(get_scorer("one_sided")(tiny_model, req, spec), order)
+    fd = _as_vec(get_scorer("fd")(tiny_model, req, spec), order)
+    # O(eta) truncation: close but strictly noisier than the symmetric probe
+    # (this asymmetry is the paper's reason for the symmetric form)
+    assert torch.allclose(os_, exact, atol=1e-2)
+    assert _spearman(os_, exact) >= 0.98
+    assert (os_ - exact).abs().max() >= (fd - exact).abs().max()
+
+
+def test_grad_cosine_anatomy_identity(tiny_model, req, spec):
+    order = [e.example_id for e in req.universe.examples]
+    a = _as_vec(get_scorer("grad_cosine")(tiny_model, req, spec), order)
+    m = _as_vec(get_scorer("grad_norm")(tiny_model, req, spec), order)
+    dot = _as_vec(get_scorer("streaming_backward")(tiny_model, req, spec), order)
+    assert torch.all(a.abs() <= 1.0 + 1e-12)
+    # eq:score-anatomy: s(x) = m(x) * a(x)
+    assert torch.allclose(m * a, dot, atol=1e-9)
+
+
+def test_diagnostic_subset_frozen(req):
+    from rsus.probe.baselines import diagnostic_subset
+
+    s1 = diagnostic_subset(req, n=5, seed=3)
+    assert s1 == diagnostic_subset(req, n=5, seed=3)
+    assert len(s1) == 5
+    assert diagnostic_subset(req, n=999, seed=3) == sorted(
+        e.example_id for e in req.universe.examples
+    )
+
+
 def test_random_dir_differs_from_fd(tiny_model, req, spec):
     order = [e.example_id for e in req.universe.examples]
     fd = _as_vec(get_scorer("fd")(tiny_model, req, spec), order)

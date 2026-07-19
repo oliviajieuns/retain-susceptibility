@@ -85,3 +85,24 @@ def score_fd(model: torch.nn.Module, request: Request, spec: ProbeSpec) -> Score
         ghat = canonical_forget_direction(model, request, spec, rec)
         scores = fd_scores_along(model, request, spec, ghat, rec)
     return ScoreProfile(request.request_id, "fd", scores, spec, rec)
+
+
+@register("one_sided")
+def score_one_sided(model: torch.nn.Module, request: Request, spec: ProbeSpec) -> ScoreProfile:
+    """First-order control (paper Sec. 4 'Numerical Target'): one perturbed
+    sweep against the origin, {ell(theta0 + eta*ghat) - ell(theta0)} / eta.
+    Also backward-free, but O(eta) truncation versus the symmetric O(eta^2);
+    both origin and perturbed forwards are counted in the measured cost."""
+    rec = CostRecord()
+    with Meter(rec):
+        ghat = canonical_forget_direction(model, request, spec, rec)
+        sel = spec.block.select(model)
+        base = sweep_losses(model, request, spec, rec)
+        saved = save_params(sel)
+        try:
+            set_perturbed_(sel, saved, ghat, +spec.eta)
+            plus = sweep_losses(model, request, spec, rec)
+        finally:
+            load_params_(sel, saved)
+        scores = {cid: (plus[cid] - base[cid]) / spec.eta for cid in base}
+    return ScoreProfile(request.request_id, "one_sided", scores, spec, rec)
