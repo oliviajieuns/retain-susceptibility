@@ -25,6 +25,7 @@ def make_substrate(
     prompt_len: int = 8,
     vocab: int = 128,
     corrupt_prompt_tokens: int = 2,
+    answer_overlap: float = 1.0,
 ) -> tuple[Request, dict[str, str]]:
     gen = torch.Generator().manual_seed(seed)
 
@@ -40,11 +41,21 @@ def make_substrate(
 
     truth: dict[str, str] = {}
     cands: list[Example] = []
+    answer_len = seq_len - prompt_len
+    n_shared = max(1, round(answer_overlap * answer_len))
     for i in range(n_adjacent):
         src = forget[i % n_forget]
         ids = src.input_ids.clone()
         pos = torch.randperm(prompt_len, generator=gen)[:corrupt_prompt_tokens]
         ids[pos] = torch.randint(3, vocab, (corrupt_prompt_tokens,), generator=gen)
+        if n_shared < answer_len:
+            # partial entanglement: keep n_shared answer tokens from the
+            # forget source, replace the rest -- damaged through the shared
+            # portion, repairable through the unique portion
+            fresh = torch.randperm(answer_len, generator=gen)[: answer_len - n_shared]
+            ids[prompt_len + fresh] = torch.randint(
+                3, vocab, (answer_len - n_shared,), generator=gen
+            )
         eid = f"adj{i:02d}"
         cands.append(to_example(eid, ids, group=eid))
         truth[eid] = "adjacent"

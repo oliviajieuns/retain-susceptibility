@@ -62,11 +62,16 @@ def clone_from(state, seed: int):
     return m
 
 
-def memorize(model, examples, steps=350, lr=5e-3):
+def memorize(model, examples, target_loss=0.7, max_steps=400, lr=5e-3):
+    """Memorize to a moderate loss, not to zero: fully saturated candidates
+    have vanishing gradients, which is neither realistic (7B retained
+    behavior sits at natural LM loss levels) nor probe-friendly."""
     opt = torch.optim.AdamW(model.parameters(), lr=lr)
     batch = collate(examples)
-    for _ in range(steps):
+    for _ in range(max_steps):
         loss = seq_mean_answer_nll(model, batch).mean()
+        if float(loss.detach()) <= target_loss:
+            break
         opt.zero_grad(set_to_none=True)
         loss.backward()
         opt.step()
@@ -93,7 +98,8 @@ def main():
 
     for seed in SEEDS:
         req, truth = make_substrate(
-            seed=seed, n_forget=4, n_adjacent=8, n_remote=10, n_decoy=6
+            seed=seed, n_forget=4, n_adjacent=8, n_remote=10, n_decoy=6,
+            answer_overlap=0.5,
         )
         rid = req.request_id
         base = build_tiny(seed)                      # pre-injection reference
@@ -121,18 +127,24 @@ def main():
             gmodel = clone_from(state0, seed)
             rec = run_trajectory(
                 gmodel, gen_name, req, disc_remote,
-                TrajectoryConfig(max_steps=40, checkpoint_every=20, lr=1e-3, seed=seed),
+                TrajectoryConfig(max_steps=30, checkpoint_every=5, lr=5e-4, seed=seed),
                 out_dir=out_dir / f"traj_{rid}_{gen_name}",
             )
             damage_by_opt[gen_name][rid] = {
                 c: v for c, v in rec.damage_at().items() if c in audit_ids
             }
+            term = rec.terminal()
+            rem_dmg = [term.nll[c] - rec.nll0[c] for c in audit_ids if truth[c] == "remote"]
+            print(
+                f"  [{gen_name}] terminal recall={term.forget_recall:.2f} "
+                f"remote_dmg={sum(rem_dmg)/len(rem_dmg):+.3f}"
+            )
 
         # --- T2: protection comparison --------------------------------------
         fd_prof = get_scorer("fd")(clone_from(state0, seed), req, spec)
         part = build_partition(
             fd_prof, req, folds,
-            PartitionParams(pool_size=6, min_pool_size=3, tau_rem_abs_quantile=0.6, seed=seed),
+            PartitionParams(pool_size=4, min_pool_size=3, tau_rem_abs_quantile=0.8, seed=seed),
         )
         protect = [by_id[c] for c in part.protect]
         remote_stream = [by_id[c] for c in part.remote_stream]
@@ -140,14 +152,14 @@ def main():
         utility_audit = {c for c in audit_ids if truth[c] == "remote"}
 
         floor_m = calibrate_floor(base, req)
-        tcfg = TrajectoryConfig(max_steps=60, checkpoint_every=10, lr=2e-3, seed=seed)
+        tcfg = TrajectoryConfig(max_steps=80, checkpoint_every=10, lr=1e-3, seed=seed)
         for method in T2_METHODS:
             mmodel = clone_from(state0, seed)
             if method == "ours":
                 ocfg = OursConfig(
-                    stage1=Stage1Config(lr=5e-3, max_steps=800, eval_every=20, seed=seed),
-                    stage2=Stage2Config(max_steps=40, refresh_k=1, delta_seq_sq=1e-2, delta_tok_sq=1e-1),
-                    stage2_snapshots=2,
+                    stage1=Stage1Config(lr=2e-3, max_steps=800, eval_every=20, seed=seed),
+                    stage2=Stage2Config(max_steps=80, refresh_k=1, delta_seq_sq=1e-2, delta_tok_sq=1e-1),
+                    stage2_snapshots=4,
                 )
                 rec = run_ours_trajectory(
                     mmodel, mlp_down_last_layers(mmodel, 1), req, protect,
@@ -158,7 +170,10 @@ def main():
             else:
                 rec = run_trajectory(mmodel, method, req, disc_remote, tcfg)
             t2_rows[method].append(
-                evaluate_protection(rec, native_audit, utility_audit, RECALL_MAX)
+                evaluate_protection(
+                    rec, native_audit, utility_audit, RECALL_MAX,
+                    mode="last" if method == "ours" else "first",
+                )
             )
         print(f"[request {rid}] done")
 

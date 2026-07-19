@@ -104,7 +104,7 @@ def run_stage1(
             rec.fwd_passes += 2
             rec.bwd_passes += 1
 
-            h_bar = cfg.ema_beta * h_bar + (1.0 - cfg.ema_beta) * float(h)
+            h_bar = cfg.ema_beta * h_bar + (1.0 - cfg.ema_beta) * float(h.detach())
             lam = lam + cfg.rho * h_bar
 
             if step % cfg.eval_every == 0 or step == cfg.max_steps:
@@ -114,7 +114,7 @@ def run_stage1(
                     {
                         "step": step,
                         "min_forget": float(cur.min()),
-                        "h": float(h),
+                        "h": float(h.detach()),
                         "lam": lam,
                         "remote_recall": recall,
                     }

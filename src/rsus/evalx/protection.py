@@ -27,14 +27,27 @@ def first_reaching(record: TrajectoryRecord, recall_max: float) -> Snapshot | No
     return None
 
 
+def last_reaching(record: TrajectoryRecord, recall_max: float) -> Snapshot | None:
+    """Latest reaching checkpoint. For a two-stage procedure whose repair
+    phase keeps the criterion satisfied (the guard's job), the procedure's
+    output is its last emitted checkpoint, not the pre-repair one."""
+    hit = None
+    for snap in record.snapshots:
+        if snap.forget_recall <= recall_max:
+            hit = snap
+    return hit
+
+
 def evaluate_protection(
     record: TrajectoryRecord,
     native_ids: set[str],
     utility_ids: set[str],
     recall_max: float = 0.10,
     cvar_frac: float = 0.05,
+    mode: str = "first",
 ) -> ProtectionOutcome:
-    snap = first_reaching(record, recall_max)
+    picker = {"first": first_reaching, "last": last_reaching}[mode]
+    snap = picker(record, recall_max)
     if snap is None:
         return ProtectionOutcome(False, None, None, None, None)
     dmg = {c: snap.nll[c] - record.nll0[c] for c in record.nll0}
