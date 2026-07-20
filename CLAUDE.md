@@ -11,8 +11,9 @@ Claude Code 세션 컨테이너에는 GPU가 없다 (CPU 검증만 가능).
 - **레포 위치(공식)**: `/group-volume/jieuns.shin/retain-susceptibility` — 홈에 클론하지 말 것.
 - 매 세션 시작 루틴:
   `source /group-volume/jieuns.shin/venvs/exp/bin/activate && cd /group-volume/jieuns.shin/retain-susceptibility`
-- 노드당 H100 80GB × 2 (`nvidia-smi` 확인, 드라이버 535.129.03) — **CUDA_VISIBLE_DEVICES는 0/1만 유효**.
-  "GPU 6장 할당" = 여러 노드에 걸친 것; 한 노드에서 3+ 지정하면 "No CUDA GPUs available"로 즉사.
+- **노드별 GPU 수가 다름**: H100 80GB × 1 또는 × 2 (예: run259703은 1장, run259706은 2장).
+  띄우기 전 반드시 `nvidia-smi`로 개수 확인 — 없는 번호를 CUDA_VISIBLE_DEVICES에 지정하면
+  "No CUDA GPUs available"로 즉사 (드라이버 535.129.03).
 - NVIDIA 드라이버 CUDA 12.2 (12020).
   - torch는 **cu12x 빌드만** 동작. cu130(torch 2.13 PyPI 기본)은 실패.
   - 검증된 조합: torch 2.5.1+cu121, torch 2.7.1+cu126 (둘 다 cuda=True 확인됨).
