@@ -92,6 +92,8 @@ def run_engine_repaired(
         if log is not None:
             s = rec.snapshots[-1]
             mean_d = sum(s.nll[c] - rec.nll0[c] for c in rec.nll0) / len(rec.nll0)
+            pids = [e.example_id for e in protect if e.example_id in rec.nll0]
+            prot_d = (sum(s.nll[c] - rec.nll0[c] for c in pids) / len(pids)) if pids else float("nan")
             log(f"  repair chunk: step={s.step} forget_recall={s.forget_recall:.3f}"
-                f" mean_dnll_all={mean_d:+.3f}")
+                f" mean_dnll_all={mean_d:+.3f} mean_dnll_protect={prot_d:+.3f}")
     return rec
