@@ -66,6 +66,9 @@ def parse_args():
     p.add_argument("--gen-steps-per", default="",
                    help="per-generator step overrides, e.g. 'npo=240,rmu=120' "
                         "(unlisted generators keep --gen-steps)")
+    p.add_argument("--gen-lr-per", default="",
+                   help="per-generator lr overrides, e.g. 'npo=6e-6' "
+                        "(unlisted generators keep --gen-lr)")
     p.add_argument("--gen-ckpt-every", type=int, default=10)
     p.add_argument("--s1-lr", type=float, default=1e-5)
     p.add_argument("--s1-max-steps", type=int, default=600)
@@ -202,12 +205,15 @@ def main():
     import dataclasses as _dc
     gen_steps_per = {k: int(v) for k, v in
                      (kv.split("=") for kv in a.gen_steps_per.split(",") if kv.strip())}
+    gen_lr_per = {k: float(v) for k, v in
+                  (kv.split("=") for kv in a.gen_lr_per.split(",") if kv.strip())}
     retain_gen = [by_id[c] for c in disc_ids]
     markers = []
     damage_by_opt: dict[str, dict[str, dict[str, float]]] = {}
     for g in GENERATORS:
         log(f"generator: {g}")
-        cfg_g = _dc.replace(gen_cfg, max_steps=gen_steps_per.get(g, a.gen_steps))
+        cfg_g = _dc.replace(gen_cfg, max_steps=gen_steps_per.get(g, a.gen_steps),
+                            lr=gen_lr_per.get(g, a.gen_lr))
         rec = run_trajectory(fresh(), g, req, retain_gen, cfg_g, out_dir=out / f"traj_{g}")
         markers.append(out / f"traj_{g}" / "DONE")
         term = rec.terminal()
