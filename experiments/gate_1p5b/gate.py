@@ -67,6 +67,10 @@ def parse_args():
     p.add_argument("--s1-lr", type=float, default=1e-5)
     p.add_argument("--s1-max-steps", type=int, default=600)
     p.add_argument("--s2-steps", type=int, default=80)
+    p.add_argument("--t2-steps", type=int, default=0,
+                   help="step budget for single-stage T2 arms (0 = inherit --gen-steps)")
+    p.add_argument("--t2-lr", type=float, default=0.0,
+                   help="lr for single-stage T2 arms (0 = inherit --gen-lr)")
     p.add_argument("--pool-size", type=int, default=32)
     p.add_argument("--seed", type=int, default=2025)
     p.add_argument(
@@ -280,7 +284,10 @@ def main():
 
             objective = "npo" if method == "npo_transplant" else method
             retain = protect if method == "npo_transplant" else retain_matched
-            cfg_m = _dc.replace(gen_cfg, idk_examples=idk) if method == "idkdpo" else gen_cfg
+            cfg_m = _dc.replace(gen_cfg, max_steps=a.t2_steps or a.gen_steps,
+                                lr=a.t2_lr or a.gen_lr)
+            if method == "idkdpo":
+                cfg_m = _dc.replace(cfg_m, idk_examples=idk)
             rec = run_trajectory(m, objective, req, retain, cfg_m, extra_eval=extra_eval)
         outp = evaluate_protection(rec, native_ids=audit_ids, utility_ids=set(),
                                    recall_max=0.10,
