@@ -79,6 +79,11 @@ def parse_args():
     p.add_argument("--gen-ckpt-every", type=int, default=10)
     p.add_argument("--s1-lr", type=float, default=1e-5)
     p.add_argument("--s1-max-steps", type=int, default=600)
+    p.add_argument("--partition-predictor", default="fd",
+                   help="scored predictor whose profile builds the protect partition "
+                        "for ours/npo_transplant (e.g. grad_norm, knn_feature). "
+                        "fd is the preregistered default; it anticorrelates with damage "
+                        "on 1.5B TOFU, mis-targeting the protect pool.")
     p.add_argument("--s1-recall-gate", type=float, default=0.0,
                    help="if >0, stage-1 (ours/s2s) must also push forget argmax recall "
                         "to <= this before exiting — aligns its stopping point with the "
@@ -266,12 +271,12 @@ def main():
             + f"{r['auroc']['mean']:8.3f}{r['overlap']['mean']:8.3f}")
 
     # ---- protection (T2 mini) -------------------------------------------------
-    fd_prof_scores = scores_by_pred["fd"]
+    part_scores = scores_by_pred[a.partition_predictor]
     from rsus.costs import CostRecord
     from rsus.probe.base import ScoreProfile
 
     part = build_partition(
-        ScoreProfile(req.request_id, "fd", fd_prof_scores, spec, CostRecord()),
+        ScoreProfile(req.request_id, a.partition_predictor, part_scores, spec, CostRecord()),
         req, folds,
         PartitionParams(pool_size=a.pool_size, min_pool_size=4, tau_rem_abs_quantile=0.6,
                         seed=a.seed),
