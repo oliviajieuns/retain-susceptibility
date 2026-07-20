@@ -79,6 +79,10 @@ def parse_args():
     p.add_argument("--gen-ckpt-every", type=int, default=10)
     p.add_argument("--s1-lr", type=float, default=1e-5)
     p.add_argument("--s1-max-steps", type=int, default=600)
+    p.add_argument("--s1-recall-gate", type=float, default=0.0,
+                   help="if >0, stage-1 (ours/s2s) must also push forget argmax recall "
+                        "to <= this before exiting — aligns its stopping point with the "
+                        "T2 common criterion (recall_max=0.10). 0 = floor-only exit.")
     p.add_argument("--s2-steps", type=int, default=80)
     p.add_argument("--t2-steps", type=int, default=0,
                    help="step budget for single-stage T2 arms (0 = inherit --gen-steps)")
@@ -292,7 +296,8 @@ def main():
         log(f"paraphrase audit unavailable: {e}")
 
     s1_cfg = Stage1Config(lr=a.s1_lr, max_steps=a.s1_max_steps, eval_every=20,
-                          batch_size=a.batch_size, seed=a.seed)
+                          batch_size=a.batch_size, seed=a.seed,
+                          forget_recall_max=a.s1_recall_gate or None)
     s2_cfg = Stage2Config(max_steps=a.s2_steps, refresh_k=4,
                           delta_seq_sq=1e-2, delta_tok_sq=1e-1, batch_size=a.batch_size)
     idk = idk_variants(tokenizer, list(req.forget))

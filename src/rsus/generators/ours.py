@@ -43,10 +43,12 @@ def run_ours_trajectory(
     res1 = run_stage1(model, request, remote, floor_m, cfg.stage1)
     if log is not None:
         last = res1.history[-1] if res1.history else {}
+        fr = last.get("forget_recall")
         log(f"  stage-1: passed={res1.gate_passed} steps={res1.steps}"
             f" min_forget={last.get('min_forget', float('nan')):.2f}/{floor_m:.2f}"
             f" remote_recall={last.get('remote_recall', float('nan')):.3f}"
-            f" lam={res1.lam:.3f}")
+            + (f" forget_recall={fr:.3f}" if fr is not None else "")
+            + f" lam={res1.lam:.3f}")
     rec.snapshots.append(
         Snapshot(res1.steps, _candidate_nll(model, request, cfg.batch_size), _forget_recall(model, request), _extra(model))
     )

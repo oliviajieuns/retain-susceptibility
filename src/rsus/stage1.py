@@ -51,6 +51,9 @@ class Stage1Config:
     eval_every: int = 10
     clip_offset: float = 1.0          # c = m + clip_offset
     remote_recall_frac: float = 0.90
+    forget_recall_max: float | None = None  # extra exit condition: forget argmax
+    # recall <= this (aligns the exit with a recall-based common criterion; the
+    # clip ceiling lifts while unmet so ascent pressure does not stall at c)
     batch_size: int = 8
     remote_batch_size: int = 8
     remote_probe_cap: int = 256
@@ -110,6 +113,8 @@ def run_stage1(
             if step % cfg.eval_every == 0 or step == cfg.max_steps:
                 _, cur = forget_seq_losses(model, request, cfg.batch_size)
                 recall = mean_recall(model, probe, cfg.batch_size)
+                f_recall = (mean_recall(model, list(request.forget), cfg.batch_size)
+                            if cfg.forget_recall_max is not None else None)
                 history.append(
                     {
                         "step": step,
@@ -117,11 +122,17 @@ def run_stage1(
                         "h": float(h.detach()),
                         "lam": lam,
                         "remote_recall": recall,
+                        "forget_recall": f_recall,
                     }
                 )
-                if float(cur.min()) >= floor_m and recall >= cfg.remote_recall_frac * base_recall:
+                floor_ok = float(cur.min()) >= floor_m
+                remote_ok = recall >= cfg.remote_recall_frac * base_recall
+                recall_ok = f_recall is None or f_recall <= cfg.forget_recall_max
+                if floor_ok and remote_ok and recall_ok:
                     gate_passed = True
                     break
+                if floor_ok and not recall_ok and float(cur.min()) >= c - 0.25:
+                    c += cfg.clip_offset  # lift the clip so ascent can continue
 
         cache = build_ref_cache(model, request, cfg.batch_size, floor_m) if gate_passed else None
     return Stage1Result(gate_passed, steps, floor_m, lam, cache, history, rec)
