@@ -61,7 +61,9 @@ def build_world(a):
         from rsus.data.tofu import load_tofu_examples, tofu_request
 
         tokenizer = AutoTokenizer.from_pretrained(a.model)
-        model = AutoModelForCausalLM.from_pretrained(a.model, torch_dtype=torch.float32)
+        # eager attention: the jvp comparator drives forward-mode AD, which SDPA kernels lack
+        model = AutoModelForCausalLM.from_pretrained(a.model, torch_dtype=torch.float32,
+                                                     attn_implementation="eager")
         model = model.to(a.device).eval()
         examples = load_tofu_examples(tokenizer)
         req = tofu_request(a.author, examples, universe_authors=a.universe_authors, seed=a.seed)
