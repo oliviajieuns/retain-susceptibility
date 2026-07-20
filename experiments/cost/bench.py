@@ -36,6 +36,9 @@ def parse_args():
     p.add_argument("--block-last-n", type=int, default=8)
     p.add_argument("--eta", type=float, default=3e-4)
     p.add_argument("--batch-size", type=int, default=8)
+    p.add_argument("--dtype", default="float32", choices=["float32", "bfloat16"],
+                   help="7B fp32 + per-sample reverse-mode grads exceeds 80GB; "
+                        "use bfloat16 (and/or a smaller --batch-size) at that scale")
     p.add_argument("--repeats", type=int, default=5)
     p.add_argument("--seed", type=int, default=2025)
     p.add_argument("--smoke", action="store_true")
@@ -61,8 +64,9 @@ def build_world(a):
         from rsus.data.tofu import load_tofu_examples, tofu_request
 
         tokenizer = AutoTokenizer.from_pretrained(a.model)
+        dtype = torch.float32 if a.dtype == "float32" else torch.bfloat16
         # eager attention: the jvp comparator drives forward-mode AD, which SDPA kernels lack
-        model = AutoModelForCausalLM.from_pretrained(a.model, torch_dtype=torch.float32,
+        model = AutoModelForCausalLM.from_pretrained(a.model, torch_dtype=dtype,
                                                      attn_implementation="eager")
         model = model.to(a.device).eval()
         examples = load_tofu_examples(tokenizer)
@@ -88,16 +92,33 @@ def main():
     rows = []
     for name in IMPLEMENTATIONS:
         walls, mems, thrpts = [], [], []
+        oom = False
         for r in range(a.repeats):
-            rec = get_scorer(name)(model, req, spec).cost
+            try:
+                rec = get_scorer(name)(model, req, spec).cost
+            except torch.OutOfMemoryError as e:
+                print({"impl": name, "oom": str(e)[:120]})
+                oom = True
+                torch.cuda.empty_cache()
+                break
             walls.append(rec.wall_s)
             mems.append(rec.peak_mem_bytes)
             thrpts.append(rec.tokens_fwd / rec.wall_s if rec.wall_s > 0 else 0.0)
+            if a.device == "cuda":
+                torch.cuda.empty_cache()
+        if oom:
+            rows.append({"impl": name, "dtype": a.dtype, "wall_s_med": "OOM",
+                         "wall_s_q1": "", "wall_s_q3": "", "peak_mem_mb": "",
+                         "tok_per_s_med": "",
+                         "cand_reverse_mode": name in ("vmap_graddot", "streaming_backward")})
+            print(rows[-1])
+            continue
         w = med_iqr(walls)
         t = med_iqr(thrpts)
         rows.append(
             {
                 "impl": name,
+                "dtype": a.dtype,
                 "wall_s_med": round(w[0], 4), "wall_s_q1": round(w[1], 4), "wall_s_q3": round(w[2], 4),
                 "peak_mem_mb": round(max(mems) / 1e6, 1),
                 "tok_per_s_med": round(t[0], 1),

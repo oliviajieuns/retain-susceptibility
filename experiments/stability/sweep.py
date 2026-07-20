@@ -113,7 +113,14 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     rows = []
     for factor, label, scorer, spec in variants:
-        prof = get_scorer(scorer)(model, req, spec)
+        try:
+            prof = get_scorer(scorer)(model, req, spec)
+        except ValueError as e:
+            # e.g. 'last layer' targets lm_head.weight, which does not exist as a
+            # standalone parameter on tied-embedding models (Qwen2.5): skip the
+            # variant instead of losing the sweep.
+            print({"factor": factor, "variant": label, "skipped": str(e)})
+            continue
         # block variants target a different derivative; compare against their
         # own exact reference so the row measures estimator fidelity, and
         # against the default reference for coordinate dependence. Forward-mode
