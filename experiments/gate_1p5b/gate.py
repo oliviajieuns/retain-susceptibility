@@ -84,6 +84,9 @@ def parse_args():
                    help="step budget for single-stage T2 arms (0 = inherit --gen-steps)")
     p.add_argument("--t2-lr", type=float, default=0.0,
                    help="lr for single-stage T2 arms (0 = inherit --gen-lr)")
+    p.add_argument("--t2-lr-per", default="",
+                   help="per-method T2 lr overrides, e.g. 'npo=8e-6,simnpo=8e-6' "
+                        "(unlisted methods keep --t2-lr / --gen-lr)")
     p.add_argument("--pool-size", type=int, default=32)
     p.add_argument("--seed", type=int, default=2025)
     p.add_argument(
@@ -313,8 +316,10 @@ def main():
 
                 objective = "npo" if method == "npo_transplant" else method
                 retain = protect if method == "npo_transplant" else retain_matched
+                t2_lr_per = {k: float(v) for k, v in
+                             (kv.split("=") for kv in a.t2_lr_per.split(",") if kv.strip())}
                 cfg_m = _dc.replace(gen_cfg, max_steps=a.t2_steps or a.gen_steps,
-                                    lr=a.t2_lr or a.gen_lr)
+                                    lr=t2_lr_per.get(method, a.t2_lr or a.gen_lr))
                 if method == "idkdpo":
                     cfg_m = _dc.replace(cfg_m, idk_examples=idk)
                 rec = run_trajectory(m, objective, req, retain, cfg_m, extra_eval=extra_eval)
