@@ -63,6 +63,9 @@ def parse_args():
     p.add_argument("--sft-target-loss", type=float, default=0.8)
     p.add_argument("--gen-lr", type=float, default=2e-6)
     p.add_argument("--gen-steps", type=int, default=60)
+    p.add_argument("--gen-steps-per", default="",
+                   help="per-generator step overrides, e.g. 'npo=240,rmu=120' "
+                        "(unlisted generators keep --gen-steps)")
     p.add_argument("--gen-ckpt-every", type=int, default=10)
     p.add_argument("--s1-lr", type=float, default=1e-5)
     p.add_argument("--s1-max-steps", type=int, default=600)
@@ -196,12 +199,16 @@ def main():
     # ---- independent generator trajectories ----------------------------------
     gen_cfg = TrajectoryConfig(max_steps=a.gen_steps, checkpoint_every=a.gen_ckpt_every,
                                lr=a.gen_lr, batch_size=a.batch_size, seed=a.seed)
+    import dataclasses as _dc
+    gen_steps_per = {k: int(v) for k, v in
+                     (kv.split("=") for kv in a.gen_steps_per.split(",") if kv.strip())}
     retain_gen = [by_id[c] for c in disc_ids]
     markers = []
     damage_by_opt: dict[str, dict[str, dict[str, float]]] = {}
     for g in GENERATORS:
         log(f"generator: {g}")
-        rec = run_trajectory(fresh(), g, req, retain_gen, gen_cfg, out_dir=out / f"traj_{g}")
+        cfg_g = _dc.replace(gen_cfg, max_steps=gen_steps_per.get(g, a.gen_steps))
+        rec = run_trajectory(fresh(), g, req, retain_gen, cfg_g, out_dir=out / f"traj_{g}")
         markers.append(out / f"traj_{g}" / "DONE")
         term = rec.terminal()
         dmg_all = rec.damage_at()
