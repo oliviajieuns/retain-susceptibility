@@ -15,22 +15,23 @@ Claude Code 세션 컨테이너에는 GPU가 없다 (CPU 검증만 가능).
 - 영구(공유볼륨): `/group-volume/jieuns.shin/venvs/exp` — torch 2.5.1+cu121 동작 확인.
 - 홈(노드 공유 여부 확인됨, run259706): `~/.venv` — torch 2.7.1+cu126 동작 확인.
 - activate만 하면 됨: `source /group-volume/jieuns.shin/venvs/exp/bin/activate`
-- 환경변수는 activate 스크립트 끝에 추가돼 있음(또는 추가 예정):
-  `HF_HOME`, `HF_HUB_OFFLINE=1`, `TRANSFORMERS_OFFLINE=1`
+- 환경변수: `HF_HOME=/group-volume/data/hf_home`만 필요.
+  **`HF_HUB_OFFLINE`/`TRANSFORMERS_OFFLINE`은 설정하지 말 것** — 클러스터에서 HF Hub 접속 가능함이
+  확인됨(2026-07-20, full/forget10_perturbed 자동 다운로드 성공). exp venv의 activate에 이 플래그를
+  추가해뒀다면 제거할 것.
 
 ### 네트워크 (사내망 차단 사항)
 - GitHub SSH(포트 22) 차단 → HTTPS + PAT로 클론.
-- Hugging Face 차단 → 오프라인 캐시 사용 (아래).
+- Hugging Face Hub: **접속 가능** (다운로드 확인됨). HF_HOME만 공유볼륨으로 잡아 캐시 재사용.
 - pip 인덱스는 사내 artifactory(`bart.sec.samsung.net`) 미러 — 일반 PyPI 패키지 설치 가능.
   `download.pytorch.org` 사용 불가, PyPI 기본 인덱스의 torch를 쓸 것.
 
 ### HF 데이터 캐시 (오프라인)
 - 마운트: `/group-volume` (= `/home/user/group-volume`).
-- 주 캐시: `HF_HOME=/group-volume/data/hf_home` — TOFU forget10/retain90 확인됨.
-- 보조 캐시: `/group-volume/data/TOFU/hf_home` — forget10_perturbed, real_authors 등 더 많은 컨피그.
-- 미해결(2026-07-20): TOFU `full` 컨피그와 Qwen2.5-1.5B-Instruct 모델이 캐시에 있는지 미확인.
-  없으면 외부망에서 받아 volume 반입 필요. `full`을 retain90+forget10 이어붙이기로 대체하지 말 것
-  (코드가 원본 행 순서 200저자×20행에 의존).
+- 주 캐시: `HF_HOME=/group-volume/data/hf_home` — TOFU `full`(4000), `forget10_perturbed`(400) 포함
+  전 컨피그 로드 확인 완료(2026-07-20). 사용자 확인: Qwen 모델도 준비돼 있음.
+- 보조 캐시: `/group-volume/data/TOFU/hf_home` (다른 실험용, 이 레포는 주 캐시만 쓰면 됨).
+- 데이터/모델 반입 작업 불필요 — 사용자에게 재확인시키지 말 것.
 
 ### Claude Code 세션 컨테이너 쪽 (참고)
 - GPU 없음, HF/download.pytorch.org 프록시 차단, PyPI는 허용.
