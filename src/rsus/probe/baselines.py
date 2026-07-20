@@ -22,7 +22,7 @@ from rsus.blocks import (
 )
 from rsus.costs import CostRecord, Meter
 from rsus.data.base import Request, collate
-from rsus.losses import IGNORE, _shifted_nll, seq_mean_answer_nll
+from rsus.losses import IGNORE, _shifted_nll, batch_to_model_device, seq_mean_answer_nll
 from rsus.probe.base import ProbeSpec, ScoreProfile, register
 from rsus.probe.finite_diff import canonical_forget_direction, fd_scores_along
 
@@ -89,6 +89,7 @@ def _mean_pooled_reps(model: torch.nn.Module, batches, rec: CostRecord) -> dict[
     reps: dict[str, torch.Tensor] = {}
     with torch.no_grad():
         for batch in batches:
+            batch = batch_to_model_device(model, batch)
             out = model(
                 input_ids=batch["input_ids"],
                 attention_mask=batch["attention_mask"],
@@ -125,6 +126,7 @@ def score_knn_feature(model: torch.nn.Module, request: Request, spec: ProbeSpec)
 def _head_grads(model: torch.nn.Module, batch: dict, rec: CostRecord) -> dict[str, torch.Tensor]:
     """Forward-only closed-form per-example gradient of the mean answer NLL
     w.r.t. lm_head.weight: (1/T) sum_t (softmax(logit_t) - onehot(y_t)) h_t^T."""
+    batch = batch_to_model_device(model, batch)
     with torch.no_grad():
         out = model(
             input_ids=batch["input_ids"],

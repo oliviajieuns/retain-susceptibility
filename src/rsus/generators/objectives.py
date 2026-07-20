@@ -10,7 +10,7 @@ import torch
 
 from rsus.data.base import Example, Request, collate
 from rsus.generators.base import TrajectoryConfig, register_objective
-from rsus.losses import IGNORE, seq_mean_answer_nll
+from rsus.losses import IGNORE, batch_to_model_device, seq_mean_answer_nll
 
 
 class _Base:
@@ -158,6 +158,7 @@ class RMU(_Base):
             self.retain_h0 = self._answer_hiddens(self.retain_batch).detach()
 
     def _answer_hiddens(self, batch: dict) -> torch.Tensor:
+        batch = batch_to_model_device(self.model, batch)
         out = self.model(
             input_ids=batch["input_ids"],
             attention_mask=batch["attention_mask"],
@@ -169,7 +170,7 @@ class RMU(_Base):
 
     def step(self) -> float:
         h_f = self._answer_hiddens(self.forget_batch)
-        misdirect = (h_f - self.control.to(h_f.dtype)).pow(2).sum(dim=-1).mean()
+        misdirect = (h_f - self.control.to(device=h_f.device, dtype=h_f.dtype)).pow(2).sum(dim=-1).mean()
         h_r = self._answer_hiddens(self.retain_batch)
         pin = (h_r - self.retain_h0).pow(2).sum(dim=-1).mean()
         return self._update(misdirect + self.cfg.rmu_alpha * pin)

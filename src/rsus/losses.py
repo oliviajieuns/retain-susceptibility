@@ -14,6 +14,17 @@ import torch.nn.functional as F
 IGNORE = -100
 
 
+def batch_to_model_device(model: torch.nn.Module, batch: dict) -> dict:
+    """Return ``batch`` with tensor values on the model's device.
+
+    Collate produces CPU tensors; every consumer that feeds a model goes
+    through here so CUDA runs work regardless of where the batch was built.
+    No-op (and no copy) when devices already match.
+    """
+    device = next(model.parameters()).device
+    return {k: v.to(device) if torch.is_tensor(v) else v for k, v in batch.items()}
+
+
 def _shifted_nll(logits: torch.Tensor, labels: torch.Tensor) -> tuple[torch.Tensor, torch.Tensor]:
     """Per-position NLL under next-token teacher forcing.
 
@@ -32,6 +43,7 @@ def _shifted_nll(logits: torch.Tensor, labels: torch.Tensor) -> tuple[torch.Tens
 
 def seq_mean_answer_nll(model: torch.nn.Module, batch: dict) -> torch.Tensor:
     """Mean answer-token NLL per sequence, shape [B]. Differentiable."""
+    batch = batch_to_model_device(model, batch)
     out = model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"])
     nll, mask = _shifted_nll(out.logits, batch["labels"])
     counts = mask.sum(dim=1)
@@ -49,6 +61,7 @@ def token_answer_nll(
     ``answer_pos`` is the 0-based position among that example's answer tokens,
     so the index map is invariant to batch composition and padding.
     """
+    batch = batch_to_model_device(model, batch)
     out = model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"])
     nll, mask = _shifted_nll(out.logits, batch["labels"])
     flat: list[torch.Tensor] = []

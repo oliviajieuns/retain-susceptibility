@@ -14,7 +14,7 @@ from torch.func import functional_call, grad, vmap
 from rsus.blocks import grads_of, only_block_grads, vec_dot
 from rsus.costs import CostRecord, Meter
 from rsus.data.base import Request, collate
-from rsus.losses import _shifted_nll, seq_mean_answer_nll
+from rsus.losses import _shifted_nll, batch_to_model_device, seq_mean_answer_nll
 from rsus.probe.base import ProbeSpec, ScoreProfile, register
 from rsus.probe.finite_diff import canonical_forget_direction
 
@@ -64,6 +64,7 @@ def score_vmap_graddot(model: torch.nn.Module, request: Request, spec: ProbeSpec
         scores: dict[str, float] = {}
         impl = "vmap"
         for batch in request.universe.batches(spec.batch_size):
+            batch = batch_to_model_device(model, batch)
             ids, mask, labels = batch["input_ids"], batch["attention_mask"], batch["labels"]
             try:
                 per_sample = vmap(gfn, in_dims=(None, 0, 0, 0))(primal, ids, mask, labels)

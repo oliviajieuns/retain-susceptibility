@@ -11,7 +11,7 @@ from torch.func import functional_call
 
 from rsus.costs import CostRecord, Meter
 from rsus.data.base import Request
-from rsus.losses import _shifted_nll
+from rsus.losses import _shifted_nll, batch_to_model_device
 from rsus.probe.base import ProbeSpec, ScoreProfile, register
 from rsus.probe.finite_diff import canonical_forget_direction
 
@@ -37,6 +37,7 @@ def score_jvp(model: torch.nn.Module, request: Request, spec: ProbeSpec) -> Scor
         tangent = {n: ghat[n] for n in sel}
         scores: dict[str, float] = {}
         for batch in request.universe.batches(spec.batch_size):
+            batch = batch_to_model_device(model, batch)
             _, dirderiv = torch.func.jvp(
                 lambda bp: _batch_seq_losses(model, bp, batch), (primal,), (tangent,)
             )

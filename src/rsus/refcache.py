@@ -65,9 +65,9 @@ def build_ref_cache(
     tok_index, tok_refs = forget_tok_losses(model, request, batch_size)
     h = hashlib.sha256()
     h.update(repr(seq_ids).encode())
-    h.update(seq_refs.double().numpy().tobytes())
+    h.update(seq_refs.detach().cpu().double().numpy().tobytes())
     h.update(repr(tok_index).encode())
-    h.update(tok_refs.double().numpy().tobytes())
+    h.update(tok_refs.detach().cpu().double().numpy().tobytes())
     h.update(f"{floor_m:.12e}".encode())
     return RefCache(seq_ids, seq_refs.detach(), tok_index, tok_refs.detach(), floor_m, h.hexdigest())
 
