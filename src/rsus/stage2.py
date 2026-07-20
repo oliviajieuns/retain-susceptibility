@@ -87,6 +87,8 @@ def _project(v: ParamVec, basis: list[ParamVec], ridge_scale: float, cond_max: f
     """ghat = v - sum_i zeta_i b_i with zeta = (G + eps I)^{-1} [<b_i, v>]
     (paper eq:projection). Falls back to single-basis projection onto the
     forget-ascent direction when the basis Gram matrix is ill-conditioned."""
+    if not basis:
+        return dict(v)
     k = len(basis)
     G = torch.empty((k, k), dtype=torch.float64)
     for i in range(k):
@@ -163,7 +165,10 @@ def run_stage2(
         lam_seq = lam_tok = 0.0
         eta2 = cfg.eta2
         snapshot = (save_params(sel), {n: t.clone() for n, t in v.items()})
-        basis: list[ParamVec] = []
+        # Basis of the entry state: a refresh that rejects at t=0 reverts to the
+        # snapshot (= entry params), so this stays the correct projection basis
+        # until the first accepted refresh replaces it.
+        basis = _basis(model, sel, request, remote_probe, cfg.batch_size, rec)
         events: list[RefreshEvent] = []
         n_acc = n_rej = 0
         adj_batch = collate(adjacent)

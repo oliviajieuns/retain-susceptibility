@@ -283,34 +283,41 @@ def main():
     t2 = {}
     for method in [x.strip() for x in a.t2_roster.split(",") if x.strip()]:
         log(f"protection method: {method}")
-        m = fresh()
         two_stage = method in ("ours", "s2s")
-        if method == "ours":
-            ocfg = OursConfig(stage1=s1_cfg, stage2=s2_cfg,
-                              batch_size=a.batch_size, stage2_snapshots=4)
-            rec = run_ours_trajectory(m, mlp_down_last_layers(m, a.block_last_n), req,
-                                      protect, remote_stream, floor_m, ocfg,
-                                      extra_eval=extra_eval)
-        elif method == "s2s":
-            scfg = S2SConfig(stage1=s1_cfg, stage2=s2_cfg,
-                             partition=PartitionParams(pool_size=a.pool_size, min_pool_size=4,
-                                                       tau_rem_abs_quantile=0.6, seed=a.seed),
-                             batch_size=a.batch_size)
-            rec = run_s2s_trajectory(m, mlp_down_last_layers(m, a.block_last_n), req,
-                                     folds, floor_m, scfg, extra_eval=extra_eval)
-        else:
-            import dataclasses as _dc
+        try:
+            m = fresh()
+            if method == "ours":
+                ocfg = OursConfig(stage1=s1_cfg, stage2=s2_cfg,
+                                  batch_size=a.batch_size, stage2_snapshots=4)
+                rec = run_ours_trajectory(m, mlp_down_last_layers(m, a.block_last_n), req,
+                                          protect, remote_stream, floor_m, ocfg,
+                                          extra_eval=extra_eval)
+            elif method == "s2s":
+                scfg = S2SConfig(stage1=s1_cfg, stage2=s2_cfg,
+                                 partition=PartitionParams(pool_size=a.pool_size, min_pool_size=4,
+                                                           tau_rem_abs_quantile=0.6, seed=a.seed),
+                                 batch_size=a.batch_size)
+                rec = run_s2s_trajectory(m, mlp_down_last_layers(m, a.block_last_n), req,
+                                         folds, floor_m, scfg, extra_eval=extra_eval)
+            else:
+                import dataclasses as _dc
 
-            objective = "npo" if method == "npo_transplant" else method
-            retain = protect if method == "npo_transplant" else retain_matched
-            cfg_m = _dc.replace(gen_cfg, max_steps=a.t2_steps or a.gen_steps,
-                                lr=a.t2_lr or a.gen_lr)
-            if method == "idkdpo":
-                cfg_m = _dc.replace(cfg_m, idk_examples=idk)
-            rec = run_trajectory(m, objective, req, retain, cfg_m, extra_eval=extra_eval)
-        outp = evaluate_protection(rec, native_ids=audit_ids, utility_ids=set(),
-                                   recall_max=0.10,
-                                   mode="last" if two_stage else "first")
+                objective = "npo" if method == "npo_transplant" else method
+                retain = protect if method == "npo_transplant" else retain_matched
+                cfg_m = _dc.replace(gen_cfg, max_steps=a.t2_steps or a.gen_steps,
+                                    lr=a.t2_lr or a.gen_lr)
+                if method == "idkdpo":
+                    cfg_m = _dc.replace(cfg_m, idk_examples=idk)
+                rec = run_trajectory(m, objective, req, retain, cfg_m, extra_eval=extra_eval)
+            outp = evaluate_protection(rec, native_ids=audit_ids, utility_ids=set(),
+                                       recall_max=0.10,
+                                       mode="last" if two_stage else "first")
+        except Exception as e:  # noqa: BLE001  (one arm must not sink the table)
+            import traceback
+            log(f"  ERROR {type(e).__name__}: {e}")
+            log(traceback.format_exc())
+            t2[method] = {"reached": False, "error": f"{type(e).__name__}: {e}"}
+            continue
         t2[method] = vars(outp)
         para = (outp.extra or {}).get("para_recall")
         log(f"  reach={outp.reached} step={outp.step} "

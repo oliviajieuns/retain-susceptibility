@@ -187,3 +187,15 @@ def test_inv10_toy_e2e_repair_without_breach(world):
     tol = math.sqrt(n * cfg.delta_seq_sq)
     _, cur = forget_seq_losses(model, world["req"], 8)
     assert float(cur.min()) >= world["m"] - tol - 0.05, (float(cur.min()), world["m"])
+
+
+def test_project_empty_basis_is_identity():
+    """Regression: chunked stage-2 entry with a rejecting first refresh used to
+    reach _project with an empty basis and crash on eig.min() of a 0x0 Gram."""
+    import torch
+
+    from rsus.stage2 import _project
+
+    v = {"w": torch.arange(3, dtype=torch.float64)}
+    out = _project(v, [], ridge_scale=0.0, cond_max=1e8)
+    assert torch.equal(out["w"], v["w"])
