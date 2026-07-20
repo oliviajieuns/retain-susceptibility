@@ -65,8 +65,9 @@ Claude Code 세션 컨테이너에는 GPU가 없다 (CPU 검증만 가능).
   (npo rho 0.400 vs 0.489, AUROC 0.631 vs 0.736) — backward-free 프로파일 성립.
 - **T2 기준선(fp32, beta 0.1)**: npo 1.148 nats (30스텝) / graddiff 1.943 / rmu 0.023.
   NPO 계열은 beta 0.1 필수(1.0이면 그래디언트 소멸로 reach 불가).
-- **stage-2 eta2=5e-3(토이 이식값)은 1.5B에서 파괴적** (npo 1.15 → repair 후 130).
-  --s2-eta2로 낮춰서 캘리브레이션 중. 파티션은 --partition-predictor grad_norm.
+- **stage-2 eta2 캘리브레이션 완료**: 5e-3(토이 이식값)·1e-4는 발산(88→152 nats,
+  one-sided 가드는 위쪽 파괴를 못 봄), **1e-5는 안정 수렴 → npo 1.150 → npo_repaired 1.122**
+  (CVaR -3.5%, 망각 무손실) — guarded repair 첫 성립. 파티션은 --partition-predictor grad_norm.
 
 ### Claude Code 세션 컨테이너 쪽 (참고)
 - GPU 없음, HF/download.pytorch.org 프록시 차단, PyPI는 허용.
