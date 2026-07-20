@@ -7,6 +7,10 @@ Claude Code 세션 컨테이너에는 GPU가 없다 (CPU 검증만 가능).
 
 ### 접속/노드
 - 노드 예: `run259705-ufail`, `run259706-ufail3` — 세션마다 노드가 바뀔 수 있음.
+- **홈 디렉토리는 노드 로컬** (노드 간 공유 안 됨). 영구 저장은 `/group-volume`뿐.
+- **레포 위치(공식)**: `/group-volume/jieuns.shin/retain-susceptibility` — 홈에 클론하지 말 것.
+- 매 세션 시작 루틴:
+  `source /group-volume/jieuns.shin/venvs/exp/bin/activate && cd /group-volume/jieuns.shin/retain-susceptibility`
 - 노드당 H100 80GB × 2, NVIDIA 드라이버 CUDA 12.2 (12020).
   - torch는 **cu12x 빌드만** 동작. cu130(torch 2.13 PyPI 기본)은 실패.
   - 검증된 조합: torch 2.5.1+cu121, torch 2.7.1+cu126 (둘 다 cuda=True 확인됨).
