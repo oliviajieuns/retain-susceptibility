@@ -61,8 +61,10 @@ def vec_unit(a: ParamVec) -> ParamVec:
 
 
 def vec_randn_like(sel: dict[str, torch.nn.Parameter], generator: torch.Generator) -> ParamVec:
+    # sample on the generator's device (CPU) then move: torch.randn rejects a
+    # CPU generator with a CUDA target, and this keeps draws device-invariant
     return {
-        n: torch.randn(p.shape, generator=generator, dtype=p.dtype, device=p.device)
+        n: torch.randn(p.shape, generator=generator, dtype=p.dtype).to(p.device)
         for n, p in sel.items()
     }
 

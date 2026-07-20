@@ -58,6 +58,9 @@ def parse_args():
     p.add_argument("--universe-authors", type=int, default=30)
     p.add_argument("--block-last-n", type=int, default=8)
     p.add_argument("--eta", type=float, default=3e-4)
+    p.add_argument("--probe-dirs", type=int, default=8,
+                   help="random directions K for norm-estimating scorers (fd_norm): "
+                        "2K forward sweeps, relative estimator variance 2/K")
     p.add_argument("--batch-size", type=int, default=8)
     p.add_argument("--sft-lr", type=float, default=1e-5)
     p.add_argument("--sft-steps", type=int, default=400)
@@ -213,7 +216,7 @@ def main():
 
     # ---- predictors, sealed on the audit fold --------------------------------
     spec = ProbeSpec(block=mlp_down_last_layers(model0, a.block_last_n), eta=a.eta,
-                     batch_size=a.batch_size)
+                     batch_size=a.batch_size, n_dirs=a.probe_dirs)
     predictors = ["fd", "knn_feature", "knn_lexical", "grad_norm", "random_rank"]
     try:
         import sentence_transformers  # noqa: F401

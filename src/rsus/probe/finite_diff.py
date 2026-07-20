@@ -17,6 +17,7 @@ from rsus.blocks import (
     only_block_grads,
     save_params,
     set_perturbed_,
+    vec_randn_like,
     vec_unit,
 )
 from rsus.costs import CostRecord, Meter
@@ -85,6 +86,29 @@ def score_fd(model: torch.nn.Module, request: Request, spec: ProbeSpec) -> Score
         ghat = canonical_forget_direction(model, request, spec, rec)
         scores = fd_scores_along(model, request, spec, ghat, rec)
     return ScoreProfile(request.request_id, "fd", scores, spec, rec)
+
+
+@register("fd_norm")
+def score_fd_norm(model: torch.nn.Module, request: Request, spec: ProbeSpec) -> ScoreProfile:
+    """Backward-free gradient-magnitude profile. For seeded random unit
+    directions v_1..v_K in block B, E_v[(d ell_c / d v)^2] = ||grad_B ell_c||^2
+    / dim(B), so the mean squared central difference across K = spec.n_dirs
+    directions ranks candidates by their own gradient norm — the empirically
+    predictive quantity on the 1.5B gate (grad_norm), at 2K batched forward
+    sweeps and zero per-candidate backwards. Relative estimator variance is
+    2/K, independent of dim(B)."""
+    rec = CostRecord()
+    with Meter(rec):
+        sel = spec.block.select(model)
+        gen = torch.Generator().manual_seed(spec.seed)
+        acc: dict[str, float] = {}
+        for _ in range(spec.n_dirs):
+            direction = vec_unit(vec_randn_like(sel, gen))
+            deriv = fd_scores_along(model, request, spec, direction, rec)
+            for cid, val in deriv.items():
+                acc[cid] = acc.get(cid, 0.0) + val * val
+        scores = {cid: s / spec.n_dirs for cid, s in acc.items()}
+    return ScoreProfile(request.request_id, "fd_norm", scores, spec, rec)
 
 
 @register("one_sided")

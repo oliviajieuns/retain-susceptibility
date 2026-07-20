@@ -26,6 +26,7 @@ class ProbeSpec:
     loss: str = "seq_mean_answer_nll"
     seed: int = 0
     batch_size: int = 8
+    n_dirs: int = 8  # random probe directions for norm-estimating scorers (fd_norm)
 
 
 @dataclass

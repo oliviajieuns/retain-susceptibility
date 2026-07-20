@@ -142,3 +142,22 @@ def test_knn_embed_with_injected_encoder(tiny_model, req, spec):
         assert all(-1.0 <= v <= 1.0 for v in prof.scores.values())
     finally:
         set_embed_encoder(None)
+
+
+def test_fd_norm_unbiased_gradient_magnitude(tiny_model, req, spec):
+    """fd_norm estimates ||grad_B ell_c||^2 / dim(B) without per-candidate
+    backwards: E_v[(d ell/d v)^2] over random unit v. The toy world's spread
+    across candidates is ~1.7x (below the K=48 estimator noise), so assert
+    per-candidate unbiasedness rather than rank agreement — ranking power on
+    real data comes from grad_norm's orders-of-magnitude spread."""
+    import dataclasses
+
+    from rsus.probe.base import get_scorer
+
+    d = sum(p.numel() for p in spec.block.select(tiny_model).values())
+    exact = get_scorer("grad_norm")(tiny_model, req, spec).scores
+    est = get_scorer("fd_norm")(tiny_model, req, dataclasses.replace(spec, n_dirs=48)).scores
+    ratios = [est[c] / (exact[c] ** 2 / d) for c in exact]
+    assert all(0.25 < r < 4.0 for r in ratios), ratios
+    mean = sum(ratios) / len(ratios)
+    assert 0.7 < mean < 1.4, mean
