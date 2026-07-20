@@ -69,6 +69,9 @@ Claude Code 세션 컨테이너에는 GPU가 없다 (CPU 검증만 가능).
   파괴를 못 봄) / 1e-5 안정 1.122 / **3e-5 최적: npo 1.146 → npo_repaired 1.097**
   (CVaR -5.3%, 망각·para 무손실, 80스텝에서 아직 하강 중 → s2-steps 연장 여지).
   guarded repair 성립. 파티션은 --partition-predictor grad_norm, protect 풀 텔레메트리로 확인.
+- **시드 2026 재현 (1e-5)**: npo 2.946→2.826(-4.1%), graddiff 3.359→3.272(-2.6%) — 어려운
+  시드(npo 250스텝/2.9nats 세계)에서도 개선 방향 유지, 엔진 2종 모두 성립. graddiff는 1e-5에서
+  수리 곡선이 즉시 평탄 → 엔진별 eta2 여지.
 
 ### Claude Code 세션 컨테이너 쪽 (참고)
 - GPU 없음, HF/download.pytorch.org 프록시 차단, PyPI는 허용.
