@@ -87,6 +87,10 @@ def parse_args():
     p.add_argument("--t2-lr-per", default="",
                    help="per-method T2 lr overrides, e.g. 'npo=8e-6,simnpo=8e-6' "
                         "(unlisted methods keep --t2-lr / --gen-lr)")
+    p.add_argument("--beta", type=float, default=0.0,
+                   help="NPO/SimNPO/IdkDPO temperature for T1 generators and T2 arms "
+                        "(0 = keep TrajectoryConfig default 1.0; NPO paper standard is 0.1 — "
+                        "beta=1.0 kills ascent pressure ~2 nats above reference)")
     p.add_argument("--pool-size", type=int, default=32)
     p.add_argument("--seed", type=int, default=2025)
     p.add_argument(
@@ -219,7 +223,8 @@ def main():
 
     # ---- independent generator trajectories ----------------------------------
     gen_cfg = TrajectoryConfig(max_steps=a.gen_steps, checkpoint_every=a.gen_ckpt_every,
-                               lr=a.gen_lr, batch_size=a.batch_size, seed=a.seed)
+                               lr=a.gen_lr, batch_size=a.batch_size, seed=a.seed,
+                               **({"beta": a.beta} if a.beta else {}))
     import dataclasses as _dc
     gen_steps_per = {k: int(v) for k, v in
                      (kv.split("=") for kv in a.gen_steps_per.split(",") if kv.strip())}
