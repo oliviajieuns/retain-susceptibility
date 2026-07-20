@@ -27,6 +27,12 @@ Claude Code 세션 컨테이너에는 GPU가 없다 (CPU 검증만 가능).
   확인됨(2026-07-20, full/forget10_perturbed 자동 다운로드 성공). exp venv의 activate에 이 플래그를
   추가해뒀다면 제거할 것.
 
+### 멀티노드 실행 규칙 (2026-07-20 사고 후 확정)
+- 레포/runs 디렉토리는 전 노드 공유 → **로그는 반드시 `> <이름>_$(hostname).out`** (덮어쓰기 사고 방지).
+- **run-tag는 시도마다 새로** — seal은 append-only라 같은 태그 재실행은 즉시 Exit 1.
+- **띄우기 전 `nvidia-smi`로 대상 GPU가 빈 것 확인** — fp32 1.5B 게이트 런은 GPU당 1개(~58GB).
+  겹배치 시 OOM으로 먼저 돌던 런이 죽는다 (03:02 diag 사망 사고).
+
 ### 네트워크 (사내망 차단 사항)
 - GitHub SSH(포트 22) 차단 → HTTPS + PAT로 클론.
 - Hugging Face Hub: **접속 가능** (다운로드 확인됨). HF_HOME만 공유볼륨으로 잡아 캐시 재사용.
