@@ -38,6 +38,7 @@ from rsus.generators.s2s import S2SConfig, run_s2s_trajectory  # noqa: E402
 from rsus.evalx.protection import evaluate_protection  # noqa: E402
 from rsus.generators import TrajectoryConfig, run_trajectory  # noqa: E402
 from rsus.generators.ours import OursConfig, run_ours_trajectory  # noqa: E402
+from rsus.generators.repaired import RepairedConfig, run_engine_repaired  # noqa: E402
 from rsus.losses import seq_mean_answer_nll  # noqa: E402
 from rsus.partition import PartitionParams, build_partition, make_folds  # noqa: E402
 from rsus.probe.base import ProbeSpec, get_scorer  # noqa: E402
@@ -308,9 +309,11 @@ def main():
     idk = idk_variants(tokenizer, list(req.forget))
 
     t2 = {}
+    t2_lr_per = {k: float(v) for k, v in
+                 (kv.split("=") for kv in a.t2_lr_per.split(",") if kv.strip())}
     for method in [x.strip() for x in a.t2_roster.split(",") if x.strip()]:
         log(f"protection method: {method}")
-        two_stage = method in ("ours", "s2s")
+        two_stage = method in ("ours", "s2s") or method.endswith("_repaired")
         try:
             m = fresh()
             if method == "ours":
@@ -319,6 +322,19 @@ def main():
                 rec = run_ours_trajectory(m, mlp_down_last_layers(m, a.block_last_n), req,
                                           protect, remote_stream, floor_m, ocfg,
                                           extra_eval=extra_eval, log=log)
+            elif method.endswith("_repaired"):
+                import dataclasses as _dc
+
+                engine = method[: -len("_repaired")]
+                eng_cfg = _dc.replace(gen_cfg, max_steps=a.t2_steps or a.gen_steps,
+                                      lr=t2_lr_per.get(engine, a.t2_lr or a.gen_lr))
+                if engine == "idkdpo":
+                    eng_cfg = _dc.replace(eng_cfg, idk_examples=idk)
+                rcfg = RepairedConfig(engine_cfg=eng_cfg, stage2=s2_cfg,
+                                      batch_size=a.batch_size)
+                rec = run_engine_repaired(m, mlp_down_last_layers(m, a.block_last_n), req,
+                                          retain_matched, protect, remote_stream, floor_m,
+                                          engine, rcfg, extra_eval=extra_eval, log=log)
             elif method == "s2s":
                 scfg = S2SConfig(stage1=s1_cfg, stage2=s2_cfg,
                                  partition=PartitionParams(pool_size=a.pool_size, min_pool_size=4,
@@ -331,8 +347,6 @@ def main():
 
                 objective = "npo" if method == "npo_transplant" else method
                 retain = protect if method == "npo_transplant" else retain_matched
-                t2_lr_per = {k: float(v) for k, v in
-                             (kv.split("=") for kv in a.t2_lr_per.split(",") if kv.strip())}
                 cfg_m = _dc.replace(gen_cfg, max_steps=a.t2_steps or a.gen_steps,
                                     lr=t2_lr_per.get(method, a.t2_lr or a.gen_lr))
                 if method == "idkdpo":

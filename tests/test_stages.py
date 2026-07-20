@@ -199,3 +199,34 @@ def test_project_empty_basis_is_identity():
     v = {"w": torch.arange(3, dtype=torch.float64)}
     out = _project(v, [], ridge_scale=0.0, cond_max=1e8)
     assert torch.equal(out["w"], v["w"])
+
+
+def test_engine_repaired_pipeline(req):
+    """ga engine (trivial recall threshold) -> sealed refs -> guarded repair;
+    snapshots continue past the engine's reaching checkpoint."""
+    from conftest import build_tiny
+
+    from rsus.blocks import mlp_down_last_layers
+    from rsus.generators.base import TrajectoryConfig
+    from rsus.generators.repaired import RepairedConfig, run_engine_repaired
+    from rsus.stage2 import Stage2Config
+
+    model = build_tiny(3)
+    cands = list(req.universe.examples)
+    cfg = RepairedConfig(
+        engine_cfg=TrajectoryConfig(max_steps=4, checkpoint_every=2, lr=1e-3, batch_size=4),
+        stage2=Stage2Config(max_steps=4, refresh_k=2, batch_size=4),
+        recall_max=1.0,  # trivially reached at the first checkpoint
+        batch_size=4,
+        stage2_snapshots=2,
+    )
+    rec = run_engine_repaired(
+        model, mlp_down_last_layers(model, 1), req,
+        retain=cands[:4], protect=cands[4:8], remote=cands[8:],
+        floor_m=0.05, engine="ga", cfg=cfg,
+    )
+    assert rec.objective == "ga_repaired"
+    engine_last = 2  # stop_at_recall ends at the first checkpoint
+    assert rec.snapshots[0].step == engine_last
+    assert rec.snapshots[-1].step == engine_last + cfg.stage2.max_steps
+    assert set(rec.nll0) == set(rec.snapshots[-1].nll)

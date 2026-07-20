@@ -108,6 +108,7 @@ def run_trajectory(
     out_dir: str | Path | None = None,
     extra_eval=None,
     track_dir=None,
+    stop_at_recall: float | None = None,
 ) -> TrajectoryRecord:
     """``extra_eval(model) -> dict`` is evaluated at every snapshot (e.g.
     paraphrase recall, utility probes) since checkpoint weights are not
@@ -115,7 +116,9 @@ def run_trajectory(
     snapshot, the signed canonical share c_t = <Delta_B, ghat>/||Delta_B||
     and alpha_t = <Delta_B, ghat> (paper eq:canonical-share) from the saved
     block displacement -- the inputs to the optimizer-transfer mechanism
-    table, with no weight storage."""
+    table, with no weight storage. ``stop_at_recall`` ends the trajectory at
+    the first checkpoint whose forget recall is at or below the threshold,
+    leaving the model at that reaching state (for engine+repair pipelines)."""
     from rsus.blocks import save_params, vec_dot
 
     factory = _OBJECTIVES[objective]
@@ -151,6 +154,8 @@ def run_trajectory(
                         extra,
                     )
                 )
+                if stop_at_recall is not None and rec.snapshots[-1].forget_recall <= stop_at_recall:
+                    break
     if out_dir is not None:
         out = Path(out_dir)
         out.mkdir(parents=True, exist_ok=True)
