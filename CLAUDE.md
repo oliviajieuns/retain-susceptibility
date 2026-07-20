@@ -34,7 +34,8 @@ Claude Code 세션 컨테이너에는 GPU가 없다 (CPU 검증만 가능).
   `download.pytorch.org` 사용 불가, PyPI 기본 인덱스의 torch를 쓸 것.
 
 ### 모델 — 로컬 경로 사용 (허브 호출 금지)
-- 위치: `/group-volume/models/` — `Qwen2.5-1.5B-Instruct`, `Qwen2.5-7B-Instruct`, `Qwen3.6-27B`.
+- 위치: `/group-volume/models/` — `Qwen2.5-1.5B-Instruct`(2026-07-20 다운로드 완료 확인:
+  config/safetensors/tokenizer 전부 있음), `Qwen2.5-7B-Instruct`, `Qwen3.6-27B`.
 - 실행 시 항상 `--model /group-volume/models/<이름>` (로컬 경로 → 허브 HEAD 요청 원천 차단).
 - 허브 직접 호출은 사내망에서 간헐적 connection reset → 장기 런 중 재시도 낭비. `HF_HUB_OFFLINE=1`을
   기본으로 걸고, 새 자산 다운로드 때만 잠시 해제.
