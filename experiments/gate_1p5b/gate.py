@@ -69,6 +69,9 @@ def parse_args():
     p.add_argument("--gen-lr-per", default="",
                    help="per-generator lr overrides, e.g. 'npo=6e-6' "
                         "(unlisted generators keep --gen-lr)")
+    p.add_argument("--extra-predictors", default="",
+                   help="comma-separated additional registered scorers to run and "
+                        "seal alongside the default roster, e.g. 'jvp,vmap_graddot,grad_cosine'")
     p.add_argument("--gen-ckpt-every", type=int, default=10)
     p.add_argument("--s1-lr", type=float, default=1e-5)
     p.add_argument("--s1-max-steps", type=int, default=600)
@@ -191,6 +194,9 @@ def main():
         predictors.insert(2, "knn_embed")
     except ImportError:
         log("sentence-transformers missing: skipping knn_embed row")
+    for extra in [x.strip() for x in a.extra_predictors.split(",") if x.strip()]:
+        if extra not in predictors:
+            predictors.insert(1, extra)  # next to fd for easy comparison
     scores_by_pred = {}
     for pred in predictors:
         log(f"scoring: {pred}")
