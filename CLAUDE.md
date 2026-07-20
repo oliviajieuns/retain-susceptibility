@@ -11,10 +11,11 @@ Claude Code 세션 컨테이너에는 GPU가 없다 (CPU 검증만 가능).
   - torch는 **cu12x 빌드만** 동작. cu130(torch 2.13 PyPI 기본)은 실패.
   - 검증된 조합: torch 2.5.1+cu121, torch 2.7.1+cu126 (둘 다 cuda=True 확인됨).
 
-### venv — 이미 설치 완료, 재설치 안내 금지
-- 영구(공유볼륨): `/group-volume/jieuns.shin/venvs/exp` — torch 2.5.1+cu121 동작 확인.
-- 홈(노드 공유 여부 확인됨, run259706): `~/.venv` — torch 2.7.1+cu126 동작 확인.
-- activate만 하면 됨: `source /group-volume/jieuns.shin/venvs/exp/bin/activate`
+### venv — 공식은 하나뿐, 재설치 안내 금지
+- **유일한 공식 venv**: `/group-volume/jieuns.shin/venvs/exp` (공유볼륨, 노드 무관).
+  torch 2.5.1+cu121 동작 확인. transformers/datasets/pyyaml/pytest/sentence-transformers 설치됨.
+- `~/.venv`는 폐기 — 언급하지 말 것.
+- 사용법은 항상 이 한 줄: `source /group-volume/jieuns.shin/venvs/exp/bin/activate`
 - 환경변수: `HF_HOME=/group-volume/data/hf_home`만 필요.
   **`HF_HUB_OFFLINE`/`TRANSFORMERS_OFFLINE`은 설정하지 말 것** — 클러스터에서 HF Hub 접속 가능함이
   확인됨(2026-07-20, full/forget10_perturbed 자동 다운로드 성공). exp venv의 activate에 이 플래그를
