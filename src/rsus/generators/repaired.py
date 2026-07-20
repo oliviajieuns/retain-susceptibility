@@ -12,7 +12,6 @@ exactly like the other two-stage arms.
 """
 from __future__ import annotations
 
-import dataclasses
 from dataclasses import dataclass
 
 import torch
@@ -74,16 +73,13 @@ def run_engine_repaired(
     # set below its sealed losses).
     cache = build_ref_cache(model, request, cfg.batch_size, floor_m)
     step_base = eng.snapshots[-1].step
-    chunks = max(1, cfg.stage2_snapshots)
-    per = max(1, cfg.stage2.max_steps // chunks)
-    done = 0
-    while done < cfg.stage2.max_steps:
-        sub = dataclasses.replace(cfg.stage2, max_steps=min(per, cfg.stage2.max_steps - done))
-        run_stage2(model, block, request, protect, remote, cache, sub)
-        done += sub.max_steps
+    per = max(1, cfg.stage2.max_steps // max(1, cfg.stage2_snapshots))
+    pids = [e.example_id for e in protect]
+
+    def _snapshot(step_done: int) -> None:
         rec.snapshots.append(
             Snapshot(
-                step_base + done,
+                step_base + step_done,
                 _candidate_nll(model, request, cfg.batch_size),
                 _forget_recall(model, request),
                 extra_eval(model) if extra_eval else {},
@@ -92,8 +88,16 @@ def run_engine_repaired(
         if log is not None:
             s = rec.snapshots[-1]
             mean_d = sum(s.nll[c] - rec.nll0[c] for c in rec.nll0) / len(rec.nll0)
-            pids = [e.example_id for e in protect if e.example_id in rec.nll0]
-            prot_d = (sum(s.nll[c] - rec.nll0[c] for c in pids) / len(pids)) if pids else float("nan")
+            known = [c for c in pids if c in rec.nll0]
+            prot_d = (sum(s.nll[c] - rec.nll0[c] for c in known) / len(known)) if known else float("nan")
             log(f"  repair chunk: step={s.step} forget_recall={s.forget_recall:.3f}"
                 f" mean_dnll_all={mean_d:+.3f} mean_dnll_protect={prot_d:+.3f}")
+
+    # single continuous stage-2 run: momentum and guard multipliers persist
+    # across snapshots (chunked re-invocation reset both, freezing progress at
+    # the budget boundary and shifting divergence onsets with the chunk size)
+    run_stage2(model, block, request, protect, remote, cache, cfg.stage2,
+               snapshot_every=per, snapshot_hook=_snapshot)
+    if not rec.snapshots or rec.snapshots[-1].step != step_base + cfg.stage2.max_steps:
+        _snapshot(cfg.stage2.max_steps)
     return rec

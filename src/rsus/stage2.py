@@ -157,7 +157,15 @@ def run_stage2(
     remote_probe: list[Example],
     cache: RefCache,
     cfg: Stage2Config,
+    snapshot_every: int | None = None,
+    snapshot_hook=None,
 ) -> Stage2Result:
+    """``snapshot_hook(step)`` is invoked every ``snapshot_every`` optimizer
+    steps (and at the final step) WITHOUT interrupting the dynamics — chunked
+    re-invocation resets momentum and the guard multipliers, which both
+    freezes progress at the budget boundary and shifts divergence onsets
+    with the chunk size (observed on the 1.5B gate). Hook evaluations run
+    inside this call's cost meter."""
     rec = CostRecord()
     with Meter(rec):
         sel = block.select(model)
@@ -191,6 +199,10 @@ def run_stage2(
                     events.append(
                         RefreshEvent(t, float(d_seq), float(d_tok), lam_seq, lam_tok, False)
                     )
+                    if snapshot_hook is not None and snapshot_every and (
+                        (t + 1) % snapshot_every == 0 or t + 1 == cfg.max_steps
+                    ):
+                        snapshot_hook(t + 1)
                     continue
                 snapshot = (save_params(sel), {n: t_.clone() for n, t_ in v.items()})
                 basis = _basis(model, sel, request, remote_probe, cfg.batch_size, rec)
@@ -227,4 +239,8 @@ def run_stage2(
                 for n, p in sel.items():
                     p.add_(ghat[n], alpha=-eta2)
             v = ghat
+            if snapshot_hook is not None and snapshot_every and (
+                (t + 1) % snapshot_every == 0 or t + 1 == cfg.max_steps
+            ):
+                snapshot_hook(t + 1)
     return Stage2Result(cfg.max_steps, n_acc, n_rej, eta2, events, rec)
