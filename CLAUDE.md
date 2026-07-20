@@ -54,6 +54,20 @@ Claude Code 세션 컨테이너에는 GPU가 없다 (CPU 검증만 가능).
 - 보조 캐시: `/group-volume/data/TOFU/hf_home` (다른 실험용, 이 레포는 주 캐시만 쓰면 됨).
 - 데이터/모델 반입 작업 불필요 — 사용자에게 재확인시키지 말 것.
 
+### 게이트 캠페인 핵심 결과 메모 (2026-07-20, 1.5B/7B 실측)
+- **비용 서사 (Table 4, 7B bf16, batch 4)**: fd 5.97s/18.3GB (최속·최소 메모리),
+  jvp 9.9s/27.4GB, vmap_graddot 10.0s/35.2GB, streaming_backward 17.4s/18.7GB.
+  fd 기계의 비용 우위는 실측 사실. 단 vmap이 빨라서 fd_norm(K=16, sweep 32회)의
+  우위 주장은 시간보다 **메모리(18 vs 35GB)와 functorch 제약 회피**로 쓸 것.
+- **fd(정렬) 프로브는 기각**: jvp와 rank rho 0.9999 일치(수치 무죄, 부록 CSV 확보)
+  하지만 실제 데미지와 약한 역상관 (3런 재현). eta 3e-4는 /10~x10 범위 안정.
+- **fd_norm(K랜덤방향 제곱평균 = grad-norm 추정)**: grad_norm 예측력의 ~80% 달성
+  (npo rho 0.400 vs 0.489, AUROC 0.631 vs 0.736) — backward-free 프로파일 성립.
+- **T2 기준선(fp32, beta 0.1)**: npo 1.148 nats (30스텝) / graddiff 1.943 / rmu 0.023.
+  NPO 계열은 beta 0.1 필수(1.0이면 그래디언트 소멸로 reach 불가).
+- **stage-2 eta2=5e-3(토이 이식값)은 1.5B에서 파괴적** (npo 1.15 → repair 후 130).
+  --s2-eta2로 낮춰서 캘리브레이션 중. 파티션은 --partition-predictor grad_norm.
+
 ### Claude Code 세션 컨테이너 쪽 (참고)
 - GPU 없음, HF/download.pytorch.org 프록시 차단, PyPI는 허용.
 - CPU 테스트는 가능: `python -m pytest` → 69 passed, 2 skipped 기준.
