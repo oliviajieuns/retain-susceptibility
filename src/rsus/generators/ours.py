@@ -32,6 +32,7 @@ def run_ours_trajectory(
     floor_m: float,
     cfg: OursConfig,
     extra_eval=None,
+    log=None,
 ) -> TrajectoryRecord:
     def _extra(m):
         return extra_eval(m) if extra_eval else {}
@@ -40,6 +41,12 @@ def run_ours_trajectory(
     rec.nll0 = _candidate_nll(model, request, cfg.batch_size)
 
     res1 = run_stage1(model, request, remote, floor_m, cfg.stage1)
+    if log is not None:
+        last = res1.history[-1] if res1.history else {}
+        log(f"  stage-1: passed={res1.gate_passed} steps={res1.steps}"
+            f" min_forget={last.get('min_forget', float('nan')):.2f}/{floor_m:.2f}"
+            f" remote_recall={last.get('remote_recall', float('nan')):.3f}"
+            f" lam={res1.lam:.3f}")
     rec.snapshots.append(
         Snapshot(res1.steps, _candidate_nll(model, request, cfg.batch_size), _forget_recall(model, request), _extra(model))
     )

@@ -72,6 +72,10 @@ def parse_args():
     p.add_argument("--extra-predictors", default="",
                    help="comma-separated additional registered scorers to run and "
                         "seal alongside the default roster, e.g. 'jvp,vmap_graddot,grad_cosine'")
+    p.add_argument("--attn-impl", default="",
+                   help="attention implementation passed to from_pretrained "
+                        "(forced to 'eager' when jvp is requested: SDPA kernels "
+                        "do not support forward-mode AD)")
     p.add_argument("--gen-ckpt-every", type=int, default=10)
     p.add_argument("--s1-lr", type=float, default=1e-5)
     p.add_argument("--s1-max-steps", type=int, default=600)
@@ -118,7 +122,10 @@ def load_model(a, tokenizer):
             max_position_embeddings=512, pad_token_id=tokenizer.pad_token_id,
         )
         return Qwen2ForCausalLM(cfg).to(dtype).eval()
-    m = AutoModelForCausalLM.from_pretrained(a.model, torch_dtype=dtype)
+    kw = {"torch_dtype": dtype}
+    if a.attn_impl:
+        kw["attn_implementation"] = a.attn_impl
+    m = AutoModelForCausalLM.from_pretrained(a.model, **kw)
     return m.to(a.device).eval()
 
 
@@ -144,6 +151,8 @@ def main():
     a = parse_args()
     if a.smoke:
         apply_smoke(a)
+    if "jvp" in a.extra_predictors and not a.attn_impl:
+        a.attn_impl = "eager"  # SDPA has no forward-AD support (jvp would crash)
     tag = "smoke" if a.smoke else a.model.split("/")[-1]
     if a.run_tag:
         tag += f"_{a.run_tag}"
@@ -291,7 +300,7 @@ def main():
                                   batch_size=a.batch_size, stage2_snapshots=4)
                 rec = run_ours_trajectory(m, mlp_down_last_layers(m, a.block_last_n), req,
                                           protect, remote_stream, floor_m, ocfg,
-                                          extra_eval=extra_eval)
+                                          extra_eval=extra_eval, log=log)
             elif method == "s2s":
                 scfg = S2SConfig(stage1=s1_cfg, stage2=s2_cfg,
                                  partition=PartitionParams(pool_size=a.pool_size, min_pool_size=4,
