@@ -89,7 +89,9 @@ def run_engine_repaired(
                 extra_eval(model) if extra_eval else {},
             )
         )
-    if log is not None:
-        s = rec.snapshots[-1]
-        log(f"  repair: +{done} steps forget_recall={s.forget_recall:.3f}")
+        if log is not None:
+            s = rec.snapshots[-1]
+            mean_d = sum(s.nll[c] - rec.nll0[c] for c in rec.nll0) / len(rec.nll0)
+            log(f"  repair chunk: step={s.step} forget_recall={s.forget_recall:.3f}"
+                f" mean_dnll_all={mean_d:+.3f}")
     return rec

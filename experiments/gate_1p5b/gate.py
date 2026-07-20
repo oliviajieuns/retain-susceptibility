@@ -93,6 +93,10 @@ def parse_args():
                         "to <= this before exiting — aligns its stopping point with the "
                         "T2 common criterion (recall_max=0.10). 0 = floor-only exit.")
     p.add_argument("--s2-steps", type=int, default=80)
+    p.add_argument("--s2-eta2", type=float, default=0.0,
+                   help="stage-2 repair step size (0 = Stage2Config default 5e-3, a raw "
+                        "momentum-SGD step ported from the CPU toy world; repair1 showed "
+                        "it inflicts 18-130 nats of audit damage on 1.5B — try 1e-4/1e-5)")
     p.add_argument("--t2-steps", type=int, default=0,
                    help="step budget for single-stage T2 arms (0 = inherit --gen-steps)")
     p.add_argument("--t2-lr", type=float, default=0.0,
@@ -308,7 +312,8 @@ def main():
                           batch_size=a.batch_size, seed=a.seed,
                           forget_recall_max=a.s1_recall_gate or None)
     s2_cfg = Stage2Config(max_steps=a.s2_steps, refresh_k=4,
-                          delta_seq_sq=1e-2, delta_tok_sq=1e-1, batch_size=a.batch_size)
+                          delta_seq_sq=1e-2, delta_tok_sq=1e-1, batch_size=a.batch_size,
+                          **({"eta2": a.s2_eta2} if a.s2_eta2 else {}))
     idk = idk_variants(tokenizer, list(req.forget))
 
     t2 = {}
