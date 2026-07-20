@@ -11,7 +11,9 @@ Claude Code 세션 컨테이너에는 GPU가 없다 (CPU 검증만 가능).
 - **레포 위치(공식)**: `/group-volume/jieuns.shin/retain-susceptibility` — 홈에 클론하지 말 것.
 - 매 세션 시작 루틴:
   `source /group-volume/jieuns.shin/venvs/exp/bin/activate && cd /group-volume/jieuns.shin/retain-susceptibility`
-- 노드당 H100 80GB × 2, NVIDIA 드라이버 CUDA 12.2 (12020).
+- 노드당 H100 80GB × 2 (`nvidia-smi` 확인, 드라이버 535.129.03) — **CUDA_VISIBLE_DEVICES는 0/1만 유효**.
+  "GPU 6장 할당" = 여러 노드에 걸친 것; 한 노드에서 3+ 지정하면 "No CUDA GPUs available"로 즉사.
+- NVIDIA 드라이버 CUDA 12.2 (12020).
   - torch는 **cu12x 빌드만** 동작. cu130(torch 2.13 PyPI 기본)은 실패.
   - 검증된 조합: torch 2.5.1+cu121, torch 2.7.1+cu126 (둘 다 cuda=True 확인됨).
 
@@ -30,6 +32,12 @@ Claude Code 세션 컨테이너에는 GPU가 없다 (CPU 검증만 가능).
 - Hugging Face Hub: **접속 가능** (다운로드 확인됨). HF_HOME만 공유볼륨으로 잡아 캐시 재사용.
 - pip 인덱스는 사내 artifactory(`bart.sec.samsung.net`) 미러 — 일반 PyPI 패키지 설치 가능.
   `download.pytorch.org` 사용 불가, PyPI 기본 인덱스의 torch를 쓸 것.
+
+### 모델 — 로컬 경로 사용 (허브 호출 금지)
+- 위치: `/group-volume/models/` — `Qwen2.5-1.5B-Instruct`, `Qwen2.5-7B-Instruct`, `Qwen3.6-27B`.
+- 실행 시 항상 `--model /group-volume/models/<이름>` (로컬 경로 → 허브 HEAD 요청 원천 차단).
+- 허브 직접 호출은 사내망에서 간헐적 connection reset → 장기 런 중 재시도 낭비. `HF_HUB_OFFLINE=1`을
+  기본으로 걸고, 새 자산 다운로드 때만 잠시 해제.
 
 ### HF 데이터 캐시 (오프라인)
 - 마운트: `/group-volume` (= `/home/user/group-volume`).
