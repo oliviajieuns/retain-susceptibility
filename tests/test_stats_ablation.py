@@ -48,3 +48,17 @@ def test_ablation_row_cvar_gain_sign():
     )
     assert row["cvar_gain"]["mean"] == pytest.approx(0.3)
     assert row["d_pred_rho"] is None
+
+
+def test_rank_agreement_matrix():
+    from rsus.analysis.prediction import rank_agreement_matrix
+
+    base = {f"c{i}": float(i) for i in range(10)}
+    rev = {f"c{i}": float(-i) for i in range(10)}
+    perturbed = {f"c{i}": float(i) + (0.3 if i % 2 else -0.3) for i in range(10)}
+    m = rank_agreement_matrix({"a": base, "b": rev, "c": perturbed}, k=3)
+    assert m["a"]["a"]["rho"] == 1.0 and m["a"]["a"]["overlap"] == 1.0
+    assert m["a"]["b"]["rho"] == -1.0            # exact reversal
+    assert m["a"]["c"]["rho"] > 0.9              # small perturbation preserves rank
+    assert m["a"]["b"]["overlap"] == 0.0         # top-3 disjoint from bottom-3
+    assert m["a"]["c"]["rho"] == m["c"]["a"]["rho"]  # symmetric

@@ -72,6 +72,32 @@ def per_cell_metrics(
     }
 
 
+def rank_agreement_matrix(
+    scores_by_pred: dict[str, dict[str, float]], k: int
+) -> dict[str, dict[str, dict[str, float]]]:
+    """Pairwise Spearman rho and Overlap@k between predictor score profiles on
+    the common candidate id set (D1 probe-agreement diagnostic). Diagonal is
+    (1.0, 1.0). Answers e.g. 'does fd_norm rank candidates like grad_norm?'
+    without touching a model or realized damage."""
+    preds = sorted(scores_by_pred)
+    if not preds:
+        return {}
+    ids = sorted(set.intersection(*(set(scores_by_pred[p]) for p in preds)))
+    if len(ids) < 2:
+        raise ValueError("need >=2 common candidate ids across predictors")
+    vecs = {p: [scores_by_pred[p][c] for c in ids] for p in preds}
+    tops = {p: top_k_ids({c: scores_by_pred[p][c] for c in ids}, k) for p in preds}
+    out: dict[str, dict[str, dict[str, float]]] = {}
+    for a in preds:
+        out[a] = {}
+        for b in preds:
+            out[a][b] = {
+                "rho": 1.0 if a == b else spearman(vecs[a], vecs[b]),
+                "overlap": 1.0 if a == b else len(tops[a] & tops[b]) / k,
+            }
+    return out
+
+
 def tail_rho(request_pairs: list[tuple[float, float]]) -> float:
     """Correlate score-CVaR with damage-CVaR across requests (one optimizer)."""
     return spearman([p[0] for p in request_pairs], [p[1] for p in request_pairs])
