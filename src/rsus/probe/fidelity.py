@@ -10,25 +10,27 @@ unit directions v_1..v_R:
                           - l_x(th-eta v_k)) / 2eta ]^2
 
 Since E_v[(g.v)^2] = ||g||^2 / d for isotropic unit v, both B and C are unbiased
-estimators of A. Central differences cancel the Hessian term
-((l(th+eta v)-l(th-eta v))/2eta = g.v + O(eta^2)), so B and C can differ ONLY by
-finite-difference truncation, the eta scale, or parameter-precision effects.
-Hence:
+estimators of A, and the estimator's RELATIVE variance is 2/R -- independent of
+the block dimension d (so a one-layer block is a valid, cheap fidelity test).
+Central differences cancel the Hessian, so B vs C isolates finite-difference /
+eta / parameter-precision effects while A vs B isolates Monte-Carlo / direction
+normalization:
     A != B          -> too few directions R, or a direction-normalization bug
     B != C          -> finite-difference / eta too large-or-small / bf16 perturbation underflow
     A ~ B ~ C, yet damage prediction differs -> the analysis pipeline or fold, not the estimator
 
-A and every (g_x . v_k) come from ONE candidate-side backward per candidate, so
-the whole A/B grid over seeds and R is a single pass; C adds 2R forward sweeps
-per (seed, R, eta). Intended for ~128 candidates, not a full universe.
+Directions are regenerated on the fly from (seed, k) -- never all materialized --
+so this stays within one GPU at 7B block scale. A and every (g_x . v_k) come from
+one candidate-side backward per candidate.
 """
 from __future__ import annotations
 
 import dataclasses as _dc
+import math
 
 import torch
 
-from rsus.blocks import grads_of, only_block_grads, vec_dot, vec_randn_like, vec_unit
+from rsus.blocks import grads_of, load_params_, only_block_grads, save_params, set_perturbed_
 from rsus.costs import CostRecord
 from rsus.data.base import collate
 from rsus.losses import seq_mean_answer_nll
@@ -40,35 +42,74 @@ def block_dim(sel: dict) -> int:
     return sum(p.numel() for p in sel.values())
 
 
-def direction_bank(sel: dict, seeds: list[int], max_dirs: int) -> dict[int, list]:
-    """Per-seed list of ``max_dirs`` unit directions in block B. Directions are a
-    fixed nested sequence: R uses the first R of the seed's list."""
-    bank: dict[int, list] = {}
-    for s in seeds:
-        gen = torch.Generator().manual_seed(s)
-        bank[s] = [vec_unit(vec_randn_like(sel, gen)) for _ in range(max_dirs)]
-    return bank
+def _dir_seed(seed: int, k: int) -> int:
+    return (seed * 1_000_003 + k) % (2**31 - 1)
+
+
+def gen_direction(sel: dict, seed: int, k: int) -> dict:
+    """Reproducible unit direction in block B, sampled fp32 on the block's
+    device. Independent per (seed, k) so B and C use identical directions
+    without materializing a bank."""
+    dev = next(iter(sel.values())).device
+    g = torch.Generator(device=dev).manual_seed(_dir_seed(seed, k))
+    v = {n: torch.randn(p.shape, generator=g, device=dev, dtype=torch.float32)
+         for n, p in sel.items()}
+    nrm = math.sqrt(sum(float((t * t).sum()) for t in v.values()))
+    return {n: t / nrm for n, t in v.items()}
+
+
+def perturbation_report(model: torch.nn.Module, spec: ProbeSpec, eta: float,
+                        seed: int = 0, k: int = 0) -> dict[str, float]:
+    """Realized perturbation when theta is displaced by eta * v (v unit) in the
+    model's actual parameter dtype. In fp32 eff_norm ~= eta and frac_changed ~= 1;
+    under bf16 a coordinate moves ~eta/sqrt(d) ~ 1e-7, below the bf16 ULP, so the
+    add ROUNDS AWAY -> eff_norm << eta and frac_changed << 1. Run this before
+    trusting any C: it directly measures the perturbation-underflow hypothesis."""
+    sel = spec.block.select(model)
+    v = gen_direction(sel, seed, k)  # unit, so requested ||eta*v|| = eta
+    saved = save_params(sel)
+    set_perturbed_(sel, saved, v, eta)
+    dsq = 0.0
+    changed = 0
+    total = 0
+    for n, p in sel.items():
+        delta = p.detach().float() - saved[n].float()
+        dsq += float((delta * delta).sum())
+        changed += int((delta != 0).sum())
+        total += delta.numel()
+    load_params_(sel, saved)
+    eff = math.sqrt(dsq)
+    return {"eta": eta, "eff_norm": eff, "eff_over_eta": eff / eta if eta else float("nan"),
+            "frac_changed": changed / total}
 
 
 def exact_A_and_projsq(
-    model: torch.nn.Module, request, spec: ProbeSpec, bank: dict[int, list]
+    model: torch.nn.Module, request, spec: ProbeSpec, seeds: list[int], max_R: int
 ) -> tuple[dict[str, float], dict[str, dict[int, list[float]]], int]:
-    """A(x)=||g_x||^2 and, for every banked direction, (g_x . v_k)^2 -- from ONE
-    candidate-side backward per candidate (gradients are never stored)."""
+    """A(x)=||g_x||^2 and (g_x . v_k)^2 for every (seed, k), from ONE
+    candidate-side backward per candidate. Directions are regenerated per
+    candidate (never stored); reductions accumulate in fp32."""
     sel = spec.block.select(model)
+    d = block_dim(sel)
     A: dict[str, float] = {}
     projsq: dict[str, dict[int, list[float]]] = {}
     for ex in request.universe.examples:
         model.zero_grad(set_to_none=True)
         with only_block_grads(model, sel):
             seq_mean_answer_nll(model, collate([ex])).mean().backward()
-        g = grads_of(sel)
-        A[ex.example_id] = float(sum((v * v).sum() for v in g.values()))
-        projsq[ex.example_id] = {
-            s: [float(vec_dot(g, vk)) ** 2 for vk in vecs] for s, vecs in bank.items()
-        }
+        g = {n: t.detach().float() for n, t in grads_of(sel).items()}
+        A[ex.example_id] = float(sum((t * t).sum() for t in g.values()))
+        per: dict[int, list[float]] = {}
+        for s in seeds:
+            vals = []
+            for k in range(max_R):
+                v = gen_direction(sel, s, k)
+                dot = float(sum((g[n] * v[n]).sum() for n in g))
+                vals.append(dot * dot)
+            per[s] = vals
+        projsq[ex.example_id] = per
     model.zero_grad(set_to_none=True)
-    return A, projsq, block_dim(sel)
+    return A, projsq, d
 
 
 def B_scores(projsq: dict[str, dict[int, list[float]]], seed: int, R: int, d: int) -> dict[str, float]:
@@ -76,27 +117,16 @@ def B_scores(projsq: dict[str, dict[int, list[float]]], seed: int, R: int, d: in
 
 
 def C_scores(
-    model: torch.nn.Module, request, spec: ProbeSpec, dirs: list, eta: float, d: int
+    model: torch.nn.Module, request, spec: ProbeSpec, seed: int, R: int, eta: float, d: int
 ) -> dict[str, float]:
-    """Finite-difference estimator (== d * fd_norm) along the given directions."""
+    """Finite-difference estimator (== d * fd_norm) along the seed's first R
+    directions, regenerated identically to B."""
+    sel = spec.block.select(model)
     sp = _dc.replace(spec, eta=eta)
     rec = CostRecord()
     acc: dict[str, float] = {ex.example_id: 0.0 for ex in request.universe.examples}
-    for vk in dirs:
-        for cid, val in fd_scores_along(model, request, sp, vk, rec).items():
+    for k in range(R):
+        v = gen_direction(sel, seed, k)
+        for cid, val in fd_scores_along(model, request, sp, v, rec).items():
             acc[cid] += val * val
-    R = len(dirs)
     return {cid: (d / R) * s for cid, s in acc.items()}
-
-
-def abc_scores(
-    model: torch.nn.Module, request, spec: ProbeSpec, n_dirs: int, eta: float, seed: int
-) -> dict[str, object]:
-    """Convenience single-cell A/B/C for one (R, eta, seed). For grids prefer
-    exact_A_and_projsq once + B_scores/C_scores per cell (avoids re-backward)."""
-    sel = spec.block.select(model)
-    bank = direction_bank(sel, [seed], n_dirs)
-    A, projsq, d = exact_A_and_projsq(model, request, spec, bank)
-    B = B_scores(projsq, seed, n_dirs, d)
-    C = C_scores(model, request, spec, bank[seed], eta, d)
-    return {"A": A, "B": B, "C": C, "dim": d}

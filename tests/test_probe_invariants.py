@@ -167,23 +167,25 @@ def test_fd_fidelity_ABC_decomposition(tiny_model, req, spec):
     """A=||g||^2, B=(d/R)sum(g.v)^2, C=(d/R)sum(central_diff)^2 on the same
     candidates+directions. On the float64 fixture the FD machinery is exact, so
     B and C must agree near-perfectly (isolates 'FD/precision' from 'MC noise'),
-    and both are unbiased estimators of A (median ratio ~1)."""
+    both are unbiased estimators of A, and the fp64 perturbation is fully
+    realized (eff/eta ~ 1, all params changed)."""
     import statistics
 
     from rsus.analysis.prediction import spearman
-    from rsus.probe.fidelity import B_scores, C_scores, direction_bank, exact_A_and_projsq
+    from rsus.probe.fidelity import (
+        B_scores, C_scores, exact_A_and_projsq, perturbation_report,
+    )
 
-    sel = spec.block.select(tiny_model)
     R, eta, seed = 96, 1e-4, 0
-    bank = direction_bank(sel, [seed], R)
-    A, projsq, d = exact_A_and_projsq(tiny_model, req, spec, bank)
-    B = B_scores(projsq, seed, R, d)
-    C = C_scores(tiny_model, req, spec, bank[seed], eta, d)
-    ids = sorted(A)
+    rep = perturbation_report(tiny_model, spec, eta, seed=seed, k=0)
+    assert 0.9 < rep["eff_over_eta"] < 1.1        # fp64: perturbation fully realized
+    assert rep["frac_changed"] > 0.99
 
-    # B and C share directions and the model is float64 -> FD truncation is negligible
+    A, projsq, d = exact_A_and_projsq(tiny_model, req, spec, [seed], R)
+    B = B_scores(projsq, seed, R, d)
+    C = C_scores(tiny_model, req, spec, seed, R, eta, d)
+    ids = sorted(A)
     assert spearman([B[c] for c in ids], [C[c] for c in ids]) > 0.98
     assert 0.9 < statistics.median([C[c] / B[c] for c in ids]) < 1.1
-    # B, C are unbiased estimators of A (E_v[(g.v)^2]=||g||^2/d)
     assert 0.5 < statistics.median([B[c] / A[c] for c in ids]) < 1.7
     assert 0.5 < statistics.median([C[c] / A[c] for c in ids]) < 1.7

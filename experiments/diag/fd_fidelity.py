@@ -38,8 +38,8 @@ from rsus.probe.base import ProbeSpec  # noqa: E402
 from rsus.probe.fidelity import (  # noqa: E402
     B_scores,
     C_scores,
-    direction_bank,
     exact_A_and_projsq,
+    perturbation_report,
 )
 
 
@@ -70,11 +70,13 @@ def main() -> None:
     p.add_argument("--dtype", default="float32", choices=["float32", "bfloat16"])
     p.add_argument("--author", type=int, default=180)
     p.add_argument("--universe-authors", type=int, default=30)
-    p.add_argument("--n-cands", type=int, default=128)
-    p.add_argument("--block-last-n", type=int, default=8)
+    p.add_argument("--n-cands", type=int, default=64)
+    p.add_argument("--block-last-n", type=int, default=1,
+                   help="fidelity MC variance is 2/R, independent of block dim; "
+                        "1 layer is a valid, cheap estimator test")
     p.add_argument("--dirs", default="16,32,64")
-    p.add_argument("--etas", default="3e-5,3e-4,3e-3")
-    p.add_argument("--seeds", default="0,1,2")
+    p.add_argument("--etas", default="3e-4,3e-3")
+    p.add_argument("--seeds", default="0,1")
     p.add_argument("--k", type=int, default=0, help="Overlap@k; 0 -> max(5, round(0.1*n))")
     p.add_argument("--out", default="")
     a = p.parse_args()
@@ -95,11 +97,25 @@ def main() -> None:
                      batch_size=8, n_dirs=max(Rs))
     sel = spec.block.select(model)
     d = sum(pp.numel() for pp in sel.values())
-    print(f"model={a.model} dtype={a.dtype} device={a.device} |cands|={n} dim(B)={d} k={k}")
+    print(f"model={a.model} dtype={a.dtype} device={a.device} |cands|={n} "
+          f"block_last_n={a.block_last_n} dim(B)={d} k={k}")
     print(f"seeds={seeds} R={Rs} eta={etas}\n")
 
-    bank = direction_bank(sel, seeds, max(Rs))
-    A, projsq, d = exact_A_and_projsq(model, req, spec, bank)
+    # --- perturbation report FIRST: catch bf16 underflow before trusting any C ---
+    print("=== realized perturbation (theta -> theta + eta*v, v unit) ===")
+    print(f"{'eta':>8} | {'eff_norm':>10} {'eff/eta':>8} {'frac_changed':>13}")
+    underflow = False
+    for eta in etas:
+        r = perturbation_report(model, spec, eta)
+        print(f"{eta:>8.0e} | {r['eff_norm']:>10.3e} {r['eff_over_eta']:>8.3f} {r['frac_changed']:>13.4f}")
+        if r["eff_over_eta"] < 0.5 or r["frac_changed"] < 0.5:
+            underflow = True
+    if underflow:
+        print("  !! perturbation UNDERFLOW (eff/eta << 1 or few params changed): C is unreliable "
+              "at this dtype/eta. Re-run --dtype float32 and/or larger --etas.")
+    print()
+
+    A, projsq, d = exact_A_and_projsq(model, req, spec, seeds, max(Rs))
 
     hdr = f"{'seed':>4} {'R':>4} {'eta':>8} | {'rho(A,B)':>9} {'rho(B,C)':>9} {'rho(A,C)':>9}" \
           f" | {'ov(A,C)':>8} | {'medB/A':>7} {'medC/A':>7} {'medC/B':>7}"
@@ -111,7 +127,7 @@ def main() -> None:
             B = B_scores(projsq, s, R, d)
             rab, _ = agree(A, B, k)
             for eta in etas:
-                C = C_scores(model, req, spec, bank[s][:R], eta, d)
+                C = C_scores(model, req, spec, s, R, eta, d)
                 rbc, _ = agree(B, C, k)
                 rac, oac = agree(A, C, k)
                 mba, mca, mcb = ratio_median(B, A), ratio_median(C, A), ratio_median(C, B)
