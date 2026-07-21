@@ -62,3 +62,24 @@ def test_rank_agreement_matrix():
     assert m["a"]["c"]["rho"] > 0.9              # small perturbation preserves rank
     assert m["a"]["b"]["overlap"] == 0.0         # top-3 disjoint from bottom-3
     assert m["a"]["c"]["rho"] == m["c"]["a"]["rho"]  # symmetric
+
+
+def test_channel_interaction_delta():
+    """Difference-in-differences isolates channel matching: a gradient probe that
+    tracks the gradient-objective damage but is blind to the representation
+    objective yields a large positive delta, even when a representation probe
+    also partly predicts the gradient objective."""
+    from rsus.analysis.channels import cell_metrics, interaction_delta
+
+    cands = [f"c{i:02d}" for i in range(40)]
+    g = {c: (i % 7) / 7.0 for i, c in enumerate(cands)}      # gradient-magnitude signal
+    r = {c: (i % 5) / 5.0 for i, c in enumerate(cands)}      # representation signal
+    scores = {"fd_norm": g, "knn_feature": r}
+    damage = {
+        "graddiff": {c: 0.7 * g[c] + 0.3 * r[c] for c in cands},  # both channels
+        "rmu": {c: r[c] for c in cands},                          # representation only
+    }
+    rho = {p: {o: cell_metrics(scores[p], damage[o], k=5)["rho"] for o in damage} for p in scores}
+    delta = interaction_delta(rho, "graddiff", "rmu", "fd_norm", "knn_feature")
+    assert delta > 0.3            # gradient probe's edge concentrates on the gradient objective
+    assert rho["fd_norm"]["rmu"] < rho["knn_feature"]["rmu"]  # gradient probe blind to representation
