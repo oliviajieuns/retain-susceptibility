@@ -1,6 +1,6 @@
 """Declared trainable block B and parameter-vector utilities.
 
-The probe's score definition (paper eq:fdscore) is conditional on a declared
+The probe's score definition (paper eq:loss-shake-identity) is conditional on a declared
 block: parameter selection is part of the score, so BlockSpec is carried in
 ProbeSpec and disclosed with every comparison.
 """

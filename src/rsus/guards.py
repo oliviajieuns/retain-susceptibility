@@ -1,5 +1,5 @@
 """Reference-anchored guards (paper eq:guard) and the drift bound
-(paper eq:massbound).
+(paper eq:guard, Appendix app:guard-proof).
 
 Primary guard: ONE_SIDED — mean squared hinge charging any audited loss for
 falling below its own cached reference minus a slack. Identity-paired: no

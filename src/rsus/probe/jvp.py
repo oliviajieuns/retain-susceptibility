@@ -1,7 +1,7 @@
 """Exact batched Jacobian-vector-product comparator (forward-mode AD).
 
 Targets the same directional derivative as the finite difference
-(paper eq:fdscore) with no truncation error. Numerical and cost comparator
+(paper eq:loss-shake-identity) with no truncation error. Numerical and cost comparator
 only; no novelty is claimed for either implementation.
 """
 from __future__ import annotations

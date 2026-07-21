@@ -9,9 +9,14 @@ unit directions v_1..v_R:
     C(x) = (d/R) sum_k [ (l_x(th+eta v_k)             finite-difference form (== d * fd_norm)
                           - l_x(th-eta v_k)) / 2eta ]^2
 
-Since E_v[(g.v)^2] = ||g||^2 / d for isotropic unit v, both B and C are unbiased
-estimators of A, and the estimator's RELATIVE variance is 2/R -- independent of
-the block dimension d (so a one-layer block is a valid, cheap fidelity test).
+Since E_v[(g.v)^2] = ||g||^2 / d for isotropic unit v, B is an unbiased
+estimator of A and C is unbiased up to O(eta^2). Per-direction relative
+variance for uniform-sphere directions is 2(d-1)/(d+2) -- below 2 and only
+mildly d-dependent -- so the estimator's relative variance is ~ 2/R and a
+one-layer block remains a valid, cheap fidelity test. Note: the gate draws
+its own seeded directions (gen_direction) from the same uniform-sphere
+distribution as the production probe; the direction STREAMS are not shared
+with score_fd_norm, only the distribution and the operating (eta, R).
 Central differences cancel the Hessian, so B vs C isolates finite-difference /
 eta / parameter-precision effects while A vs B isolates Monte-Carlo / direction
 normalization:

@@ -63,9 +63,15 @@ def parse_args():
                    help="FD radius for fd_norm (larger than --eta): random projections "
                         "give small g.v, so at 3e-4 the fp32 loss-difference cancellation "
                         "inflates the squared estimate ~4x; 3e-3 recovers ||g||^2 (fidelity gate)")
-    p.add_argument("--probe-dirs", type=int, default=32,
+    p.add_argument("--probe-dirs", type=int, default=64,
                    help="random directions K for norm-estimating scorers (fd_norm): "
-                        "2K forward sweeps, relative estimator variance 2/K")
+                        "2K forward sweeps, relative estimator variance ~2/K "
+                        "(default 64 = the frozen fd_norm operating point, "
+                        "prereg FREEZE-2026-07-21-channel-interaction)")
+    p.add_argument("--probe-seed", type=int, default=0,
+                   help="seed for the probe's shared random directions "
+                        "(fixed at 0 for all sealed runs to date; expose for "
+                        "direction-seed robustness checks)")
     p.add_argument("--batch-size", type=int, default=8)
     p.add_argument("--sft-lr", type=float, default=1e-5)
     p.add_argument("--sft-steps", type=int, default=400)
@@ -277,9 +283,11 @@ def main():
     log(f"folds: {len(audit_ids)} audit / {len(disc_ids)} discovery candidates")
 
     # ---- predictors, sealed on the audit fold --------------------------------
-    spec = ProbeSpec(block=probe_block, eta=a.eta,
+    spec = ProbeSpec(block=probe_block, eta=a.eta, seed=a.probe_seed,
                      batch_size=a.batch_size, n_dirs=a.probe_dirs, norm_eta=a.probe_norm_eta)
-    predictors = ["fd", "knn_feature", "knn_lexical", "grad_norm", "random_rank"]
+    # fd_norm is the frozen headline gradient probe (prereg headline_probes);
+    # it is in the default roster so a no-flags run cannot silently omit it.
+    predictors = ["fd", "fd_norm", "knn_feature", "knn_lexical", "grad_norm", "random_rank"]
     try:
         import sentence_transformers  # noqa: F401
         predictors.insert(2, "knn_embed")

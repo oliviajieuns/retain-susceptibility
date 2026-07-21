@@ -189,3 +189,33 @@ def test_fd_fidelity_ABC_decomposition(tiny_model, req, spec):
     assert 0.9 < statistics.median([C[c] / B[c] for c in ids]) < 1.1
     assert 0.5 < statistics.median([B[c] / A[c] for c in ids]) < 1.7
     assert 0.5 < statistics.median([C[c] / A[c] for c in ids]) < 1.7
+
+
+def test_fd_norm_two_stage_equals_streaming(tiny_model, req, spec):
+    """The sealed fd_norm score is exactly stage-1 responses + stage-2
+    aggregation: persisting per-direction responses loses nothing, and
+    R-ablation via slicing reproduces the smaller-R estimator."""
+    from rsus.costs import CostRecord
+    from rsus.probe.finite_diff import aggregate_fd_norm, fd_norm_responses
+
+    sp = dataclasses.replace(spec, n_dirs=8)
+    direct = get_scorer("fd_norm")(tiny_model, req, sp).scores
+    responses = fd_norm_responses(tiny_model, req, sp, CostRecord())
+    assert len(responses) == 8
+    assert aggregate_fd_norm(responses) == direct
+    sliced = aggregate_fd_norm(responses[:4])
+    small = get_scorer("fd_norm")(tiny_model, req, dataclasses.replace(spec, n_dirs=4)).scores
+    assert sliced == small
+
+
+def test_fd_norm_deterministic_and_side_effect_free(tiny_model, req, spec):
+    """fd_norm restores every parameter bit-exactly and is deterministic
+    under a fixed spec.seed (shared directions are part of the score
+    definition)."""
+    sp = dataclasses.replace(spec, n_dirs=4)
+    before = {n: p.detach().clone() for n, p in tiny_model.named_parameters()}
+    s1 = get_scorer("fd_norm")(tiny_model, req, sp).scores
+    for n, p in tiny_model.named_parameters():
+        assert torch.equal(before[n], p.detach()), n
+    s2 = get_scorer("fd_norm")(tiny_model, req, sp).scores
+    assert s1 == s2

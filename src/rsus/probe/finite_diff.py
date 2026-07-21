@@ -1,10 +1,20 @@
-"""Finite-difference susceptibility probe (paper eq:fdscore).
+"""Finite-difference susceptibility probes (paper eq:loss-shake-identity).
 
-One backward pass over the forget set defines the canonical unit ascent
-direction g_hat in block B; two batched forward sweeps over the candidate
-universe at theta +/- eta*g_hat give the central-difference estimate of each
-candidate's directional loss derivative. No candidate-side backward, no
-per-candidate gradient materialization; cost is linear in candidate tokens.
+fd (alignment baseline): one backward pass over the forget set defines the
+canonical unit ascent direction g_hat in block B; two batched forward sweeps
+over the candidate universe at theta +/- eta*g_hat give the central-difference
+estimate of each candidate's directional loss derivative.
+
+fd_norm (loss-shake energy, the headline probe): the same central-difference
+machinery along R shared seeded random unit directions; the mean squared
+response estimates each candidate's gradient energy (paper
+eq:loss-shake-identity, up to the constant block-dimension factor). Computed
+in two stages -- per-direction signed responses (fd_norm_responses), then an
+offline CPU aggregation (aggregate_fd_norm) -- so R-ablation, Monte Carlo
+CIs, and alternative aggregations never require re-running forward sweeps.
+
+No candidate-side backward, no per-candidate gradient materialization; cost
+is linear in candidate tokens.
 """
 from __future__ import annotations
 
@@ -63,12 +73,16 @@ def sweep_losses(
 
 
 def fd_scores_along(
-    model: torch.nn.Module, request: Request, spec: ProbeSpec, direction: ParamVec, rec: CostRecord
+    model: torch.nn.Module, request: Request, spec: ProbeSpec, direction: ParamVec, rec: CostRecord,
+    saved: ParamVec | None = None,
 ) -> dict[str, float]:
     """Central difference along an arbitrary unit direction; restores theta
-    bit-exactly (perturbations are always computed from the saved copy)."""
+    bit-exactly (perturbations are always computed from the saved copy).
+    Pass a pre-saved block copy via `saved` to skip the per-call clone when
+    sweeping many directions."""
     sel = spec.block.select(model)
-    saved = save_params(sel)
+    if saved is None:
+        saved = save_params(sel)
     try:
         set_perturbed_(sel, saved, direction, +spec.eta)
         plus = sweep_losses(model, request, spec, rec)
@@ -88,31 +102,62 @@ def score_fd(model: torch.nn.Module, request: Request, spec: ProbeSpec) -> Score
     return ScoreProfile(request.request_id, "fd", scores, spec, rec)
 
 
-@register("fd_norm")
-def score_fd_norm(model: torch.nn.Module, request: Request, spec: ProbeSpec) -> ScoreProfile:
-    """Backward-free gradient-magnitude profile. For seeded random unit
-    directions v_1..v_K in block B, E_v[(d ell_c / d v)^2] = ||grad_B ell_c||^2
-    / dim(B), so the mean squared central difference across K = spec.n_dirs
-    directions ranks candidates by their own gradient norm — the empirically
-    predictive quantity on the 1.5B gate (grad_norm), at 2K batched forward
-    sweeps and zero per-candidate backwards. Relative estimator variance is
-    2/K, independent of dim(B)."""
+def fd_norm_responses(
+    model: torch.nn.Module, request: Request, spec: ProbeSpec, rec: CostRecord | None = None,
+) -> list[dict[str, float]]:
+    """Stage 1 of the loss-shake probe: the per-direction signed responses
+    delta_{x,r} = (l_x(theta+eta v_r) - l_x(theta-eta v_r)) / (2 eta) for the
+    R = spec.n_dirs shared seeded directions, in direction order. This is the
+    expensive part (2R batched forward sweeps); everything downstream of it is
+    offline CPU arithmetic. Persist the returned list (JSON: one dict per
+    direction, {candidate_id: signed delta}) to enable R-ablation, Monte Carlo
+    CIs, and alternative aggregations without re-running forwards. Directions
+    are reproducible from spec.seed; the radius is spec.norm_eta when set."""
     import dataclasses as _dc
-    rec = CostRecord()
+    rec = rec if rec is not None else CostRecord()
     # random projections give small g.v, so fd_norm needs a larger FD radius than
     # the alignment probe or catastrophic cancellation in l(+)-l(-) inflates the
     # squared estimate (fp32). Use spec.norm_eta when set (see appendix eta sweep).
     sp = _dc.replace(spec, eta=spec.norm_eta) if spec.norm_eta is not None else spec
+    sel = spec.block.select(model)
+    gen = torch.Generator().manual_seed(spec.seed)
+    saved = save_params(sel)
+    responses: list[dict[str, float]] = []
+    for _ in range(spec.n_dirs):
+        direction = vec_unit(vec_randn_like(sel, gen))
+        responses.append(fd_scores_along(model, request, sp, direction, rec, saved=saved))
+    return responses
+
+
+def aggregate_fd_norm(responses: list[dict[str, float]]) -> dict[str, float]:
+    """Stage 2 of the loss-shake probe (offline, CPU): mean squared response
+    per candidate. Accumulates in direction order, so the result is bit-exactly
+    the streaming score the sealed runs produced. Slicing `responses[:k]`
+    before calling gives the R-ablation estimate at k directions."""
+    acc: dict[str, float] = {}
+    for deriv in responses:
+        for cid, val in deriv.items():
+            acc[cid] = acc.get(cid, 0.0) + val * val
+    n = len(responses)
+    return {cid: s / n for cid, s in acc.items()}
+
+
+@register("fd_norm")
+def score_fd_norm(model: torch.nn.Module, request: Request, spec: ProbeSpec) -> ScoreProfile:
+    """Backward-free gradient-energy profile (loss-shake energy, paper
+    eq:loss-shake-identity). For seeded random unit directions v_1..v_K in
+    block B, E_v[(d ell_c / d v)^2] = ||grad_B ell_c||^2 / dim(B), so the mean
+    squared central difference across K = spec.n_dirs directions ranks
+    candidates by their own gradient energy — at 2K batched forward sweeps and
+    zero per-candidate backwards. Per-direction relative variance for
+    uniform-sphere directions is 2(d-1)/(d+2) with d = dim(B), giving relative
+    estimator variance ~ 2/K (approaching it from below in large blocks).
+    Implemented as stage 1 (fd_norm_responses) + stage 2 (aggregate_fd_norm)."""
+    rec = CostRecord()
     with Meter(rec):
-        sel = spec.block.select(model)
-        gen = torch.Generator().manual_seed(spec.seed)
-        acc: dict[str, float] = {}
-        for _ in range(spec.n_dirs):
-            direction = vec_unit(vec_randn_like(sel, gen))
-            deriv = fd_scores_along(model, request, sp, direction, rec)
-            for cid, val in deriv.items():
-                acc[cid] = acc.get(cid, 0.0) + val * val
-        scores = {cid: s / spec.n_dirs for cid, s in acc.items()}
+        responses = fd_norm_responses(model, request, spec, rec)
+        scores = aggregate_fd_norm(responses)
+    rec.notes["eta_used"] = spec.norm_eta if spec.norm_eta is not None else spec.eta
     return ScoreProfile(request.request_id, "fd_norm", scores, spec, rec)
 
 
