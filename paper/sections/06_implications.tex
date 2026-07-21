@@ -1,0 +1,59 @@
+\section{Discussion}
+\label{sec:implications}
+
+\paragraph{From a single score to a conditional one.}
+The literature's implicit model has been
+$\text{risk}(x)=f(\text{model},\text{data})$: some one signal --
+similarity, alignment, magnitude -- should rank vulnerable candidates for
+any unlearner. Our results replace it with
+$\text{risk}(x \mid \text{channel})$. The interaction is the right
+evidence for this claim precisely because it is immune to the two
+confounds that plague probe leaderboards: a uniformly better probe and a
+uniformly more predictable objective both cancel in the double
+difference. The asymmetry we observe -- proximity probes retain partial
+signal on output-channel objectives while gradient probes go essentially
+blind on RMU -- also explains why single-score studies reached
+inconsistent conclusions: their conclusions depended on which objectives
+happened to be in the roster. That the conditioning variable is trivial
+to evaluate -- a static read of the loss definition -- is a feature, not
+a limitation: the scientific content lies not in the taxonomy but in the
+demonstrated law that this five-second label governs which predictor
+family carries signal, by how much, and with which failure mode
+(gradient probes do not merely weaken on the representation channel;
+they go blind). A simple declared predicate with a non-obvious,
+falsifiable consequence is precisely what makes the router deployable
+and the claim preregistrable.
+
+\paragraph{Operational picture.}
+A practitioner declares the checkpoint, candidate scope, parameter block,
+loss, and probe settings; reads the parent objective's channel off its
+loss definition; and runs the matched probe. The profile's high-risk tail
+localizes where post-unlearning measurement should concentrate, and it
+allocates the protection budget before any audit is opened. The router
+adds no tuning surface: the channel table is a lookup, and both probes are
+forward-only at candidate scale. The profile does not decide whether a
+request should be served by unlearning, retraining, or refusal, and a high
+score does not mandate preservation; those remain application decisions.
+
+\paragraph{Selection is not confirmation.}
+A profile-selected pool may guide optimization, but improvement on that
+pool is not evidence of preservation -- it rewards the method for
+protecting what it was handed. All confirmatory outcomes are therefore
+sealed-audit quantities, with both mean and tail reported because
+concentrated damage hides in means.
+
+\paragraph{What the score means.}
+Each profile is conditional on the model, block, loss, precision, and
+radius, and should be recomputed after material model changes. Randomized
+sensitivity is an update-sensitivity prior rather than an
+unlearning-specific quantity; its unlearning reading is licensed by the
+specificity controls, and its trustworthiness by the fidelity gate rather
+than by assumption.
+
+\paragraph{Prediction and intervention are separate tests.}
+A predictor can rank damage yet fail to support safe repair, and a repair
+procedure can help for reasons unrelated to its selector. The crossed
+design keeps the two claims apart: Table~\ref{tab:channel-matrix}
+establishes conditional prediction, and Table~\ref{tab:crossed}
+establishes that acting on the matched prediction -- and only the matched
+prediction -- moves the sealed tail.

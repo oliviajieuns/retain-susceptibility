@@ -1,0 +1,126 @@
+%% =========================================================================
+%% When Does LLM Unlearning Fail? Predicting and Protecting Susceptible Retained Behavior
+%% From Update-Conditioned Susceptibility to Profile-Guided Protection
+%%
+%% KDD 2027 Research Track submission draft (San Jose, CA, August 2027).
+%% Template: ACM acmart, sigconf + anonymous + review
+%% (CFP-recommended setting; review adds line numbers for reviewers).
+%% Build: pdflatex -> bibtex -> pdflatex x2  (Overleaf handles this).
+%%
+%% FILE STRUCTURE
+%%   main.tex           preamble, metadata, and \input skeleton (this file)
+%%   sections/*.tex     one file per section, numbered in reading order
+%%   references.bib     bibliography
+%%
+%% The paper asks whether a pre-unlearning susceptibility profile predicts
+%% realized collateral damage and improves protection of retained behavior.
+%% =========================================================================
+\documentclass[sigconf,anonymous,review]{acmart}
+
+\AtBeginDocument{%
+  \providecommand\BibTeX{{Bib\TeX}}}
+
+%% ---- rights block: placeholder values; replaced at camera-ready.
+\setcopyright{none}
+\acmConference[KDD '27]{the 33rd ACM SIGKDD Conference on
+  Knowledge Discovery and Data Mining}{August 2027}{San Jose, CA, USA}
+\acmBooktitle{Proceedings of the 33rd ACM SIGKDD Conference on Knowledge
+  Discovery and Data Mining (KDD '27), August 2027, San Jose, CA, USA}
+\acmYear{2027}
+\acmDOI{}
+\acmISBN{}
+%% \acmSubmissionID{TODO-openreview-id}
+
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{xcolor}
+\usepackage{pifont}
+\newcommand{\cmark}{\ding{51}}
+\newcommand{\xmark}{\ding{55}}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,calc,positioning,matrix,shapes}
+
+%% ---- notation ------------------------------------------------------------
+\newcommand{\Df}{\mathcal{D}_f}          % forget set
+\newcommand{\Dr}{\mathcal{D}_r}          % retain set
+\newcommand{\Dra}{\mathcal{D}_r^{\mathrm{adj}}}
+\newcommand{\Drr}{\mathcal{D}_r^{\mathrm{rem}}}
+\newcommand{\gf}{g_f}
+
+%% ---- result placeholders (Sec. 5 shell) -----------------------------------
+\newcommand{\tblph}{\textcolor{gray}{--}}      % empty table cell, result pending
+\newcommand{\resph}[1]{\textcolor{gray}{[#1]}} % inline result placeholder
+
+\begin{document}
+
+%% Title kept VERBATIM as registered at the abstract deadline (KDD CFP:
+%% "Large changes to the title and abstract may result in a desk rejection").
+%% The channel framing lives in the abstract's characterization sentence and
+%% the body, not in the title.
+\title{When Does LLM Unlearning Fail? Predicting and Protecting Susceptible Retained Behavior}
+
+%% Double-blind: no author information in the submission PDF.
+\author{Anonymous Author(s)}
+\affiliation{%
+  \institution{Anonymous Institution}
+  \city{}
+  \country{}}
+\email{anonymous@example.com}
+
+\renewcommand{\shortauthors}{Anon.}
+
+%% ==========================================================================
+\input{sections/00_abstract}
+
+%% ---- CCS / keywords ------------------------------------------------------
+\begin{CCSXML}
+<ccs2012>
+ <concept>
+  <concept_id>10002951.10003227.10003351</concept_id>
+  <concept_desc>Information systems~Data mining</concept_desc>
+  <concept_significance>500</concept_significance>
+ </concept>
+ <concept>
+  <concept_id>10010147.10010257</concept_id>
+  <concept_desc>Computing methodologies~Machine learning</concept_desc>
+  <concept_significance>500</concept_significance>
+ </concept>
+ <concept>
+  <concept_id>10002978.10002991.10002995</concept_id>
+  <concept_desc>Security and privacy~Privacy protections</concept_desc>
+  <concept_significance>300</concept_significance>
+ </concept>
+</ccs2012>
+\end{CCSXML}
+
+\ccsdesc[500]{Information systems~Data mining}
+\ccsdesc[500]{Computing methodologies~Machine learning}
+\ccsdesc[300]{Security and privacy~Privacy protections}
+
+\keywords{machine unlearning, large language models, collateral damage,
+damage channels, retain-set selection, randomized sensitivity,
+backward-free profiling, unlearning evaluation}
+
+\maketitle
+
+%% ==========================================================================
+\input{sections/01_introduction}
+\input{sections/02_related}
+\input{sections/03_setup}
+\input{sections/04_method}
+\input{sections/05_experiments}
+\input{sections/06_implications}
+\input{sections/07_limitations}
+\input{sections/08_conclusion}
+
+%% ==========================================================================
+%% Acknowledgments are omitted in the anonymous submission.
+
+\bibliographystyle{ACM-Reference-Format}
+\bibliography{references}
+
+%% ==========================================================================
+\appendix
+\input{sections/99_appendix}
+
+\end{document}

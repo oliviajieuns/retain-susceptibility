@@ -1,0 +1,57 @@
+% TODO(10.8c): replaced as Figure 1 by fig1_finite_difference.tex
+% (probe-defined-adjacency repositioning, plan section 10.8c). Kept on disk for
+% possible appendix reuse of the anchor-geometry panels; currently not
+% \input anywhere. Do not delete.
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[x=0.72cm,y=0.72cm,font=\scriptsize,>=Latex]
+  % Data-side split.
+  \node[font=\footnotesize\bfseries] at (1.4,3.45) {Deletion request};
+  \node[draw,fill=red!14,minimum width=1.15cm,minimum height=.62cm]
+    (forget) at (0,2.25) {forget};
+  \node[draw,fill=orange!18,minimum width=1.35cm,minimum height=.62cm]
+    (adj) at (2.45,2.75) {adjacent};
+  \node[draw,fill=green!14,minimum width=1.35cm,minimum height=.62cm]
+    (rem) at (2.45,1.15) {remote};
+  \draw[very thick,red!70!black,<->] (forget) -- (adj);
+  \draw[thick,gray,<->] (forget) -- (rem);
+  \node[red!70!black] at (1.2,2.75) {closely related};
+  \node[gray!80!black] at (1.25,1.35) {less related};
+
+  % Low-entanglement geometry.
+  \begin{scope}[xshift=4.1cm]
+    \node[font=\footnotesize\bfseries] at (1.55,3.45) {Low entanglement};
+    \coordinate (O) at (0,0);
+    \coordinate (G) at (2.85,.62);
+    \coordinate (X) at (2.85,0);
+    \coordinate (Y) at (0,.62);
+    \draw[->,thick] (O) -- (3.15,0) node[below] {compatible direction};
+    \draw[->,thick] (O) -- (0,2.75) node[above,align=center] {retain\\anchor};
+    \draw (.13,0) -- (.13,.13) -- (0,.13);
+    \draw[->,very thick] (O) -- (G) node[pos=.78,above=3pt] {forget direction};
+    \draw[dashed,gray] (G) -- (X);
+    \draw[dashed,gray] (G) -- (Y);
+    \draw[->,very thick,blue!70!black] (O) -- (X);
+    \draw[->,very thick,red!75!black] (O) -- (Y);
+    \node[red!75!black,align=center] at (.65,1.0) {low anchor\\alignment};
+  \end{scope}
+
+  % High-entanglement geometry.
+  \begin{scope}[xshift=8.35cm]
+    \node[font=\footnotesize\bfseries] at (1.55,3.45) {High entanglement};
+    \coordinate (O) at (0,0);
+    \coordinate (G) at (1.15,2.45);
+    \coordinate (X) at (1.15,0);
+    \coordinate (Y) at (0,2.45);
+    \draw[->,thick] (O) -- (3.15,0) node[below] {compatible direction};
+    \draw[->,thick] (O) -- (0,2.75) node[above,align=center] {retain\\anchor};
+    \draw (.13,0) -- (.13,.13) -- (0,.13);
+    \draw[->,very thick] (O) -- (G) node[pos=.55,right=5pt] {forget direction};
+    \draw[dashed,gray] (G) -- (X);
+    \draw[dashed,gray] (G) -- (Y);
+    \draw[->,very thick,blue!70!black] (O) -- (X);
+    \draw[->,very thick,red!75!black] (O) -- (Y);
+    \node[red!75!black,align=center,left] at (-.08,1.75)
+      {high anchor\\alignment};
+  \end{scope}
+\end{tikzpicture}%
+}

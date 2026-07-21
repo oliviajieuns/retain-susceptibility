@@ -1,0 +1,89 @@
+% Figure 1: damage channels and channel-matched probing (mechanism level).
+% Two rows = two channels. Left: where the objective's loss reads the model.
+% Middle: the induced update and which candidate property couples to it.
+% Right: the matched probe. Both rows merge into channel-matched protection.
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  x=1cm,y=1cm,
+  font=\scriptsize,
+  >=Latex,
+  card/.style={draw=gray!50,rounded corners=1mm,fill=white,align=center,
+               inner sep=2.0mm,text width=3.35cm},
+  wide/.style={draw=gray!50,rounded corners=1mm,fill=white,align=center,
+               inner sep=2.0mm,text width=2.9cm},
+  chanA/.style={draw=orange!70!black,fill=orange!4},
+  chanB/.style={draw=teal!60!black,fill=teal!4},
+  probe/.style={very thick},
+  note/.style={align=center,text=gray!60!black,font=\scriptsize},
+  title/.style={font=\footnotesize\bfseries,align=center},
+  arr/.style={->,thick,gray!60!black}
+]
+
+% ---- mechanism header -----------------------------------------------------
+\node[title] at (8.35,6.55)
+  {first-order collateral damage\quad
+   $d(x)\;\approx\;g_x^{\top}\,\Delta\theta$
+   \quad --\quad the \emph{objective} shapes $\Delta\theta$;
+   the \emph{channel} decides which $x$ couples to it};
+
+% ---- column headers -------------------------------------------------------
+\node[note] at (2.05,5.75) {unlearning objective:\\where does the loss read the model?\\
+  {\tiny (declared from the loss formula -- no run needed)}};
+\node[note] at (6.55,5.75) {induced update $\Delta\theta$\\and coupled candidates};
+\node[note] at (11.05,5.75) {channel-matched probe\\(pre-unlearning, cheap)};
+\node[note] at (15.15,5.75) {protection};
+
+% ---- row 1: output / loss-gradient channel --------------------------------
+\node[card,chanA] (a1) at (2.05,4.55)
+  {\textbf{Output channel}\\
+   loss on token likelihoods / preferences\\[0.6mm]
+   {\scriptsize GA, GradDiff, NPO,\\SimNPO, IdkDPO, GRU}};
+
+\node[card,chanA] (a2) at (6.55,4.55)
+  {$\Delta\theta$ assembled from\\output-loss gradients\\[0.6mm]
+   damaged: candidates with\\ \textbf{large gradient magnitude} $\lVert g_x\rVert$};
+
+\node[card,chanA,probe] (a3) at (11.05,4.55)
+  {\textbf{Randomized sensitivity (ours)}\\[0.4mm]
+   $\dfrac{1}{R}\sum_r\Bigl[\tfrac{\ell(x;\theta_0+\eta v_r)-\ell(x;\theta_0-\eta v_r)}{2\eta}\Bigr]^2
+    \;\propto\;\lVert g_x\rVert_2^2$\\[0.6mm]
+   {\scriptsize $2R$ shared forward sweeps,\\no candidate backward pass}};
+
+% ---- row 2: representation channel ----------------------------------------
+\node[card,chanB] (b1) at (2.05,1.75)
+  {\textbf{Representation channel}\\
+   loss on hidden states\\[0.6mm]
+   {\scriptsize RMU, RepNoise,\\Circuit Breakers}};
+
+\node[card,chanB] (b2) at (6.55,1.75)
+  {$\Delta\theta$ displaces\\activation geometry\\[0.6mm]
+   damaged: candidates\\ \textbf{near the forget set}\\in hidden-state space};
+
+\node[card,chanB,probe] (b3) at (11.05,1.75)
+  {\textbf{Representation proximity}\\[0.4mm]
+   mean cosine to $k$ nearest forget\\examples, pre-unlearning hidden states\\[0.6mm]
+   {\scriptsize forward-only}};
+
+% ---- merge: routed protection --------------------------------------------
+\node[wide] (p1) at (15.15,3.15)
+  {\textbf{channel-matched\\protect pool}\\[0.5mm]
+   top-$K_p$ by the\\matched probe\\[0.8mm]
+   guarded repair;\\forgetting capped\\[0.8mm]
+   sealed audit:\\mean + CVaR tail};
+
+% ---- arrows ---------------------------------------------------------------
+\draw[arr] (a1) -- (a2);
+\draw[arr] (a2) -- (a3);
+\draw[arr] (b1) -- (b2);
+\draw[arr] (b2) -- (b3);
+\draw[arr,orange!70!black] (a3.east) -- (p1.north west);
+\draw[arr,teal!60!black]  (b3.east) -- (p1.south west);
+
+% ---- crossover note --------------------------------------------------------
+\node[note,text width=8.6cm] at (6.55,0.05)
+  {no probe wins on both rows: gradient probes go dark on the representation
+   channel, proximity probes underperform on the output channel
+   (Table~\ref{tab:channel-matrix}) -- matching is necessary};
+
+\end{tikzpicture}%
+}

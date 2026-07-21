@@ -1,0 +1,902 @@
+%% references.bib - When Does LLM Unlearning Fail? Predicting and Protecting Susceptible Retained Behavior (KDD 2027 draft)
+
+%% ---------------------------------------------------------------- benchmarks
+@inproceedings{maini2024tofu,
+  author    = {Pratyush Maini and Zhili Feng and Avi Schwarzschild and
+               Zachary C. Lipton and J. Zico Kolter},
+  title     = {{TOFU}: A Task of Fictitious Unlearning for {LLMs}},
+  booktitle = {First Conference on Language Modeling (COLM)},
+  year      = {2024}
+}
+
+@inproceedings{shi2024muse,
+  author    = {Weijia Shi and Jaechan Lee and Yangsibo Huang and Sadhika Malladi
+               and Jieyu Zhao and Ari Holtzman and Daogao Liu and
+               Luke Zettlemoyer and Noah A. Smith and Chiyuan Zhang},
+  title     = {{MUSE}: Machine Unlearning Six-Way Evaluation for Language Models},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2025}
+}
+
+@inproceedings{li2024wmdp,
+  author    = {Nathaniel Li and Alexander Pan and Anjali Gopal and
+               Summer Yue and Daniel Berrios and Alice Gatti and
+               Justin D. Li and Ann-Kathrin Dombrowski and Shashwat Goel and
+               Long Phan and others},
+  title     = {The {WMDP} Benchmark: Measuring and Reducing Malicious Use
+               with Unlearning},
+  booktitle = {Proceedings of the 41st International Conference on Machine
+               Learning (ICML)},
+  year      = {2024}
+}
+
+@inproceedings{dorna2025openunlearning,
+  author    = {Vineeth Dorna and Anmol Mekala and Wenlong Zhao and
+               Andrew McCallum and J. Zico Kolter and Zachary C. Lipton and
+               Pratyush Maini},
+  title     = {{OpenUnlearning}: Accelerating {LLM} Unlearning via Unified
+               Benchmarking of Methods and Metrics},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)
+               Datasets and Benchmarks Track},
+  year      = {2025}
+}
+
+%% ------------------------------------------------------------------ methods
+@inproceedings{jang2023knowledge,
+  author    = {Joel Jang and Dongkeun Yoon and Sohee Yang and Sungmin Cha and
+               Moontae Lee and Lajanugen Logeswaran and Minjoon Seo},
+  title     = {Knowledge Unlearning for Mitigating Privacy Risks in Language
+               Models},
+  booktitle = {Proceedings of the 61st Annual Meeting of the Association for
+               Computational Linguistics (ACL)},
+  year      = {2023}
+}
+
+@article{yao2024large,
+  author  = {Yuanshun Yao and Xiaojun Xu and Yang Liu},
+  title   = {Large Language Model Unlearning},
+  journal = {arXiv preprint arXiv:2310.10683},
+  year    = {2023}
+}
+@inproceedings{chen2026hamu,
+  author    = {Jiangwei Chen and Xinyuan Niu and
+               Rachael Hwee Ling Sim and Zhengyuan Liu and
+               Nancy F. Chen and Bryan Kian Hsiang Low},
+  title     = {How Hard Can It Be? Hardness-Aware Multi-Objective Unlearning},
+  booktitle = {International Conference on Machine Learning (ICML)},
+  year      = {2026}
+}
+
+@inproceedings{zhang2024negative,
+  author    = {Ruiqi Zhang and Licong Lin and Yu Bai and Song Mei},
+  title     = {Negative Preference Optimization: From Catastrophic Collapse
+               to Effective Unlearning},
+  booktitle = {First Conference on Language Modeling (COLM)},
+  year      = {2024}
+}
+
+@inproceedings{fan2024simplicity,
+  author    = {Chongyu Fan and Jiancheng Liu and Licong Lin and Jinghan Jia and
+               Ruiqi Zhang and Song Mei and Sijia Liu},
+  title     = {Simplicity Prevails: Rethinking Negative Preference Optimization
+               for {LLM} Unlearning},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  year      = {2025}
+}
+
+@article{eldan2023whos,
+  author  = {Ronen Eldan and Mark Russinovich},
+  title   = {Who's {Harry Potter}? Approximate Unlearning in {LLMs}},
+  journal = {arXiv preprint arXiv:2310.02238},
+  year    = {2023}
+}
+
+%% -------------------------------------------------- editing / localization
+@inproceedings{geva2021transformer,
+  author    = {Mor Geva and Roei Schuster and Jonathan Berant and Omer Levy},
+  title     = {Transformer Feed-Forward Layers Are Key-Value Memories},
+  booktitle = {Proceedings of the 2021 Conference on Empirical Methods in
+               Natural Language Processing (EMNLP)},
+  pages     = {5484--5495},
+  year      = {2021},
+  doi       = {10.18653/v1/2021.emnlp-main.446}
+}
+
+@inproceedings{meng2022locating,
+  author    = {Kevin Meng and David Bau and Alex Andonian and
+               Yonatan Belinkov},
+  title     = {Locating and Editing Factual Associations in {GPT}},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  year      = {2022}
+}
+
+@inproceedings{meng2023mass,
+  author    = {Kevin Meng and Arnab Sen Sharma and Alex Andonian and
+               Yonatan Belinkov and David Bau},
+  title     = {Mass-Editing Memory in a Transformer},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2023}
+}
+
+@inproceedings{dai2022knowledge,
+  author    = {Damai Dai and Li Dong and Yaru Hao and Zhifang Sui and
+               Baobao Chang and Furu Wei},
+  title     = {Knowledge Neurons in Pretrained Transformers},
+  booktitle = {Proceedings of the 60th Annual Meeting of the Association for
+               Computational Linguistics (ACL)},
+  year      = {2022}
+}
+
+@inproceedings{wang2022skill,
+  author    = {Xiaozhi Wang and Kaiyue Wen and Zhengyan Zhang and Lei Hou and
+               Zhiyuan Liu and Juanzi Li},
+  title     = {Finding Skill Neurons in Pre-trained Transformer-based Language
+               Models},
+  booktitle = {Proceedings of the 2022 Conference on Empirical Methods in
+               Natural Language Processing (EMNLP)},
+  pages     = {11132--11152},
+  year      = {2022},
+  doi       = {10.18653/v1/2022.emnlp-main.765}
+}
+
+@inproceedings{hase2023does,
+  author    = {Peter Hase and Mohit Bansal and Been Kim and Asma Ghandeharioun},
+  title     = {Does Localization Inform Editing? Surprising Differences in
+               Causality-Based Localization vs.\ Knowledge Editing in
+               Language Models},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  year      = {2023}
+}
+
+@inproceedings{chang2024localization,
+  author    = {Ting-Yun Chang and Jesse Thomason and Robin Jia},
+  title     = {Do Localization Methods Actually Localize Memorized Data in
+               {LLM}s? A Tale of Two Benchmarks},
+  booktitle = {Proceedings of the 2024 Conference of the North American Chapter
+               of the Association for Computational Linguistics (NAACL)},
+  pages     = {3190--3211},
+  year      = {2024},
+  doi       = {10.18653/v1/2024.naacl-long.176}
+}
+
+@inproceedings{niu2024knowledge,
+  author    = {Jingcheng Niu and Andrew Liu and Zining Zhu and Gerald Penn},
+  title     = {What Does the Knowledge Neuron Thesis Have to Do with
+               Knowledge?},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2024}
+}
+
+@inproceedings{sakarvadia2025mitigating,
+  author    = {Mansi Sakarvadia and Aswathy Ajith and Arham Khan and
+               Nathaniel Hudson and Caleb Geniesse and Kyle Chard and
+               Yaoqing Yang and Ian Foster and Michael W. Mahoney},
+  title     = {Mitigating Memorization in Language Models},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2025}
+}
+
+@inproceedings{liu2025manu,
+  author    = {Zheyuan Liu and Guangyao Dou and Xiangchi Yuan and Chunhui Zhang
+               and Zhaoxuan Tan and Meng Jiang},
+  title     = {Modality-Aware Neuron Pruning for Unlearning in Multimodal Large
+               Language Models},
+  booktitle = {Proceedings of the 63rd Annual Meeting of the Association for
+               Computational Linguistics (ACL)},
+  pages     = {5913--5933},
+  year      = {2025},
+  doi       = {10.18653/v1/2025.acl-long.295}
+}
+
+%% -------------------------------------------------- evaluation skepticism
+@article{lynch2024eight,
+  author  = {Aengus Lynch and Phillip Guo and Aidan Ewart and Stephen Casper
+             and Dylan Hadfield-Menell},
+  title   = {Eight Methods to Evaluate Robust Unlearning in {LLMs}},
+  journal = {arXiv preprint arXiv:2402.16835},
+  year    = {2024}
+}
+
+@article{hu2024jogging,
+  author  = {Shengyuan Hu and Yiwei Fu and Steven Wu and Virginia Smith},
+  title   = {Jogging the Memory of Unlearned {LLMs} Through Targeted
+             Relearning Attacks},
+  journal = {arXiv preprint arXiv:2406.13356},
+  year    = {2024}
+}
+
+@inproceedings{patil2024can,
+  author    = {Vaidehi Patil and Peter Hase and Mohit Bansal},
+  title     = {Can Sensitive Information Be Deleted from {LLMs}? Objectives
+               for Defending Against Extraction Attacks},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2024}
+}
+
+@article{lucki2024adversarial,
+  author  = {Jakub {\L}ucki and Boyi Wei and Yangsibo Huang and
+             Peter Henderson and Florian Tram{\`e}r and Javier Rando},
+  title   = {An Adversarial Perspective on Machine Unlearning for {AI} Safety},
+  journal = {arXiv preprint arXiv:2409.18025},
+  year    = {2024}
+}
+
+@article{deeb2024unlearning,
+  author  = {Aghyad Deeb and Fabien Roger},
+  title   = {Do Unlearning Methods Remove Information from Language Model
+             Weights?},
+  journal = {arXiv preprint arXiv:2410.08827},
+  year    = {2024}
+}
+
+@article{thaker2024position,
+  author  = {Pratiksha Thaker and Shengyuan Hu and Neil Kale and
+             Yash Maurya and Zhiwei Steven Wu and Virginia Smith},
+  title   = {Position: {LLM} Unlearning Benchmarks Are Weak Measures of
+             Progress},
+  journal = {arXiv preprint arXiv:2410.02879},
+  year    = {2024}
+}
+
+@article{liu2024rethinking,
+  author  = {Sijia Liu and Yuanshun Yao and Jinghan Jia and Stephen Casper and
+             Nathalie Baracaldo and Peter Hase and Yuguang Yao and
+             Chris Yuhao Liu and Xiaojun Xu and Hang Li and Kush R. Varshney
+             and Mohit Bansal and Sanmi Koyejo and Yang Liu},
+  title   = {Rethinking Machine Unlearning for Large Language Models},
+  journal = {arXiv preprint arXiv:2402.08787},
+  year    = {2024}
+}
+
+%% ---------------------------------------------- classic machine unlearning
+@inproceedings{cao2015towards,
+  author    = {Yinzhi Cao and Junfeng Yang},
+  title     = {Towards Making Systems Forget with Machine Unlearning},
+  booktitle = {IEEE Symposium on Security and Privacy (S\&P)},
+  year      = {2015}
+}
+
+@inproceedings{bourtoule2021machine,
+  author    = {Lucas Bourtoule and Varun Chandrasekaran and
+               Christopher A. Choquette-Choo and Hengrui Jia and
+               Adelin Travers and Baiwu Zhang and David Lie and
+               Nicolas Papernot},
+  title     = {Machine Unlearning},
+  booktitle = {IEEE Symposium on Security and Privacy (S\&P)},
+  year      = {2021}
+}
+
+@inproceedings{ginart2019making,
+  author    = {Antonio Ginart and Melody Y. Guan and Gregory Valiant and
+               James Zou},
+  title     = {Making {AI} Forget You: Data Deletion in Machine Learning},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  year      = {2019}
+}
+
+@inproceedings{guo2020certified,
+  author    = {Chuan Guo and Tom Goldstein and Awni Hannun and
+               Laurens van der Maaten},
+  title     = {Certified Data Removal from Machine Learning Models},
+  booktitle = {Proceedings of the 37th International Conference on Machine
+               Learning (ICML)},
+  year      = {2020}
+}
+
+@inproceedings{sekhari2021remember,
+  author    = {Ayush Sekhari and Jayadev Acharya and Gautam Kamath and
+               Ananda Theertha Suresh},
+  title     = {Remember What You Want to Forget: Algorithms for Machine
+               Unlearning},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  volume    = {34},
+  pages     = {18075--18086},
+  year      = {2021}
+}
+
+@inproceedings{suriyakumar2022algorithms,
+  author    = {Vinith M. Suriyakumar and Ashia C. Wilson},
+  title     = {Algorithms that Approximate Data Removal: New Results and
+               Limitations},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  volume    = {35},
+  year      = {2022}
+}
+
+@inproceedings{golatkar2020eternal,
+  author    = {Aditya Golatkar and Alessandro Achille and Stefano Soatto},
+  title     = {Eternal Sunshine of the Spotless Net: Selective Forgetting in
+               Deep Networks},
+  booktitle = {IEEE/CVF Conference on Computer Vision and Pattern Recognition
+               (CVPR)},
+  year      = {2020}
+}
+
+@inproceedings{kurmanji2023towards,
+  author    = {Meghdad Kurmanji and Peter Triantafillou and Jamie Hayes and
+               Eleni Triantafillou},
+  title     = {Towards Unbounded Machine Unlearning},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  year      = {2023}
+}
+
+@inproceedings{fan2024salun,
+  author    = {Chongyu Fan and Jiancheng Liu and Yihua Zhang and Eric Wong
+               and Dennis Wei and Sijia Liu},
+  title     = {{SalUn}: Empowering Machine Unlearning via Gradient-Based
+               Weight Saliency in Both Image Classification and Generation},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2024}
+}
+
+@inproceedings{foster2024ssd,
+  author    = {Jack Foster and Stefan Schoepf and Alexandra Brintrup},
+  title     = {Fast Machine Unlearning without Retraining through Selective
+               Synaptic Dampening},
+  booktitle = {Proceedings of the AAAI Conference on Artificial Intelligence},
+  volume    = {38},
+  number    = {11},
+  pages     = {12043--12051},
+  year      = {2024},
+  doi       = {10.1609/aaai.v38i11.29092}
+}
+
+@inproceedings{huang2024unified,
+  author    = {Zhehao Huang and Xinwen Cheng and JingHao Zheng and
+               Haoran Wang and Zhengbao He and Tao Li and Xiaolin Huang},
+  title     = {Unified Gradient-Based Machine Unlearning with Remain
+               Geometry Enhancement},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  volume    = {37},
+  year      = {2024}
+}
+
+@inproceedings{block2025overparameterization,
+  author    = {Jacob L. Block and Aryan Mokhtari and Sanjay Shakkottai},
+  title     = {Machine Unlearning under Overparameterization},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  volume    = {38},
+  year      = {2025}
+}
+
+@inproceedings{zhou2025implicit,
+  author    = {Shiji Zhou and Tianbai Yu and Zhi Zhang and Heng Chang and
+               Xiao Zhou and Dong Wu and Han Zhao},
+  title     = {Efficient Utility-Preserving Machine Unlearning with Implicit
+               Gradient Surgery},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  volume    = {38},
+  year      = {2025}
+}
+
+%% --------------------------------------------- memorization / data-centric
+@inproceedings{carlini2021extracting,
+  author    = {Nicholas Carlini and Florian Tram{\`e}r and Eric Wallace and
+               Matthew Jagielski and Ariel Herbert-Voss and Katherine Lee and
+               Adam Roberts and Tom Brown and Dawn Song and Ulfar Erlingsson
+               and Alina Oprea and Colin Raffel},
+  title     = {Extracting Training Data from Large Language Models},
+  booktitle = {30th USENIX Security Symposium},
+  year      = {2021}
+}
+
+@inproceedings{carlini2023quantifying,
+  author    = {Nicholas Carlini and Daphne Ippolito and Matthew Jagielski and
+               Katherine Lee and Florian Tram{\`e}r and Chiyuan Zhang},
+  title     = {Quantifying Memorization Across Neural Language Models},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2023}
+}
+
+@article{zha2023data,
+  author  = {Daochen Zha and Zaid Pervaiz Bhat and Kwei-Herng Lai and
+             Fan Yang and Zhimeng Jiang and Shaochen Zhong and Xia Hu},
+  title   = {Data-centric Artificial Intelligence: A Survey},
+  journal = {arXiv preprint arXiv:2303.10158},
+  year    = {2023}
+}
+
+@article{elhage2022toy,
+  author  = {Nelson Elhage and Tristan Hume and Catherine Olsson and
+             Nicholas Schiefer and Tom Henighan and Shauna Kravec and
+             Zac Hatfield-Dodds and Robert Lasenby and Dawn Drain and
+             Carol Chen and others},
+  title   = {Toy Models of Superposition},
+  journal = {Transformer Circuits Thread},
+  year    = {2022}
+}
+
+@inproceedings{pal2025coreset,
+  author    = {Soumyadeep Pal and Changsheng Wang and James Diffenderfer and
+               Bhavya Kailkhura and Sijia Liu},
+  title     = {{LLM} Unlearning Reveals a Stronger-Than-Expected Coreset
+               Effect in Current Benchmarks},
+  booktitle = {Conference on Language Modeling (COLM)},
+  year      = {2025}
+}
+
+@article{suriyakumar2025ucd,
+  author  = {Vinith M. Suriyakumar and Ayush Sekhari and Ashia Wilson},
+  title   = {{UCD}: Unlearning in {LLMs} via Contrastive Decoding},
+  journal = {arXiv preprint arXiv:2506.12097},
+  year    = {2025}
+}
+
+@article{batorski2026evomu,
+  author  = {Pawel Batorski and Paul Swoboda},
+  title   = {{EvoMU}: Evolutionary Machine Unlearning},
+  journal = {arXiv preprint arXiv:2602.02139},
+  year    = {2026}
+}
+
+@article{scholten2024probabilistic,
+  author  = {Yan Scholten and Stephan G{\"u}nnemann and Leo Schwinn},
+  title   = {A Probabilistic Perspective on Unlearning and Alignment for
+             Large Language Models},
+  journal = {arXiv preprint arXiv:2410.03523},
+  year    = {2024}
+}
+
+@article{reisizadeh2025leakk,
+  author  = {Hadi Reisizadeh and Jiajun Ruan and Yiwei Chen and
+             Soumyadeep Pal and Sijia Liu and Mingyi Hong},
+  title   = {Leak@{$k$}: Unlearning Does Not Make {LLMs} Forget Under
+             Probabilistic Decoding},
+  journal = {arXiv preprint arXiv:2511.04934},
+  year    = {2025}
+}
+
+@inproceedings{wang2025gradient,
+  author    = {Qizhou Wang and Jin Peng Zhou and Zhanke Zhou and Saebyeol Shin
+               and Bo Han and Kilian Q. Weinberger},
+  title     = {Rethinking {LLM} Unlearning Objectives: A Gradient Perspective
+               and Go Beyond},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2025}
+}
+
+@inproceedings{cheng2026cud,
+  author    = {Jiali Cheng and Ziheng Chen and Chirag Agarwal and Hadi Amiri},
+  title     = {A Mechanistic Perspective and Difficulty Metric for Unlearning},
+  booktitle = {Findings of the Association for Computational Linguistics:
+               {ACL} 2026},
+  publisher = {Association for Computational Linguistics},
+  address   = {San Diego, California, United States},
+  pages     = {10950--10964},
+  year      = {2026},
+  doi       = {10.18653/v1/2026.findings-acl.532}
+}
+
+%% NOTE: referred to as "cheng2026unlearning" in the TMU experiment plan; it is
+%% the same ICLR 2026 paper. Keep this single key to avoid a duplicate entry.
+@inproceedings{cheng2026entanglement,
+  author    = {Jingpu Cheng and Ping Liu and Qianxiao Li and Chi Zhang},
+  title     = {Machine Unlearning under Retain--Forget Entanglement},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2026}
+}
+
+%% ------------------------------------ multi-objective unlearning family
+@inproceedings{wang2025gru,
+  author    = {Yue Wang and Qizhou Wang and Feng Liu and Wei Huang and
+               Yali Du and Xiaojiang Du and Bo Han},
+  title     = {{GRU}: Mitigating the Trade-off between Unlearning and
+               Retention for {LLMs}},
+  booktitle = {Proceedings of the 42nd International Conference on Machine
+               Learning (ICML)},
+  series    = {Proceedings of Machine Learning Research},
+  volume    = {267},
+  pages     = {64690--64710},
+  publisher = {PMLR},
+  year      = {2025}
+}
+
+@inproceedings{yang2025satimp,
+  author    = {Puning Yang and Qizhou Wang and Zhuo Huang and Tongliang Liu
+               and Chengqi Zhang and Bo Han},
+  title     = {Exploring Criteria of Loss Reweighting to Enhance {LLM}
+               Unlearning},
+  booktitle = {Proceedings of the 42nd International Conference on Machine
+               Learning (ICML)},
+  series    = {Proceedings of Machine Learning Research},
+  volume    = {267},
+  pages     = {71318--71357},
+  publisher = {PMLR},
+  year      = {2025}
+}
+
+@inproceedings{cai2025slug,
+  author    = {Zikui Cai and Yaoteng Tan and M. Salman Asif},
+  title     = {Targeted Unlearning with Single Layer Unlearning Gradient},
+  booktitle = {Proceedings of the 42nd International Conference on Machine
+               Learning (ICML)},
+  series    = {Proceedings of Machine Learning Research},
+  volume    = {267},
+  pages     = {6257--6290},
+  publisher = {PMLR},
+  year      = {2025}
+}
+
+@article{xiao2026sago,
+  author  = {Zeguan Xiao and Siqing Li and Yong Wang and Xuetao Wei and
+             Jian Yang and Yun Chen and Guanhua Chen},
+  title   = {Modeling {LLM} Unlearning as an Asymmetric Two-Task Learning
+             Problem},
+  journal = {arXiv preprint arXiv:2604.14808},
+  year    = {2026}
+}
+
+@inproceedings{wu2025munba,
+  author    = {Jing Wu and Mehrtash Harandi},
+  title     = {{MUNBa}: Machine Unlearning via {Nash} Bargaining},
+  booktitle = {Proceedings of the IEEE/CVF International Conference on
+               Computer Vision (ICCV)},
+  year      = {2025}
+}
+
+%% ------------------------------------ retain-set attribution / adjacency
+@article{niu2025guard,
+  author  = {Peizhi Niu and Evelyn Ma and Huiting Zhou and Duo Zhou and
+             Huan Zhang and S. Rasoul Etesami and Olgica Milenkovic},
+  title   = {{GUARD}: Guided Unlearning and Retention via Data Attribution
+             for Large Language Models},
+  journal = {arXiv preprint arXiv:2506.10946},
+  year    = {2025}
+}
+
+@inproceedings{pruthi2020tracin,
+  author    = {Garima Pruthi and Frederick Liu and Satyen Kale and
+               Mukund Sundararajan},
+  title     = {Estimating Training Data Influence by Tracing Gradient
+               Descent},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  year      = {2020}
+}
+
+@inproceedings{koh2017influence,
+  author    = {Pang Wei Koh and Percy Liang},
+  title     = {Understanding Black-Box Predictions via Influence Functions},
+  booktitle = {Proceedings of the 34th International Conference on Machine
+               Learning (ICML)},
+  pages     = {1885--1894},
+  year      = {2017}
+}
+
+@inproceedings{bae2022influence,
+  author    = {Juhan Bae and Nathan Ng and Alston Lo and
+               Marzyeh Ghassemi and Roger B. Grosse},
+  title     = {If Influence Functions Are the Answer, Then What Is the
+               Question?},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  volume    = {35},
+  pages     = {17953--17967},
+  year      = {2022}
+}
+
+
+@article{nesterov2017random,
+  author  = {Yurii Nesterov and Vladimir Spokoiny},
+  title   = {Random Gradient-Free Minimization of Convex Functions},
+  journal = {Foundations of Computational Mathematics},
+  volume  = {17},
+  number  = {2},
+  pages   = {527--566},
+  year    = {2017},
+  doi     = {10.1007/s10208-015-9296-2}
+}
+
+@article{hutchinson1989stochastic,
+  author  = {Michael F. Hutchinson},
+  title   = {A Stochastic Estimator of the Trace of the Influence Matrix for
+             Laplacian Smoothing Splines},
+  journal = {Communications in Statistics---Simulation and Computation},
+  volume  = {18},
+  number  = {3},
+  pages   = {1059--1076},
+  year    = {1989},
+  doi     = {10.1080/03610918908812806}
+}
+
+@inproceedings{park2023trak,
+  author    = {Sung Min Park and Kristian Georgiev and Andrew Ilyas and
+               Guillaume Leclerc and Aleksander Madry},
+  title     = {{TRAK}: Attributing Model Behavior at Scale},
+  booktitle = {Proceedings of the 40th International Conference on Machine
+               Learning (ICML)},
+  pages     = {27074--27113},
+  year      = {2023}
+}
+
+@inproceedings{xia2024less,
+  author    = {Mengzhou Xia and Sadhika Malladi and Suchin Gururangan and
+               Sanjeev Arora and Danqi Chen},
+  title     = {{LESS}: Selecting Influential Data for Targeted Instruction
+               Tuning},
+  booktitle = {Proceedings of the 41st International Conference on Machine
+               Learning (ICML)},
+  pages     = {54104--54132},
+  year      = {2024}
+}
+
+@inproceedings{kwon2024datainf,
+  author    = {Yongchan Kwon and Eric Wu and Kevin Wu and James Zou},
+  title     = {{DataInf}: Efficiently Estimating Data Influence in
+               {LoRA}-Tuned {LLMs} and Diffusion Models},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2024}
+}
+
+@article{grosse2023influence,
+  author  = {Roger Grosse and Juhan Bae and Cem Anil and Nelson Elhage and
+             Alex Tamkin and Amirhossein Tajdini and Benoit Steiner and
+             Dustin Li and Esin Durmus and Ethan Perez and Evan Hubinger and
+             Kamil{\.e} Luko{\v{s}}i{\=u}t{\.e} and Karina Nguyen and
+             Nicholas Joseph and Sam McCandlish and Jared Kaplan and
+             Samuel R. Bowman},
+  title   = {Studying Large Language Model Generalization with Influence
+             Functions},
+  journal = {arXiv preprint arXiv:2308.03296},
+  year    = {2023}
+}
+
+@inproceedings{ko2024mirrored,
+  author    = {Myeongseob Ko and Feiyang Kang and Weiyan Shi and Ming Jin
+               and Zhou Yu and Ruoxi Jia},
+  title     = {The Mirrored Influence Hypothesis: Efficient Data Influence
+               Estimation by Harnessing Forward Passes},
+  booktitle = {Proceedings of the IEEE/CVF Conference on Computer Vision and
+               Pattern Recognition (CVPR)},
+  pages     = {26286--26295},
+  year      = {2024}
+}
+
+@inproceedings{deng2026forvalue,
+  author    = {Wenlong Deng and Qi Zeng and Jiaming Zhang and Minghui Chen
+               and Zixin Ding and Christos Thrampoulidis and Boying Gong
+               and Xiaoxiao Li},
+  title     = {{For-Value}: Efficient Forward-Only Data Valuation for
+               Finetuning {LLMs} and {VLMs}},
+  booktitle = {Proceedings of the 64th Annual Meeting of the Association for
+               Computational Linguistics (ACL)},
+  pages     = {14581--14600},
+  year      = {2026},
+  doi       = {10.18653/v1/2026.acl-long.664}
+}
+
+%% ------------------------------------ zeroth-order / forward-only estimation
+@article{spall1992spsa,
+  author  = {James C. Spall},
+  title   = {Multivariate Stochastic Approximation Using a Simultaneous
+             Perturbation Gradient Approximation},
+  journal = {IEEE Transactions on Automatic Control},
+  volume  = {37},
+  number  = {3},
+  pages   = {332--341},
+  year    = {1992}
+}
+
+@inproceedings{malladi2023mezo,
+  author    = {Sadhika Malladi and Tianyu Gao and Eshaan Nichani and
+               Alex Damian and Jason D. Lee and Danqi Chen and
+               Sanjeev Arora},
+  title     = {Fine-Tuning Language Models with Just Forward Passes},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  year      = {2023}
+}
+
+@article{baydin2018autodiff,
+  author  = {Atilim Gunes Baydin and Barak A. Pearlmutter and
+             Alexey Andreyevich Radul and Jeffrey Mark Siskind},
+  title   = {Automatic Differentiation in Machine Learning: A Survey},
+  journal = {Journal of Machine Learning Research},
+  volume  = {18},
+  number  = {153},
+  pages   = {1--43},
+  year    = {2018}
+}
+
+@article{lee2026cuig,
+  author  = {Justin Lee and Zheda Mai and Jinsu Yoo and Chongyu Fan and
+             Cheng Zhang and Wei-Lun Chao},
+  title   = {Continual Unlearning for Text-to-Image Diffusion Models:
+             A Regularization Perspective},
+  journal = {arXiv preprint arXiv:2511.07970},
+  year    = {2025}
+}
+
+@inproceedings{yu2020pcgrad,
+  author    = {Tianhe Yu and Saurabh Kumar and Abhishek Gupta and
+               Sergey Levine and Karol Hausman and Chelsea Finn},
+  title     = {Gradient Surgery for Multi-Task Learning},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  year      = {2020}
+}
+%% ----------------------------------------------------------------- theory
+@inproceedings{roy2007effective,
+  author    = {Olivier Roy and Martin Vetterli},
+  title     = {The Effective Rank: A Measure of Effective Dimensionality},
+  booktitle = {European Signal Processing Conference (EUSIPCO)},
+  year      = {2007}
+}
+
+@article{daviskahan1970,
+  author  = {Chandler Davis and William M. Kahan},
+  title   = {The Rotation of Eigenvectors by a Perturbation. {III}},
+  journal = {SIAM Journal on Numerical Analysis},
+  volume  = {7},
+  number  = {1},
+  pages   = {1--46},
+  year    = {1970}
+}
+
+@article{yu2015useful,
+  author  = {Yi Yu and Tengyao Wang and Richard J. Samworth},
+  title   = {A Useful Variant of the {Davis--Kahan} Theorem for
+             Statisticians},
+  journal = {Biometrika},
+  volume  = {102},
+  number  = {2},
+  pages   = {315--323},
+  year    = {2015}
+}
+
+@inproceedings{zhao2024what,
+  title     = {What Makes Unlearning Hard and What to Do About It},
+  author    = {Zhao, Kairan and Kurmanji, Meghdad and Barbulescu,
+               George-Octavian and Triantafillou, Eleni and
+               Triantafillou, Peter},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)},
+  year      = {2024}
+}
+
+@inproceedings{chang2025retain,
+  title     = {Which Retain Set Matters for {LLM} Unlearning? A Case Study
+               on Entity Unlearning},
+  author    = {Chang, Hwan and Lee, Hwanhee},
+  booktitle = {Findings of the Association for Computational Linguistics:
+               ACL 2025},
+  pages     = {5966--5982},
+  year      = {2025}
+}
+
+@inproceedings{choi2025optout,
+  title     = {Opt-Out: Investigating Entity-Level Unlearning for Large
+               Language Models via Optimal Transport},
+  author    = {Choi, Minseok and Rim, Daniel and Lee, Dohyun and Choo, Jaegul},
+  booktitle = {Proceedings of the 63rd Annual Meeting of the Association
+               for Computational Linguistics (ACL)},
+  pages     = {28280--28297},
+  year      = {2025}
+}
+
+@inproceedings{lin2024gdr,
+  title     = {{GDR-GMA}: Machine Unlearning via Direction-Rectified and
+               Magnitude-Adjusted Gradients},
+  author    = {Lin, Shen and Zhang, Xiaoyu and Susilo, Willy and Chen,
+               Xiaofeng and Liu, Jun},
+  booktitle = {Proceedings of the 32nd ACM International Conference on
+               Multimedia},
+  pages     = {9087--9095},
+  year      = {2024}
+}
+
+@inproceedings{patel2025learning,
+  title     = {Learning to Unlearn while Retaining: Combating Gradient
+               Conflicts in Machine Unlearning},
+  author    = {Patel, Gaurav and Qiu, Qiang},
+  booktitle = {Proceedings of the IEEE/CVF International Conference on
+               Computer Vision (ICCV)},
+  pages     = {4211--4221},
+  year      = {2025}
+}
+
+@inproceedings{jin2024rwku,
+  title     = {{RWKU}: Benchmarking Real-World Knowledge Unlearning for
+               Large Language Models},
+  author    = {Jin, Zhuoran and Cao, Pengfei and Wang, Chenhao and He, Zhitao
+               and Yuan, Hongbang and Li, Jiachun and Chen, Yubo and Liu,
+               Kang and Zhao, Jun},
+  booktitle = {Advances in Neural Information Processing Systems (NeurIPS)
+               Datasets and Benchmarks Track},
+  year      = {2024},
+  doi       = {10.52202/079017-3117}
+}
+%% ------------------------------------------------------------ models etc.
+@article{qwen25,
+  author  = {{Qwen Team}},
+  title   = {Qwen2.5 Technical Report},
+  journal = {arXiv preprint arXiv:2412.15115},
+  year    = {2024}
+}
+
+@inproceedings{hendrycks2021measuring,
+  author    = {Dan Hendrycks and Collin Burns and Steven Basart and
+               Andy Zou and Mantas Mazeika and Dawn Song and
+               Jacob Steinhardt},
+  title     = {Measuring Massive Multitask Language Understanding},
+  booktitle = {International Conference on Learning Representations (ICLR)},
+  year      = {2021}
+}
+
+@misc{gdpr,
+  author = {{European Parliament and Council of the European Union}},
+  title  = {Regulation ({EU}) 2016/679: General Data Protection Regulation},
+  year   = {2016},
+  note   = {Article 17: Right to erasure (`right to be forgotten')}
+}
+
+@inproceedings{tian2024forget,
+  author    = {Bozhong Tian and Xiaozhuan Liang and Siyuan Cheng and Qingbin Liu and Mengru Wang and Dianbo Sui and Xi Chen and Huajun Chen and Ningyu Zhang},
+  title     = {To Forget or Not? Towards Practical Knowledge Unlearning for Large Language Models},
+  booktitle = {Findings of the Association for Computational Linguistics: EMNLP},
+  year      = {2024}
+}
+
+@article{tunstall2023zephyr,
+  author  = {Lewis Tunstall and Edward Beeching and Nathan Lambert and Nazneen Rajani and Kashif Rasul and Younes Belkada and Shengyi Huang and Leandro von Werra and Cl{\'e}mentine Fourrier and Nathan Habib and Nathan Sarrazin and Omar Sanseviero and Alexander M. Rush and Thomas Wolf},
+  title   = {Zephyr: Direct Distillation of {LM} Alignment},
+  journal = {arXiv preprint arXiv:2310.16944},
+  year    = {2023}
+}
+
+@inproceedings{liu2024eco,
+  author    = {Chris Yuhao Liu and Yaxuan Wang and Jeffrey Flanigan and Yang Liu},
+  title     = {Large Language Model Unlearning via Embedding-Corrupted Prompts},
+  booktitle = {Advances in Neural Information Processing Systems},
+  year      = {2024}
+}
+
+@article{cobbe2021gsm8k,
+  author  = {Karl Cobbe and Vineet Kosaraju and Mohammad Bavarian and Mark Chen and Heewoo Jun and Lukasz Kaiser and Matthias Plappert and Jerry Tworek and Jacob Hilton and Reiichiro Nakano and Christopher Hesse and John Schulman},
+  title   = {Training Verifiers to Solve Math Word Problems},
+  journal = {arXiv preprint arXiv:2110.14168},
+  year    = {2021}
+}
+
+@inproceedings{joshi2017triviaqa,
+  author    = {Mandar Joshi and Eunsol Choi and Daniel S. Weld and Luke Zettlemoyer},
+  title     = {{TriviaQA}: A Large Scale Distantly Supervised Challenge Dataset for Reading Comprehension},
+  booktitle = {Proceedings of the 55th Annual Meeting of the Association for Computational Linguistics},
+  year      = {2017}
+}
+
+@article{zhou2023instruction,
+  author  = {Jeffrey Zhou and Tianjian Lu and Swaroop Mishra and Siddhartha Brahma and Sujoy Basu and Yi Luan and Denny Zhou and Le Hou},
+  title   = {Instruction-Following Evaluation for Large Language Models},
+  journal = {arXiv preprint arXiv:2311.07911},
+  year    = {2023}
+}
+
+@inproceedings{shi2024detecting,
+  author    = {Weijia Shi and Anirudh Ajith and Mengzhou Xia and Yangsibo Huang and Daogao Liu and Terra Blevins and Danqi Chen and Luke Zettlemoyer},
+  title     = {Detecting Pretraining Data from Large Language Models},
+  booktitle = {International Conference on Learning Representations},
+  year      = {2024}
+}
+
+@inproceedings{rosati2024repnoise,
+  title     = {Representation Noising Effectively Prevents Harmful Fine-Tuning on {LLM}s},
+  author    = {Rosati, Domenic and Wehner, Jan and Williams, Kai and
+               Bartoszcze, Lukasz and Atanasov, David and Gonzales, Robie and
+               Majumdar, Subhabrata and Maple, Carsten and Sajjad, Hassan and
+               Rudzicz, Frank},
+  booktitle = {Advances in Neural Information Processing Systems},
+  year      = {2024}
+}
+
+@inproceedings{zou2024circuit,
+  title     = {Improving Alignment and Robustness with Circuit Breakers},
+  author    = {Zou, Andy and Phan, Long and Wang, Justin and Duenas, Derek and
+               Lin, Maxwell and Andriushchenko, Maksym and Wang, Rowan and
+               Kolter, J. Zico and Fredrikson, Matt and Hendrycks, Dan},
+  booktitle = {Advances in Neural Information Processing Systems},
+  year      = {2024}
+}
+
+@article{qiu2024pistol,
+  title   = {{PISTOL}: Dataset Compilation Pipeline for Structural Unlearning},
+  author  = {Qiu, Xinchi and Shen, William F. and Chen, Yihong and
+             Cancedda, Nicola and Stenetorp, Pontus and Lane, Nicholas D.},
+  journal = {arXiv preprint arXiv:2406.16810},
+  year    = {2024}
+}

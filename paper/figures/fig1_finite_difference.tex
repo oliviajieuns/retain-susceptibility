@@ -1,0 +1,240 @@
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  x=1cm,y=1cm,
+  font=\scriptsize,
+  >=Latex,
+  panel/.style={
+    draw=gray!35,
+    rounded corners=2mm,
+    fill=gray!2
+  },
+  card/.style={
+    draw=gray!45,
+    rounded corners=1mm,
+    fill=white,
+    align=center,
+    inner sep=2.2mm
+  },
+  note/.style={
+    align=center,
+    text=gray!70!black,
+    font=\scriptsize
+  },
+  title/.style={
+    font=\footnotesize\bfseries,
+    align=center
+  }
+]
+
+% Fixed panel boundaries
+\path[panel] (0,0) rectangle (5.45,5.65);
+\path[panel] (5.75,0) rectangle (11.20,5.65);
+\path[panel] (11.50,0) rectangle (16.95,5.65);
+
+% ==========================================================================
+% (a) Local direction versus finite trajectory
+% ==========================================================================
+
+\node[title,text width=4.9cm] at (2.725,5.28)
+  {(a) A local direction can fail};
+
+\coordinate (a0) at (1.05,2.55);
+\fill (a0) circle (1.7pt);
+\node[below=1mm of a0] {$\theta_0$};
+
+% Initial forget direction
+\draw[->,very thick,red!75!black]
+  (a0) -- (4.35,3.85);
+
+\node[text=red!75!black,anchor=south]
+  at (3.02,3.57)
+  {local tangent $\hat g_f$};
+
+% Finite-step trajectory
+\draw[->,very thick,orange!85!black]
+  (a0)
+  .. controls (1.75,2.88) and (2.10,3.35) ..
+  (2.55,3.56)
+  .. controls (3.05,3.80) and (3.58,3.48) ..
+  (3.67,2.86)
+  .. controls (3.75,2.28) and (3.48,1.92) ..
+  (4.18,1.73);
+
+\fill[orange!85!black] (4.18,1.73) circle (1.7pt);
+\node[right=1mm,text=orange!85!black]
+  at (4.18,1.73) {$\theta_T$};
+
+\node[text=orange!85!black,align=center]
+  at (3.83,2.50)
+  {trajectory\\rotates};
+
+% Symmetric local probe
+\fill[blue!70!black] (0.58,2.36) circle (1.6pt);
+\fill[red!75!black]  (1.52,2.74) circle (1.6pt);
+
+\draw[<->,thin]
+  (0.58,2.36) -- (1.52,2.74);
+
+\node[anchor=north east,text=blue!70!black]
+  at (0.58,2.26) {$-\eta$};
+
+\node[anchor=south west,text=red!75!black]
+  at (1.52,2.88) {$+\eta$};
+
+\node[card,minimum width=4.55cm]
+  at (2.725,0.78)
+  {$s_{\rm dir}(x)\approx\nabla\ell_x^{\top}\hat g_f$\\[-0.2mm]
+   \textcolor{gray!70!black}{
+     correct locally, fragile after rotation
+   }};
+
+% ==========================================================================
+% (b) Randomized direction-agnostic sensitivity
+% ==========================================================================
+
+\node[title,text width=4.9cm] at (8.475,5.28)
+  {(b) Randomized sensitivity};
+
+\coordinate (b0) at (7.18,3.15);
+\fill (b0) circle (1.7pt);
+\node[below left=1mm of b0] {$\theta_0$};
+
+% Random direction v_1
+\draw[<->,very thick,purple!70!black]
+  (6.30,2.67) -- (8.06,3.63);
+
+\node[text=purple!70!black,anchor=south west]
+  at (8.06,3.63) {$v_1$};
+
+% Random direction v_2
+\draw[<->,very thick,teal!70!black]
+  (7.18,2.03) -- (7.18,4.27);
+
+\node[text=teal!70!black,anchor=south west]
+  at (7.18,4.27) {$v_2$};
+
+% Random direction v_K
+\draw[<->,very thick,blue!65!black]
+  (6.45,3.93) -- (7.91,2.37);
+
+\node[text=blue!65!black,anchor=south east]
+  at (6.45,3.93) {$v_K$};
+
+\node[text=gray!65!black]
+  at (8.20,4.18) {$\cdots$};
+
+% Two forward evaluations per direction
+\node[
+  card,
+  text width=2.18cm
+] (twosweeps) at (9.72,3.25)
+  {two forward\\
+   passes at $\theta_0\pm\eta v_k$\\
+   yield $\ell^+_{xk},\ell^-_{xk}$};
+
+\draw[->,thick]
+  (8.25,3.15) -- (twosweeps.west);
+
+% Aggregate the squared directional responses
+\node[
+  card,
+  text width=4.48cm
+] at (8.475,1.20)
+  {$\widehat\delta_k(x)
+    =(\ell^+_{xk}-\ell^-_{xk})/(2\eta)$\\[0.5mm]
+   $\widehat r(x)
+    =K^{-1}\sum_{k=1}^{K}\widehat\delta_k(x)^2$};
+
+\node[note,text width=4.8cm]
+  at (8.475,0.30)
+  {squared gradient-norm proxy; no candidate backward};
+
+% ==========================================================================
+% (c) Prediction and protection
+% ==========================================================================
+
+\node[title,text width=4.9cm] at (14.225,5.28)
+  {(c) Test and protect};
+
+\node[
+  card,
+  text width=2.95cm
+] (profile) at (14.225,4.55)
+  {frozen sensitivity profile\\
+   \textcolor{gray!70!black}{
+     measured before\\unlearning
+   }};
+
+% Ranked susceptibility profile
+\draw[->,thin]
+  (12.23,3.00) -- (16.22,3.00);
+
+\draw[->,thin]
+  (12.23,3.00) -- (12.23,3.95);
+
+\foreach \x/\h/\c in {
+  12.48/.82/orange!60,
+  12.92/.66/orange!52,
+  13.36/.52/orange!44,
+  14.02/.35/green!35,
+  14.46/.27/green!28,
+  15.12/.18/blue!28,
+  15.56/.11/blue!22
+}{
+  \draw[fill=\c,draw=gray!55]
+    (\x,3.00) rectangle +(0.28,\h);
+}
+
+\node[text=orange!80!black]
+  at (13.02,4.02) {high risk};
+
+\node[below]
+  at (15.83,3.00) {rank};
+
+\draw[->,thick]
+  (profile.south) -- (14.225,3.88);
+
+% Prediction branch
+\node[
+  card,
+  text width=2.05cm
+] (predict) at (12.92,1.85)
+  {prediction test\\
+   \textcolor{gray!70!black}{
+     independent trajectories
+   }};
+
+% Protection branch
+\node[
+  card,
+  text width=1.85cm
+] (protect) at (15.55,1.85)
+  {top-$K$ protection\\
+   \textcolor{gray!70!black}{
+     matched budget
+   }};
+
+\draw[->,thick]
+  (13.52,2.97) -- (predict.north);
+
+\draw[->,thick]
+  (13.52,2.97) -- (protect.north);
+
+\node[
+  card,
+  draw=green!55!black,
+  dashed,
+  fill=green!5,
+  minimum width=2.35cm
+] (audit) at (15.55,0.55)
+  {sealed native audit};
+
+\draw[->,thick]
+  (protect.south) -- (audit.north);
+
+\node[note,text width=2.10cm]
+  at (12.92,0.55)
+  {score-blind saved\\checkpoints};
+
+\end{tikzpicture}%
+}

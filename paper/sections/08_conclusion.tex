@@ -1,0 +1,29 @@
+
+\section{Conclusion}
+\label{sec:conclusion}
+
+This paper asked why no pre-unlearning signal has consistently predicted
+where unlearning damages retained behavior, and answered that the question
+was ill-posed: susceptibility is not a model-intrinsic scalar but is
+conditional on the damage channel that the unlearning objective induces.
+The channel is declared in advance by where the objective's loss reads the
+model -- outputs or representations -- and each channel is read by a
+different predictor family. A balanced roster of objectives on both
+channels exhibits the predicted interaction: gradient-magnitude probes win
+on the output channel and go dark on the representation channel, while
+representation-proximity probes show the mirrored profile.
+
+We made the gradient channel's signal affordable with a backward-free
+randomized-sensitivity probe -- squared symmetric central differences
+along a few shared random directions -- whose validity is certified by a
+preregistered fidelity gate, and we made the prediction actionable by
+routing a fixed protection budget through the channel-matched probe into
+guarded repair. In the preregistered crossed design, matched protection
+reduced sealed-audit tail damage at matched forgetting for both parents,
+while mismatched, random, and no protection did not.
+
+The contribution is a prediction-and-protection layer, not another
+unlearning objective: given any parent unlearner, read its channel, probe
+cheaply, protect where the matched probe points. Its central implication
+is that retain-side risk work should stop searching for the one true
+susceptibility score -- and start conditioning on the channel.

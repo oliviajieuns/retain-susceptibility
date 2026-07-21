@@ -1,0 +1,78 @@
+\section{Related Work}
+\label{sec:related}
+
+\paragraph{Output-channel unlearning: losses on model outputs.}
+One family of LLM unlearning objectives defines its loss on model
+\emph{outputs} -- token likelihoods or preferences over completions.
+Gradient ascent and gradient difference directly raise forget-answer NLL
+while optionally re-descending on retain data
+\cite{jang2023knowledge,yao2024large}. Negative preference optimization and
+its simplified variant reformulate forgetting as preference optimization
+against the forget answer \cite{zhang2024negative,fan2024simplicity};
+IdkDPO substitutes refusal targets \cite{maini2024tofu}; weighted and
+saturation-aware variants reshape the same likelihood pressure
+\cite{wang2025gradient,yang2025satimp}. Retention-aware members of this
+family operate on the same channel: GRU rectifies conflicts between forget
+and aggregate-retain \emph{loss gradients} \cite{wang2025gru}, and gradient
+surgery variants synthesize the update from the same output-loss geometry
+\cite{zhou2025implicit,lin2024gdr,patel2025learning,wu2025munba,
+xiao2026sago}. Whatever their differences, all of these methods move
+parameters along directions assembled from output-loss gradients.
+
+\paragraph{Representation-channel unlearning: losses on hidden states.}
+A second family defines its loss on internal \emph{representations}. RMU
+steers forget-set hidden states toward a random control vector while
+pinning retain-set hidden states \cite{li2024wmdp}. RepNoise pushes
+harmful-content representations toward noise across layers
+\cite{rosati2024repnoise}, and Circuit Breakers reroute activations that
+enter harmful regions toward orthogonal directions \cite{zou2024circuit}.
+Localized-editing approaches that overwrite specific weight or neuron
+subspaces \cite{meng2022locating,fan2024salun,foster2024ssd,cai2025slug}
+share this character: the optimized quantity is internal structure, and
+output change is a consequence rather than the loss argument. Benchmarks --
+TOFU, MUSE, WMDP, RWKU, KnowUnDo, OpenUnlearning
+\cite{maini2024tofu,shi2024muse,li2024wmdp,jin2024rwku,tian2024forget,
+dorna2025openunlearning} -- evaluate members of both families, and
+robustness studies show that endpoint forget metrics need not certify
+removal \cite{lynch2024eight,patil2024can,hu2024jogging,
+lucki2024adversarial,deeb2024unlearning}.
+
+\paragraph{The channel-matching gap.}
+Retain-side risk has so far been diagnosed \emph{within} one family's own
+geometry. G-effect analyzes output-loss gradient interactions across steps
+and layers \cite{wang2025gradient}; GUARD scores forget examples by
+alignment with a retain Jacobian \cite{niu2025guard}; HAMU tracks an
+aggregate forget--retain gradient dot product \cite{chen2026hamu};
+split-aware evaluation and constrained recovery protect a forget-adjacent
+retain slice identified by proximity \cite{cheng2026entanglement}. Each of
+these commits to a single signal family -- gradient geometry or similarity
+-- independent of which objective will actually be run. To our knowledge,
+no prior work asks whether the \emph{right retain-side predictor depends on
+the objective's damage channel}, tests that dependence with balanced
+objective rosters on both channels, or routes protection through the
+matching signal. That interaction is precisely where single-score methods
+have been reported to behave inconsistently, and it is the gap this paper
+fills: a declared, loss-definition-level classification of objectives into
+channels, matched predictor families, and a crossed protection experiment
+showing that matching is necessary, not merely sufficient.
+
+\paragraph{Attribution, forward-only influence, and randomized probing.}
+Influence functions, TracIn, TRAK, LESS, and DataInf estimate
+training-data influence but require per-example gradients or curvature
+machinery \cite{koh2017influence,pruthi2020tracin,park2023trak,
+xia2024less,kwon2024datainf}; Forward-INF and For-Value amortize the
+expensive side over candidates with forward passes
+\cite{ko2024mirrored,deng2026forvalue}, though their estimand is
+retrospective attribution rather than prospective unlearning risk. On the
+numerical side, SPSA, random gradient-free methods, MeZO, and randomized
+trace estimators establish that random symmetric perturbations recover
+gradient information from forward evaluations alone
+\cite{spall1992spsa,nesterov2017random,malladi2023mezo,
+hutchinson1989stochastic}. We repurpose this machinery, not for
+optimization, but to score every retained candidate's
+$\lVert g_x\rVert_2$ simultaneously from $2R$ shared forward sweeps --
+giving the output channel a predictor whose cost matches the forward-only
+proximity signal available to the representation channel. The estimator is
+classical; the contributions are its role as a prospective, channel-matched
+unlearning-risk profile, the fidelity gate that certifies it, and the
+demonstration that acting on it protects the audit tail.

@@ -1,0 +1,32 @@
+\resizebox{\columnwidth}{!}{%
+\begin{tikzpicture}[x=0.82cm,y=0.82cm,font=\footnotesize,>=Latex,
+  box/.style={draw,minimum width=1.7cm,minimum height=.72cm,align=center}]
+  \node[box,fill=red!12] (forget) at (0,1.9) {forget\\examples};
+  \node[box,fill=orange!13] (retain) at (0,.55) {visible retain\\references};
+
+  \node[box,fill=red!7] (fg) at (2.65,1.9) {base\\direction};
+  \node[box,fill=orange!8] (rg) at (2.65,.55) {retain\\anchor};
+
+  \draw[->,thick] (forget) -- (fg);
+  \draw[->,thick] (retain) -- (rg);
+
+  \node[draw,fill=gray!7,minimum width=2.1cm,minimum height=1.85cm]
+    (gram) at (5.45,1.22) {};
+  \node[font=\footnotesize\bfseries] at (5.45,1.86) {Gram table};
+  \foreach \x in {4.88,5.28,5.68,6.08}
+    \foreach \y in {.68,1.06,1.44}
+      \fill[blue!20] (\x,\y) rectangle +(0.27,0.27);
+  \fill[red!45] (4.88,1.44) rectangle +(0.27,0.27);
+  \fill[red!30] (5.28,1.06) rectangle +(0.27,0.27);
+  \fill[red!55] (5.68,.68) rectangle +(0.27,0.27);
+  \node[gray!80!black,font=\scriptsize] at (5.45,.43)
+    {pairwise inner products};
+
+  \draw[->,thick] (fg.east) -- (gram.north west);
+  \draw[->,thick] (rg.east) -- (gram.south west);
+
+  \node[box,fill=green!12,minimum width=1.75cm,minimum height=1.45cm]
+    (scores) at (8.25,1.22) {retain-span\\overlap};
+  \draw[->,thick] (gram) -- (scores);
+\end{tikzpicture}%
+}
