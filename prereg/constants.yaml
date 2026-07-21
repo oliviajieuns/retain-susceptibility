@@ -32,3 +32,37 @@ contract:
   remote_retention_min: 0.90
   utility_retention_min: 0.90
 seeds: [2025, 2026, 2027]
+
+---
+# FREEZE-2026-07-21-channel-interaction
+# Frozen while the balanced channel-matrix run (gate chanbal, 1.5B fp32) and the
+# crossed-protection run (xprot3) are IN FLIGHT and unblinded to no one; endpoints
+# below are fixed before any result from those runs is read.
+freeze_id: FREEZE-2026-07-21-channel-interaction
+declared_channels:                      # declared from each loss definition, not results
+  loss_gradient: [ga, graddiff, npo, simnpo, idkdpo, gru]
+  representation: [rmu, repnoise, circuit_breakers]
+predictor_families:
+  gradient: [grad_norm, fd_norm]
+  representation: [knn_feature, knn_embed, knn_lexical]
+  alignment_rejected: [fd, one_sided, last_layer]   # rejected pre-freeze (D1 evidence)
+  control: [random_rank, random_dir]
+headline_probes: {gradient: fd_norm, representation: knn_feature}
+primary_endpoints:
+  prediction_interaction:
+    statistic: difference_in_differences    # (rho_g - rho_r | LG obj) - (rho_g - rho_r | REP obj)
+    probes: [fd_norm, knn_feature]
+    success: delta > 0 with candidate-bootstrap 95% CI excluding 0
+    aggregation: report every (LG obj, REP obj) pair; headline = mean over pairs
+  protection_interaction:
+    design: parents {graddiff, rmu} x selectors {none, random, fd_norm, knn_feature}
+    metric: audit dNLL CVaR(0.05) at matched forgetting (forget_recall <= 0.10)
+    success: matched-channel selector CVaR < each of {mismatched, random, none}, per parent
+secondary_endpoints: [mean_dnll, auroc, overlap_at_k, tail_rho, para_recall_no_loss]
+fd_norm_probe: {norm_eta: 3.0e-3, n_dirs: 64}       # fixed by the A/B/C fidelity gate, pre-unblinding
+dataset_roster:                         # channel labels and endpoints identical across datasets
+  primary: tofu
+  replication: [wmdp_bio, muse_news, rwku]
+  stress: [muse_books, pistol]
+  reduced_roster_rule: replication/stress tiers may use {graddiff, npo} x {rmu, repnoise}
+    with selectors {none, random, fd_norm, knn_feature}; primary tier uses the full roster
