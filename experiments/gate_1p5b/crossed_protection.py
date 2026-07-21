@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses as _dc
+import gc
 import json
 import sys
 from pathlib import Path
@@ -50,6 +51,15 @@ from rsus.stage2 import Stage2Config  # noqa: E402
 
 # gradient family <-> loss_gradient channel; representation family <-> representation channel.
 FAMILY_CHANNEL = {"gradient": "loss_gradient", "representation": "representation"}
+
+
+def free_cuda():
+    """Between arms: break objective/optimizer reference cycles and return
+    cached blocks to the driver. Without this, 15 sequential fresh()-model
+    arms accumulate to an OOM (observed: 77 GB after 9 arms)."""
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
 
 
 def parse_args():
@@ -143,6 +153,8 @@ def crossed_sweep(fresh, block, req, by_id, folds, audit_ids, retain_matched, fl
         rec = run_trajectory(fresh(), parent, req, retain_matched, gcfg,
                              extra_eval=extra_eval, stop_at_recall=recall_max)
         m = audit_metrics(rec, audit_ids, recall_max)
+        del rec
+        free_cuda()
         results.append({"parent": parent, "channel": pchan, "selector": "none", "match": "none", **m})
         log(f"{parent}[{pchan}] / none        reach={m['reached']} "
             f"mean={m['mean_dnll']:.3f} CVaR={m['cvar_dnll']:.3f}")
@@ -163,6 +175,8 @@ def crossed_sweep(fresh, block, req, by_id, folds, audit_ids, retain_matched, fl
             rec = run_engine_repaired(fresh(), block, req, retain_matched, protect, remote,
                                       floor_m, parent, rcfg, extra_eval=extra_eval)
             m = audit_metrics(rec, audit_ids, recall_max)
+            del rec
+            free_cuda()
             fam = PREDICTOR_FAMILY.get(sel, "control")
             match = ("random" if sel == "random"
                      else "matched" if FAMILY_CHANNEL.get(fam) == pchan else "mismatched")
@@ -206,21 +220,30 @@ def main():
     examples = load_tofu_examples(tokenizer)
     req = tofu_request(a.author, examples, universe_authors=a.universe_authors, seed=a.seed)
     by_id = {e.example_id: e for e in req.universe.examples}
+    # base is only needed for floor calibration -- free it before anything else
+    # holds GPU memory (fp32 residency discipline, same as gate.py).
     base = load_model(a, tokenizer)
+    floor_m = calibrate_floor(base, req, a.batch_size)
+    del base
+    free_cuda()
+
     model0 = load_model(a, tokenizer)
     sft(model0, list(req.forget) + list(req.universe.examples), a, log)
-    state0 = {k: v.clone() for k, v in model0.state_dict().items()}
+    # SFT'd weights live on CPU; fresh() copies them into each newly loaded
+    # model, so no extra GPU copy stays resident between arms.
+    state0 = {k: v.detach().cpu().clone() for k, v in model0.state_dict().items()}
+    block = mlp_down_last_layers(model0, a.block_last_n)
+    del model0
+    free_cuda()
 
     def fresh():
         m = load_model(a, tokenizer); m.load_state_dict(state0); return m
 
-    block = mlp_down_last_layers(model0, a.block_last_n)
     spec = ProbeSpec(block=block, eta=a.eta, batch_size=a.batch_size,
                      n_dirs=a.probe_dirs, norm_eta=a.probe_norm_eta)
     folds = make_folds({e.example_id: e.group for e in req.universe.examples}, 0.5, a.seed)
     audit_ids = {e.example_id for e in req.universe.examples if folds[e.group] == "audit"}
     disc_ids = sorted(set(by_id) - audit_ids)
-    floor_m = calibrate_floor(base, req, a.batch_size)
 
     parents = [x.strip() for x in a.parents.split(",") if x.strip()]
     selectors = [x.strip() for x in a.selectors.split(",") if x.strip()]
@@ -229,8 +252,11 @@ def main():
 
     # score every selector once, over the full universe (partition uses discovery fold)
     log("scoring selectors ...")
-    sel_scores = {s: get_scorer(s)(fresh(), req, spec).scores for s in selectors}
-    sel_scores["random"] = get_scorer("random_rank")(fresh(), req, spec).scores
+    sel_scores = {}
+    for s in list(selectors) + ["random"]:
+        scorer = "random_rank" if s == "random" else s
+        sel_scores[s] = get_scorer(scorer)(fresh(), req, spec).scores
+        free_cuda()
 
     retain_matched = [by_id[disc_ids[i]] for i in
                       torch.randperm(len(disc_ids), generator=torch.Generator().manual_seed(a.seed))
