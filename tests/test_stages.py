@@ -230,3 +230,63 @@ def test_engine_repaired_pipeline(req):
     assert rec.snapshots[0].step == engine_last
     assert rec.snapshots[-1].step == engine_last + cfg.stage2.max_steps
     assert set(rec.nll0) == set(rec.snapshots[-1].nll)
+
+
+def test_crossed_sweep_labels_and_runs():
+    """crossed_sweep produces none/matched/mismatched/random cells per parent and
+    labels the selector-to-channel match correctly (gradient probe on a
+    loss-gradient parent = matched; representation probe = mismatched)."""
+    import dataclasses as _dc
+    import sys
+    from pathlib import Path
+
+    import torch
+    from conftest import build_tiny, make_example
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "experiments" / "gate_1p5b"))
+    from crossed_protection import crossed_sweep
+
+    from rsus.blocks import mlp_down_last_layers
+    from rsus.data.base import CandidateUniverse, Request
+    from rsus.generators.base import TrajectoryConfig
+    from rsus.partition import make_folds
+    from rsus.probe.base import ProbeSpec, get_scorer
+    from rsus.stage2 import Stage2Config
+
+    model = build_tiny(7)
+    gen = torch.Generator().manual_seed(1)
+    forget = [make_example(gen, f"f{i:02d}") for i in range(4)]
+    cands = [_dc.replace(make_example(gen, f"c{g}_{j}"), group=f"grp{g}")
+             for g in range(10) for j in range(4)]
+    req = Request.build("x", forget, CandidateUniverse.freeze(cands))
+    by_id = {e.example_id: e for e in cands}
+    folds = make_folds({e.example_id: e.group for e in cands}, 0.5, 0)
+    audit_ids = {e.example_id for e in cands if folds[e.group] == "audit"}
+    block = mlp_down_last_layers(model, 1)
+    spec = ProbeSpec(block=block, eta=1e-4, batch_size=4, n_dirs=8, norm_eta=1e-3)
+
+    state0 = {k: v.clone() for k, v in model.state_dict().items()}
+
+    def fresh():
+        m = build_tiny(7)
+        m.load_state_dict(state0)
+        return m
+
+    sels = ["grad_norm", "knn_feature"]
+    sel_scores = {s: get_scorer(s)(fresh(), req, spec).scores for s in sels}
+    sel_scores["random"] = get_scorer("random_rank")(fresh(), req, spec).scores
+    s2 = Stage2Config(max_steps=4, refresh_k=2, batch_size=4)
+
+    def make_gcfg(_):
+        return TrajectoryConfig(max_steps=4, checkpoint_every=2, lr=1e-3, batch_size=4)
+
+    payload = crossed_sweep(fresh, block, req, by_id, folds, audit_ids, cands[:4], 0.05,
+                            ["graddiff"], sels, sel_scores, make_gcfg, s2,
+                            recall_max=1.0, pool_size=3, seed=0, log=lambda *_: None)
+    m = {r["selector"]: r["match"] for r in payload["results"]}
+    assert m["grad_norm"] == "matched"          # gradient probe on loss-gradient parent
+    assert m.get("random") == "random"
+    assert any(r["selector"] == "none" for r in payload["results"])
+    if "knn_feature" in m:
+        assert m["knn_feature"] == "mismatched"
+    assert all("cvar_dnll" in r for r in payload["results"])
