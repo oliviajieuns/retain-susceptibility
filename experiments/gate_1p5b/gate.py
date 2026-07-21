@@ -59,7 +59,11 @@ def parse_args():
     p.add_argument("--universe-authors", type=int, default=30)
     p.add_argument("--block-last-n", type=int, default=8)
     p.add_argument("--eta", type=float, default=3e-4)
-    p.add_argument("--probe-dirs", type=int, default=8,
+    p.add_argument("--probe-norm-eta", type=float, default=3e-3,
+                   help="FD radius for fd_norm (larger than --eta): random projections "
+                        "give small g.v, so at 3e-4 the fp32 loss-difference cancellation "
+                        "inflates the squared estimate ~4x; 3e-3 recovers ||g||^2 (fidelity gate)")
+    p.add_argument("--probe-dirs", type=int, default=32,
                    help="random directions K for norm-estimating scorers (fd_norm): "
                         "2K forward sweeps, relative estimator variance 2/K")
     p.add_argument("--batch-size", type=int, default=8)
@@ -270,7 +274,7 @@ def main():
 
     # ---- predictors, sealed on the audit fold --------------------------------
     spec = ProbeSpec(block=probe_block, eta=a.eta,
-                     batch_size=a.batch_size, n_dirs=a.probe_dirs)
+                     batch_size=a.batch_size, n_dirs=a.probe_dirs, norm_eta=a.probe_norm_eta)
     predictors = ["fd", "knn_feature", "knn_lexical", "grad_norm", "random_rank"]
     try:
         import sentence_transformers  # noqa: F401

@@ -97,14 +97,19 @@ def score_fd_norm(model: torch.nn.Module, request: Request, spec: ProbeSpec) -> 
     predictive quantity on the 1.5B gate (grad_norm), at 2K batched forward
     sweeps and zero per-candidate backwards. Relative estimator variance is
     2/K, independent of dim(B)."""
+    import dataclasses as _dc
     rec = CostRecord()
+    # random projections give small g.v, so fd_norm needs a larger FD radius than
+    # the alignment probe or catastrophic cancellation in l(+)-l(-) inflates the
+    # squared estimate (fp32). Use spec.norm_eta when set (see appendix eta sweep).
+    sp = _dc.replace(spec, eta=spec.norm_eta) if spec.norm_eta is not None else spec
     with Meter(rec):
         sel = spec.block.select(model)
         gen = torch.Generator().manual_seed(spec.seed)
         acc: dict[str, float] = {}
         for _ in range(spec.n_dirs):
             direction = vec_unit(vec_randn_like(sel, gen))
-            deriv = fd_scores_along(model, request, spec, direction, rec)
+            deriv = fd_scores_along(model, request, sp, direction, rec)
             for cid, val in deriv.items():
                 acc[cid] = acc.get(cid, 0.0) + val * val
         scores = {cid: s / spec.n_dirs for cid, s in acc.items()}

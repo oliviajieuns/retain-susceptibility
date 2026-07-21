@@ -27,6 +27,10 @@ class ProbeSpec:
     seed: int = 0
     batch_size: int = 8
     n_dirs: int = 8  # random probe directions for norm-estimating scorers (fd_norm)
+    norm_eta: float | None = None  # separate (larger) FD radius for fd_norm; random
+    # projections give small g.v, so at the alignment eta the loss difference sits
+    # near the fp32 cancellation floor and the squared estimator is noise-inflated.
+    # None -> fall back to eta.
 
 
 @dataclass
