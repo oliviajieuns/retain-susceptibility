@@ -66,3 +66,47 @@ dataset_roster:                         # channel labels and endpoints identical
   stress: [muse_books, pistol]
   reduced_roster_rule: replication/stress tiers may use {graddiff, npo} x {rmu, repnoise}
     with selectors {none, random, fd_norm, knn_feature}; primary tier uses the full roster
+
+---
+# FREEZE-2026-07-21-alpha-mixture
+# Channel-mixture score s_alpha = alpha*rank01(grad probe) + (1-alpha)*rank01(rep probe),
+# the continuous embedding of the discrete channel router (alpha in {0,1} recovers the
+# headline probes exactly). Frozen BEFORE any rho(s_alpha, damage) curve or protection
+# alpha-response is computed from a confirmatory run: alpha_sweep has not been executed
+# on chanbal2 (or any confirmatory) seals as of this freeze. Status: EXPLORATORY -- the
+# primary endpoints of FREEZE-2026-07-21-channel-interaction are unchanged; nothing here
+# supersedes or reweights them.
+freeze_id: FREEZE-2026-07-21-alpha-mixture
+alpha_mixture:
+  probes: {grad: fd_norm, rep: knn_feature}   # headline probes, unchanged
+  normalization: rank01                       # per-probe rank -> [0,1]; ties broken by candidate id
+  normalization_sensitivity: zscore           # appendix-only sensitivity check, not a second endpoint
+  alpha_grid: [0, 0.125, 0.25, 0.375, 0.5, 0.625, 0.75, 0.875, 1]
+  declared_mapping:                           # STRICT -- the deployed router is unchanged
+    loss_gradient: 1.0
+    representation: 0.0
+    hybrid: 0.5                               # none in current roster; forget-suppression term decides
+  alpha_selection:
+    primary: declared_mapping, fixed a priori; interior-alpha sweeps are descriptive instrumentation
+    adaptive_variant: alpha_hat fit on the discovery fold only
+    prohibited: selecting or tuning alpha on the sealed audit, under any framing
+  endpoints_exploratory:
+    prediction: per-objective rho(s_alpha, damage) curves on the frozen grid; argmax alpha*
+      per objective; separation mean alpha*(loss_gradient objs) - mean alpha*(representation objs)
+      expected > 0 (continuous analogue of the primary interaction); reach flags carried over
+    protection: crossed arms with selectors s_alpha in {0.25, 0.5, 0.75} (grid endpoints =
+      existing fd_norm / knn_feature headline arms, not re-run); alpha-response of sealed-audit
+      dNLL CVaR(0.05) per parent at matched forgetting; report prediction-optimal vs
+      protection-optimal alpha discrepancy explicitly, whichever direction it points
+
+---
+# AMENDMENT-2026-07-22-alpha-orientation
+# Presentation-only coordinate flip: alpha_new = 1 - alpha_old. This changes no
+# endpoint selector, interior grid, ranking, or outcome; it makes 0 denote the
+# output/loss-gradient route and 1 denote the hidden-representation route.
+amendment_id: AMENDMENT-2026-07-22-alpha-orientation
+supersedes_orientation_only: FREEZE-2026-07-21-alpha-mixture
+alpha_orientation:
+  score: (1-alpha)*rank01(grad probe) + alpha*rank01(rep probe)
+  declared_mapping: {loss_gradient: 0.0, representation: 1.0}
+  diagnostic_separation: mean alpha*(representation objs) - mean alpha*(loss_gradient objs)

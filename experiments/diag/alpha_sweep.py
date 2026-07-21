@@ -1,6 +1,6 @@
 """Channel-mixture score alpha sweep (offline; NO GPU, no new runs).
 
-s_alpha(x) = alpha * rank(grad_probe) + (1 - alpha) * rank(rep_probe),
+s_alpha(x) = (1 - alpha) * rank(grad_probe) + alpha * rank(rep_probe),
 rank-normalized to [0, 1] per probe. Reads sealed per-candidate scores and
 saved per-objective damage from a completed gate run, and reports
 rho(s_alpha, damage) per objective across the alpha grid -- the continuous
@@ -55,13 +55,13 @@ def main() -> None:
     objs = sorted(dmg, key=lambda o: (rank.get(DECLARED_CHANNEL.get(o, "?"), 2), o))
 
     print(f"request={request} n={len(common)} grad_probe={a.grad_probe} rep_probe={a.rep_probe}")
-    print("s_alpha = alpha*rank(grad) + (1-alpha)*rank(rep); cells = spearman rho vs damage\n")
+    print("s_alpha = (1-alpha)*rank(grad) + alpha*rank(rep); cells = spearman rho vs damage\n")
     header = "alpha".ljust(8) + "".join(o[:11].rjust(12) for o in objs)
     print(header)
     rows = []
     curves: dict[str, list[float]] = {o: [] for o in objs}
     for al in alphas:
-        s = [al * rg[c] + (1 - al) * rp[c] for c in common]
+        s = [(1 - al) * rg[c] + al * rp[c] for c in common]
         line = f"{al:<8.3f}"
         for o in objs:
             r = spearman(s, [dmg[o][c] for c in common])
