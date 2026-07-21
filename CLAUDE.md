@@ -15,8 +15,10 @@ Claude Code 세션 컨테이너에는 GPU가 없다 (CPU 검증만 가능).
   띄우기 전 반드시 `nvidia-smi`로 개수 확인 — 없는 번호를 CUDA_VISIBLE_DEVICES에 지정하면
   "No CUDA GPUs available"로 즉사 (드라이버 535.129.03).
 - **2026-07-21 활성 런 배치 (1.5B fp32 메커니즘 캠페인)**:
-  - `run259706-ufail3` GPU0 → gate.py 채널매트릭스 (`--run-tag chanbal`, 로그 `chanbal_run259706-ufail3.out`)
-  - `run256043-test1` GPU1 → crossed_protection.py (`--run-tag xprot1`, 로그 `xprot_run256043-test1.out`)
+  - `run260112-ufail` GPU0 → gate.py chanbal2 (npo 추가 + CB 240스텝, 로그 `chanbal2_run260112-ufail.out`). GPU1 비어있음.
+  - `run259703-unlearningfail` GPU0 (1장 노드) → crossed_protection.py xprot4
+    (parents graddiff,rmu,repnoise / selectors +grad_norm / gen-lr 2e-6, 로그 `xprot4_run259703-unlearningfail.out`)
+  - 완료: chanbal(8 obj 매트릭스, interaction 3쌍 CI>0 확정), xprot1~3(xprot3=과붕괴/바닥 레짐 교훈)
 - NVIDIA 드라이버 CUDA 12.2 (12020).
   - torch는 **cu12x 빌드만** 동작. cu130(torch 2.13 PyPI 기본)은 실패.
   - 검증된 조합: torch 2.5.1+cu121, torch 2.7.1+cu126 (둘 다 cuda=True 확인됨).
