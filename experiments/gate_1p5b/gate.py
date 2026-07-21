@@ -12,6 +12,7 @@ Artifacts land in runs/gate_<tag>/ (tables + JSON + seal ledger).
 from __future__ import annotations
 
 import argparse
+import gc
 import json
 import sys
 from pathlib import Path
@@ -152,16 +153,35 @@ def load_model(a, tokenizer):
             max_position_embeddings=512, pad_token_id=tokenizer.pad_token_id,
         )
         return Qwen2ForCausalLM(cfg).to(dtype).eval()
-    kw = {"torch_dtype": dtype}
+    kw = {"dtype": dtype}
     if a.attn_impl:
         kw["attn_implementation"] = a.attn_impl
     m = AutoModelForCausalLM.from_pretrained(a.model, **kw)
     return m.to(a.device).eval()
 
 
+def clear_cuda_cache() -> None:
+    """Release tensors owned by completed scorers/trajectories.
+
+    Gate runs intentionally serialize GPU work: the SFT target is stored on
+    CPU and every scorer or trajectory receives one disposable model.  The
+    collection before ``empty_cache`` is important because otherwise a model
+    caught in a short Python reference cycle can survive into the next arm.
+    """
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+
 def sft(model, examples, a, log):
-    opt = torch.optim.AdamW(model.parameters(), lr=a.sft_lr)
+    # The foreach AdamW implementation holds an additional tensor list about
+    # the size of the parameters during opt.step().  The scalar implementation
+    # has the same update rule and a lower transient peak, which matters for a
+    # full-model 7B update on one 80GB GPU.
+    opt = torch.optim.AdamW(model.parameters(), lr=a.sft_lr, foreach=False)
     gen = torch.Generator().manual_seed(a.seed)
+    loss = None
+    batch = None
     for step in range(1, a.sft_steps + 1):
         idx = torch.randperm(len(examples), generator=gen)[: a.batch_size]
         batch = {k: v.to(a.device) if torch.is_tensor(v) else v
@@ -175,6 +195,10 @@ def sft(model, examples, a, log):
             if float(loss.detach()) <= a.sft_target_loss:
                 break
     model.zero_grad(set_to_none=True)
+    del opt
+    del loss
+    del batch
+    clear_cuda_cache()
 
 
 def main():
@@ -208,13 +232,33 @@ def main():
     by_id = {e.example_id: e for e in req.universe.examples}
     log(f"request {req.request_id}: |Df|={len(req.forget)} |C|={len(req.universe)}")
 
-    base = load_model(a, tokenizer)          # pre-injection reference
+    t2_methods = [x.strip() for x in a.t2_roster.split(",") if x.strip()]
+
+    # A T2 run needs only the scalar pre-injection floor, not a live reference
+    # model.  Compute it first and release that model before loading the SFT
+    # target.  Consequently base and model0 never coexist on the GPU.
+    floor_m = None
+    if t2_methods:
+        log("calibrating the pre-injection forgetting floor ...")
+        base = load_model(a, tokenizer)
+        try:
+            floor_m = calibrate_floor(base, req, a.batch_size)
+        finally:
+            del base
+            clear_cuda_cache()
+
     model0 = load_model(a, tokenizer)
     log("SFT-memorizing the request universe ...")
     sft(model0, list(req.forget) + list(req.universe.examples), a, log)
-    state0 = {k: v.clone() for k, v in model0.state_dict().items()}
+    probe_block = mlp_down_last_layers(model0, a.block_last_n)
+    # Keep the frozen target on host memory.  Otherwise model0 + state0 + the
+    # fresh optimizer model coexist on device during every trajectory.
+    state0 = {k: v.detach().cpu().clone() for k, v in model0.state_dict().items()}
+    del model0
+    clear_cuda_cache()
 
     def fresh():
+        """Load exactly one disposable GPU model from the CPU SFT snapshot."""
         m = load_model(a, tokenizer)
         m.load_state_dict(state0)
         return m
@@ -225,7 +269,7 @@ def main():
     log(f"folds: {len(audit_ids)} audit / {len(disc_ids)} discovery candidates")
 
     # ---- predictors, sealed on the audit fold --------------------------------
-    spec = ProbeSpec(block=mlp_down_last_layers(model0, a.block_last_n), eta=a.eta,
+    spec = ProbeSpec(block=probe_block, eta=a.eta,
                      batch_size=a.batch_size, n_dirs=a.probe_dirs)
     predictors = ["fd", "knn_feature", "knn_lexical", "grad_norm", "random_rank"]
     try:
@@ -239,7 +283,12 @@ def main():
     scores_by_pred = {}
     for pred in predictors:
         log(f"scoring: {pred}")
-        prof = get_scorer(pred)(fresh(), req, spec)
+        scorer_model = fresh()
+        try:
+            prof = get_scorer(pred)(scorer_model, req, spec)
+        finally:
+            del scorer_model
+            clear_cuda_cache()
         scores_by_pred[pred] = prof.scores
         seal_scores(out / "seals", out / "seal_ledger.jsonl", req.request_id, pred,
                     {c: prof.scores[c] for c in audit_ids})
@@ -260,7 +309,15 @@ def main():
         log(f"generator: {g}")
         cfg_g = _dc.replace(gen_cfg, max_steps=gen_steps_per.get(g, a.gen_steps),
                             lr=gen_lr_per.get(g, a.gen_lr))
-        rec = run_trajectory(fresh(), g, req, retain_gen, cfg_g, out_dir=out / f"traj_{g}")
+        trajectory_model = fresh()
+        try:
+            rec = run_trajectory(
+                trajectory_model, g, req, retain_gen, cfg_g,
+                out_dir=out / f"traj_{g}",
+            )
+        finally:
+            del trajectory_model
+            clear_cuda_cache()
         markers.append(out / f"traj_{g}" / "DONE")
         term = rec.terminal()
         dmg_all = rec.damage_at()
@@ -284,6 +341,10 @@ def main():
         log(f"{pred:14s}" + "".join(f"{r[f'{g}_rho']['mean']:14.3f}" for g in GENERATORS)
             + f"{r['auroc']['mean']:8.3f}{r['overlap']['mean']:8.3f}")
 
+    if not t2_methods:
+        log(f"\nartifacts in {out}")
+        return
+
     # ---- protection (T2 mini) -------------------------------------------------
     part_scores = scores_by_pred[a.partition_predictor]
     from rsus.costs import CostRecord
@@ -301,7 +362,7 @@ def main():
     perm = torch.randperm(len(disc_ids), generator=gen_r).tolist()
     retain_matched = [by_id[disc_ids[i]] for i in perm[: len(protect)]]  # size-matched
 
-    floor_m = calibrate_floor(base, req, a.batch_size)
+    assert floor_m is not None
     log(f"\npartition: |P|={len(protect)} fallback={part.fallback}; floor m={floor_m:.2f}")
 
     # paraphrase-recall audit at every snapshot (weights are not persisted)
@@ -326,9 +387,10 @@ def main():
     t2 = {}
     t2_lr_per = {k: float(v) for k, v in
                  (kv.split("=") for kv in a.t2_lr_per.split(",") if kv.strip())}
-    for method in [x.strip() for x in a.t2_roster.split(",") if x.strip()]:
+    for method in t2_methods:
         log(f"protection method: {method}")
         two_stage = method in ("ours", "s2s") or method.endswith("_repaired")
+        m = None
         try:
             m = fresh()
             if method == "ours":
@@ -376,6 +438,10 @@ def main():
             log(traceback.format_exc())
             t2[method] = {"reached": False, "error": f"{type(e).__name__}: {e}"}
             continue
+        finally:
+            if m is not None:
+                del m
+            clear_cuda_cache()
         t2[method] = vars(outp)
         para = (outp.extra or {}).get("para_recall")
         log(f"  reach={outp.reached} step={outp.step} "

@@ -19,7 +19,11 @@ class _Base:
         self.request = request
         self.retain = retain
         self.cfg = cfg
-        self.opt = torch.optim.AdamW(model.parameters(), lr=cfg.lr)
+        # ``foreach=False`` preserves AdamW semantics while avoiding the
+        # parameter-sized temporary tensor lists used by the CUDA foreach
+        # implementation.  This keeps a full-model 7B trajectory within one
+        # 80GB device once the caller has serialized model residency.
+        self.opt = torch.optim.AdamW(model.parameters(), lr=cfg.lr, foreach=False)
         self.gen = torch.Generator().manual_seed(cfg.seed)
         self.forget_batch = collate(list(request.forget))
 
@@ -118,27 +122,44 @@ class GRU(_Base):
     stripped of its component that conflicts with retain descent, then
     combined with the retain gradient (minimal faithful implementation)."""
 
-    def _flat_grads(self, loss) -> list[torch.Tensor]:
+    def step(self) -> float:
+        # Keep only the forget-gradient copy.  The retain gradient remains in
+        # ``p.grad`` and is combined in place after the global coefficient is
+        # known.  The former implementation cloned both gradients while also
+        # retaining ``p.grad``, which could add three model-sized gradient
+        # sets to a one-GPU run.
+        f_loss = -seq_mean_answer_nll(self.model, self.forget_batch).mean()
         self.opt.zero_grad(set_to_none=True)
-        loss.backward()
-        return [
+        f_loss.backward()
+        f_value = float(f_loss.detach())
+        g_f = [
             (p.grad.detach().clone() if p.grad is not None else torch.zeros_like(p))
             for p in self.model.parameters()
         ]
+        del f_loss
 
-    def step(self) -> float:
-        f_loss = -seq_mean_answer_nll(self.model, self.forget_batch).mean()
-        g_f = self._flat_grads(f_loss)
         r_loss = seq_mean_answer_nll(self.model, self.retain_minibatch()).mean()
-        g_r = self._flat_grads(r_loss)
-        dot = sum((a * b).sum() for a, b in zip(g_f, g_r))
-        rr = sum((b * b).sum() for b in g_r)
-        coef = torch.clamp(dot / (rr + 1e-12), max=0.0)  # remove conflicting part only
         self.opt.zero_grad(set_to_none=True)
-        for p, a, b in zip(self.model.parameters(), g_f, g_r):
-            p.grad = (a - coef * b) + b
+        r_loss.backward()
+        r_value = float(r_loss.detach())
+        dot = sum(
+            (a * p.grad).sum()
+            for a, p in zip(g_f, self.model.parameters())
+            if p.grad is not None
+        )
+        rr = sum(
+            (p.grad * p.grad).sum()
+            for p in self.model.parameters()
+            if p.grad is not None
+        )
+        coef = torch.clamp(dot / (rr + 1e-12), max=0.0)  # remove conflicting part only
+        for p, a in zip(self.model.parameters(), g_f):
+            if p.grad is None:
+                p.grad = a
+            else:
+                p.grad.mul_(1.0 - coef).add_(a)
         self.opt.step()
-        return float((f_loss + r_loss).detach())
+        return f_value + r_value
 
 
 @register_objective("rmu")

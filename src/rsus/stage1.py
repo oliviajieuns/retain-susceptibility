@@ -85,7 +85,9 @@ def run_stage1(
         l_rem0 = mean_seq_loss(model, probe, cfg.batch_size)
         base_recall = mean_recall(model, probe, cfg.batch_size)
 
-        opt = torch.optim.AdamW(model.parameters(), lr=cfg.lr)
+        # Avoid the parameter-sized CUDA foreach temporaries so the full-model
+        # stage can share the same one-GPU execution contract as generators.
+        opt = torch.optim.AdamW(model.parameters(), lr=cfg.lr, foreach=False)
         gen = torch.Generator().manual_seed(cfg.seed)
         lam, h_bar = 0.0, 0.0
         history: list[dict] = []
