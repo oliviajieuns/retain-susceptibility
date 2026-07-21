@@ -41,6 +41,8 @@ Claude Code 세션 컨테이너에는 GPU가 없다 (CPU 검증만 가능).
 
 ### 네트워크 (사내망 차단 사항)
 - GitHub SSH(포트 22) 차단 → HTTPS + PAT로 클론.
+- **git 사용자 정보는 레포-로컬로 설정돼 있음** (`git config user.name/email`, `--global` 금지 —
+  홈이 노드-로컬이라 글로벌 설정은 노드 바뀌면 증발. 레포-로컬은 group-volume이라 전 노드 유지).
 - Hugging Face Hub: **접속 가능** (다운로드 확인됨). HF_HOME만 공유볼륨으로 잡아 캐시 재사용.
 - pip 인덱스는 사내 artifactory(`bart.sec.samsung.net`) 미러 — 일반 PyPI 패키지 설치 가능.
   `download.pytorch.org` 사용 불가, PyPI 기본 인덱스의 torch를 쓸 것.
