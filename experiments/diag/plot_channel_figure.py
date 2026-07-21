@@ -110,26 +110,29 @@ def main() -> None:
     cb = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.03)
     cb.set_label("Spearman rho", fontsize=8)
 
-    # (B) interaction bars
+    # (B) crossover: each headline probe's mean rho on each objective channel.
+    # The lines CROSS -> the winning probe depends on the channel (= interaction).
+    # Categorical colours (Okabe-Ito), NOT the diverging heatmap scale.
     axb = fig.add_subplot(gs[0, 1])
-    pairs = [("grad_norm", "knn_feature"), ("fd_norm", "knn_feature")]
-    labels, deltas = [], []
-    for gp, rp in pairs:
-        if gp in rho and rp in rho and "graddiff" in cols and "rmu" in cols:
-            d = ((rho[gp]["graddiff"] - rho[rp]["graddiff"])
-                 - (rho[gp]["rmu"] - rho[rp]["rmu"]))
-            labels.append(f"{gp}\nvs {rp}")
-            deltas.append(d)
-    y = np.arange(len(labels))
-    axb.barh(y, deltas, color=["#2166ac", "#4393c3"][: len(labels)])
-    axb.axvline(0, color="k", lw=0.8)
-    axb.set_yticks(y, labels, fontsize=8)
-    axb.set_xlabel("interaction  $\\Delta$", fontsize=9)
-    axb.set_title("(B)  channel matching", fontsize=10, loc="left")
-    for yi, d in zip(y, deltas):
-        axb.text(d + 0.02, yi, f"{d:+.2f}", va="center", fontsize=9)
-    axb.set_xlim(-0.1, max(deltas) * 1.35 if deltas else 1)
-    axb.invert_yaxis()
+    HP = {"gradient": ("fd_norm", "#E69F00"), "representation": ("knn_feature", "#009E73")}
+    chan_order = ["loss_gradient", "representation"]
+    chan_objs = {ch: [c for c in cols if DECLARED_CHANNEL.get(c) == ch] for ch in chan_order}
+    xpos = np.arange(len(chan_order))
+    for fam, (probe, col) in HP.items():
+        if probe not in rho:
+            continue
+        ys = [np.mean([rho[probe][o] for o in chan_objs[ch] if o in rho[probe]])
+              if chan_objs[ch] else np.nan for ch in chan_order]
+        axb.plot(xpos, ys, "o-", color=col, lw=2.2, ms=7, label=f"{probe}\n({fam} probe)")
+        for x, yv in zip(xpos, ys):
+            axb.text(x, yv + 0.03, f"{yv:.2f}", ha="center", fontsize=8, color=col)
+    axb.axhline(0, color="0.7", lw=0.8, ls=":")
+    axb.set_xticks(xpos, ["loss-\ngradient", "represen-\ntation"], fontsize=8.5)
+    axb.set_xlim(-0.35, len(chan_order) - 0.65)
+    axb.set_ylabel("mean $\\rho$ (probe, objective)", fontsize=8.5)
+    axb.set_title("(B)  which probe wins by channel", fontsize=10, loc="left")
+    axb.legend(fontsize=7, loc="upper center", frameon=False)
+    axb.set_xlabel("objective channel", fontsize=8.5)
 
     fig.suptitle(a.title, fontsize=10, y=1.02)
     if "npo" in cols:
