@@ -162,21 +162,11 @@ class GRU(_Base):
         return f_value + r_value
 
 
-@register_objective("rmu")
-class RMU(_Base):
-    """Representation misdirection: push forget answer-token hiddens toward a
-    fixed random control vector while pinning retain hiddens to their frozen
-    values (cached at setup)."""
-
-    def __init__(self, model, request, retain, cfg):
-        super().__init__(model, request, retain, cfg)
-        hidden = model.config.hidden_size
-        u = torch.randn(hidden, generator=self.gen, dtype=next(model.parameters()).dtype)
-        self.control = cfg.rmu_c * u / u.norm()
-        self.retain_fixed = retain[: cfg.batch_size]
-        self.retain_batch = collate(self.retain_fixed)
-        with torch.no_grad():
-            self.retain_h0 = self._answer_hiddens(self.retain_batch).detach()
+class _RepBase(_Base):
+    """Representation-channel objectives: the loss is a function of INTERNAL
+    hidden states (not output token likelihoods). Collateral damage on retained
+    candidates is therefore governed by representation proximity, not gradient
+    magnitude -- the second damage channel."""
 
     def _answer_hiddens(self, batch: dict) -> torch.Tensor:
         batch = batch_to_model_device(self.model, batch)
@@ -189,9 +179,66 @@ class RMU(_Base):
         mask = batch["labels"][:, 1:] != IGNORE
         return h[mask]  # [T_answer_total, H]
 
+
+@register_objective("rmu")
+class RMU(_RepBase):
+    """Representation misdirection: push forget answer-token hiddens toward a
+    fixed random control vector while pinning retain hiddens to their frozen
+    values (cached at setup)."""
+
+    def __init__(self, model, request, retain, cfg):
+        super().__init__(model, request, retain, cfg)
+        hidden = model.config.hidden_size
+        u = torch.randn(hidden, generator=self.gen, dtype=next(model.parameters()).dtype)
+        self.control = cfg.rmu_c * u / u.norm()
+        self.retain_batch = collate(retain[: cfg.batch_size])
+        with torch.no_grad():
+            self.retain_h0 = self._answer_hiddens(self.retain_batch).detach()
+
     def step(self) -> float:
         h_f = self._answer_hiddens(self.forget_batch)
         misdirect = (h_f - self.control.to(device=h_f.device, dtype=h_f.dtype)).pow(2).sum(dim=-1).mean()
         h_r = self._answer_hiddens(self.retain_batch)
         pin = (h_r - self.retain_h0).pow(2).sum(dim=-1).mean()
         return self._update(misdirect + self.cfg.rmu_alpha * pin)
+
+
+@register_objective("repnoise")
+class RepNoise(_RepBase):
+    """Representation noising: push forget answer-token hiddens toward FRESH
+    Gaussian noise each step (destroy recoverable structure rather than align to
+    a fixed target) while keeping the retain answer likelihood. Representation
+    channel; differs from RMU by the resampled target + token-loss retain."""
+
+    def step(self) -> float:
+        h_f = self._answer_hiddens(self.forget_batch)
+        noise = torch.randn(h_f.shape, generator=self.gen).to(device=h_f.device, dtype=h_f.dtype)
+        noise = self.cfg.rmu_c * noise / (h_f.shape[-1] ** 0.5)
+        noising = (h_f - noise).pow(2).sum(dim=-1).mean()
+        retain = seq_mean_answer_nll(self.model, self.retain_minibatch()).mean()
+        return self._update(noising + self.cfg.rmu_alpha * retain)
+
+
+@register_objective("circuit_breakers")
+class CircuitBreakers(_RepBase):
+    """Representation rerouting (Circuit Breakers): reroute forget answer-token
+    hiddens AWAY from their original direction -- penalize positive cosine to the
+    frozen pre-unlearning representation (relu, stop at orthogonal) -- while
+    pinning retain hiddens. Representation channel; differs from RMU by
+    rerouting-from-origin rather than pushing to a fixed target."""
+
+    def __init__(self, model, request, retain, cfg):
+        super().__init__(model, request, retain, cfg)
+        self.retain_batch = collate(retain[: cfg.batch_size])
+        with torch.no_grad():
+            self.forget_h0 = self._answer_hiddens(self.forget_batch).detach()
+            self.retain_h0 = self._answer_hiddens(self.retain_batch).detach()
+
+    def step(self) -> float:
+        h_f = self._answer_hiddens(self.forget_batch)
+        cos = torch.nn.functional.cosine_similarity(
+            h_f, self.forget_h0.to(device=h_f.device, dtype=h_f.dtype), dim=-1)
+        reroute = torch.relu(cos).mean()
+        h_r = self._answer_hiddens(self.retain_batch)
+        pin = (h_r - self.retain_h0.to(device=h_r.device, dtype=h_r.dtype)).pow(2).sum(dim=-1).mean()
+        return self._update(reroute + self.cfg.rmu_alpha * pin)

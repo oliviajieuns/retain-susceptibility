@@ -31,7 +31,8 @@ from rsus.analysis.channels import DECLARED_CHANNEL, PREDICTOR_FAMILY  # noqa: E
 
 CHAN_DISPLAY = {"loss_gradient": "loss-gradient", "representation": "representation"}
 OBJ_LABEL = {"ga": "GA", "graddiff": "GradDiff", "npo": "NPO", "simnpo": "SimNPO",
-             "idkdpo": "IdkDPO", "gru": "GRU", "rmu": "RMU"}
+             "idkdpo": "IdkDPO", "gru": "GRU", "rmu": "RMU", "repnoise": "RepNoise",
+             "circuit_breakers": "Circuit\nBreakers"}
 
 # Measured 7B, single request tofu-a180 (fd_norm shown at eta=3e-4, pre-fix;
 # corrected eta=3e-3 re-score makes fd_norm ~ grad_norm per the fidelity gate).

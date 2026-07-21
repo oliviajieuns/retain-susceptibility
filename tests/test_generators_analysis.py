@@ -140,3 +140,27 @@ def test_protection_eval_logic():
     assert out.native_cvar == pytest.approx(1.0)  # top-1 of {1.0, 0.2}
     assert out.utility_ret == pytest.approx(0.8)
     assert not evaluate_protection(rec, {"a"}, set(), recall_max=0.01).reached
+
+
+def test_representation_channel_objectives_run():
+    """RepNoise and Circuit Breakers are representation-channel generators: they
+    read hidden states, step without error, and move the forget representations."""
+    import torch
+    from conftest import build_tiny, make_example
+
+    from rsus.data.base import CandidateUniverse, Request
+    from rsus.generators.base import TrajectoryConfig, run_trajectory
+
+    for name in ("repnoise", "circuit_breakers"):
+        model = build_tiny(5)
+        gen = torch.Generator().manual_seed(3)
+        forget = [make_example(gen, f"f{i:02d}") for i in range(4)]
+        cands = [make_example(gen, f"c{i:02d}") for i in range(12)]
+        req = Request.build("rep", forget, CandidateUniverse.freeze(cands))
+        cfg = TrajectoryConfig(max_steps=4, checkpoint_every=2, lr=1e-3, batch_size=4,
+                               rmu_alpha=1.0, rmu_c=1.0)
+        rec = run_trajectory(model, name, req, cands, cfg)
+        dmg = rec.damage_at()
+        assert rec.objective == name
+        assert all(v == v for v in dmg.values())              # finite (no NaN)
+        assert any(abs(v) > 1e-6 for v in dmg.values())        # representations actually moved

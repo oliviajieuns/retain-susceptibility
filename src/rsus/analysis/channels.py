@@ -19,7 +19,7 @@ from rsus.analysis.prediction import auroc, spearman, top_k_ids
 DECLARED_CHANNEL: dict[str, str] = {
     "ga": "loss_gradient", "graddiff": "loss_gradient", "npo": "loss_gradient",
     "simnpo": "loss_gradient", "idkdpo": "loss_gradient", "gru": "loss_gradient",
-    "rmu": "representation",
+    "rmu": "representation", "repnoise": "representation", "circuit_breakers": "representation",
 }
 PREDICTOR_FAMILY: dict[str, str] = {
     "grad_norm": "gradient", "fd_norm": "gradient",
