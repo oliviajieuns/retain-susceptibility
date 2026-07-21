@@ -78,6 +78,10 @@ def parse_args():
     p.add_argument("--gen-lr-per", default="",
                    help="per-generator lr overrides, e.g. 'npo=6e-6' "
                         "(unlisted generators keep --gen-lr)")
+    p.add_argument("--generators", default="npo,graddiff,rmu",
+                   help="Table-1 T1 generators whose damage is predicted (each becomes an "
+                        "objective column). Output/loss-gradient channel: ga,graddiff,npo,"
+                        "simnpo,idkdpo,gru; representation channel: rmu. Drop near-static arms.")
     p.add_argument("--extra-predictors", default="",
                    help="comma-separated additional registered scorers to run and "
                         "seal alongside the default roster, e.g. 'jvp,vmap_graddot,grad_cosine'")
@@ -307,12 +311,16 @@ def main():
     gen_lr_per = {k: float(v) for k, v in
                   (kv.split("=") for kv in a.gen_lr_per.split(",") if kv.strip())}
     retain_gen = [by_id[c] for c in disc_ids]
+    gens = [x.strip() for x in a.generators.split(",") if x.strip()]
+    idk_gen = idk_variants(tokenizer, list(req.forget)) if "idkdpo" in gens else None
     markers = []
     damage_by_opt: dict[str, dict[str, dict[str, float]]] = {}
-    for g in GENERATORS:
+    for g in gens:
         log(f"generator: {g}")
         cfg_g = _dc.replace(gen_cfg, max_steps=gen_steps_per.get(g, a.gen_steps),
                             lr=gen_lr_per.get(g, a.gen_lr))
+        if g == "idkdpo":
+            cfg_g = _dc.replace(cfg_g, idk_examples=idk_gen)
         trajectory_model = fresh()
         try:
             rec = run_trajectory(
@@ -339,10 +347,10 @@ def main():
     with open(out / "table1.json", "w", encoding="utf-8") as f:
         json.dump(rows, f, indent=1)
     log("\n=== Gate Table 1 (single request; audit fold) ===")
-    log(f"{'predictor':14s}" + "".join(f"{g+'_rho':>14s}" for g in GENERATORS) + f"{'AUROC':>8s}{'Ovl@'+str(k):>8s}")
+    log(f"{'predictor':14s}" + "".join(f"{g+'_rho':>14s}" for g in gens) + f"{'AUROC':>8s}{'Ovl@'+str(k):>8s}")
     for pred in predictors:
         r = rows[pred]
-        log(f"{pred:14s}" + "".join(f"{r[f'{g}_rho']['mean']:14.3f}" for g in GENERATORS)
+        log(f"{pred:14s}" + "".join(f"{r[f'{g}_rho']['mean']:14.3f}" for g in gens)
             + f"{r['auroc']['mean']:8.3f}{r['overlap']['mean']:8.3f}")
 
     if not t2_methods:

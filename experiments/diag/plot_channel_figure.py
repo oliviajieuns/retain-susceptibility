@@ -19,10 +19,19 @@ import argparse
 import csv
 from pathlib import Path
 
+import sys
+
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
+from rsus.analysis.channels import DECLARED_CHANNEL, PREDICTOR_FAMILY  # noqa: E402
+
+CHAN_DISPLAY = {"loss_gradient": "loss-gradient", "representation": "representation"}
+OBJ_LABEL = {"ga": "GA", "graddiff": "GradDiff", "npo": "NPO", "simnpo": "SimNPO",
+             "idkdpo": "IdkDPO", "gru": "GRU", "rmu": "RMU"}
 
 # Measured 7B, single request tofu-a180 (fd_norm shown at eta=3e-4, pre-fix;
 # corrected eta=3e-3 re-score makes fd_norm ~ grad_norm per the fidelity gate).
@@ -36,12 +45,13 @@ DRAFT_RHO = {
     "random_rank": {"graddiff": 0.057, "npo": 0.050, "rmu": -0.010},
 }
 ROW_ORDER = ["grad_norm", "fd_norm", "knn_feature", "knn_embed", "knn_lexical", "fd", "random_rank"]
-FAMILY = {"grad_norm": "gradient", "fd_norm": "gradient", "knn_feature": "representation",
-          "knn_embed": "representation", "knn_lexical": "representation",
-          "fd": "alignment", "random_rank": "control"}
-COL_ORDER = ["graddiff", "npo", "rmu"]
-CHANNEL = {"graddiff": "loss-gradient", "npo": "loss-gradient", "rmu": "representation"}
-COL_LABEL = {"graddiff": "GradDiff", "npo": "NPO*", "rmu": "RMU"}
+FAMILY = PREDICTOR_FAMILY
+
+
+def order_columns(objs: list[str]) -> list[str]:
+    """Objectives grouped by declared channel (loss_gradient first), name-sorted."""
+    rank = {"loss_gradient": 0, "representation": 1}
+    return sorted(objs, key=lambda o: (rank.get(DECLARED_CHANNEL.get(o, "z"), 2), o))
 
 
 def load_report(path: Path) -> dict[str, dict[str, float]]:
@@ -60,8 +70,9 @@ def main() -> None:
     a = p.parse_args()
     rho = load_report(Path(a.report)) if a.report else DRAFT_RHO
 
-    rows = [r for r in ROW_ORDER if r in rho]
-    cols = [c for c in COL_ORDER if c in next(iter(rho.values()))]
+    rows = [r for r in ROW_ORDER if r in rho] + [r for r in rho if r not in ROW_ORDER]
+    all_objs = sorted({o for d in rho.values() for o in d})
+    cols = order_columns(all_objs)
     M = np.array([[rho[r].get(c, np.nan) for c in cols] for r in rows])
 
     fig = plt.figure(figsize=(9.2, 4.6))
@@ -69,7 +80,7 @@ def main() -> None:
     ax = fig.add_subplot(gs[0, 0])
 
     im = ax.imshow(M, cmap="RdBu_r", vmin=-0.6, vmax=0.6, aspect="auto")
-    ax.set_xticks(range(len(cols)), [COL_LABEL.get(c, c) for c in cols])
+    ax.set_xticks(range(len(cols)), [OBJ_LABEL.get(c, c) for c in cols], rotation=30, ha="right")
     ax.set_yticks(range(len(rows)), rows)
     for i in range(len(rows)):
         for j in range(len(cols)):
@@ -77,7 +88,7 @@ def main() -> None:
             ax.text(j, i, f"{v:.2f}", ha="center", va="center",
                     color="white" if abs(v) > 0.33 else "black", fontsize=9)
     # channel divider (loss-gradient | representation)
-    n_lg = sum(1 for c in cols if CHANNEL[c] == "loss-gradient")
+    n_lg = sum(1 for c in cols if DECLARED_CHANNEL.get(c) == "loss_gradient")
     ax.axvline(n_lg - 0.5, color="k", lw=1.5)
     # family group brackets
     fam_bounds, prev, start = [], None, 0
@@ -121,8 +132,9 @@ def main() -> None:
     axb.invert_yaxis()
 
     fig.suptitle(a.title, fontsize=10, y=1.02)
-    fig.text(0.5, -0.04, "* NPO barely reached the forgetting criterion (near-static regime): weak signal, not a channel.",
-             ha="center", fontsize=7.5, color="0.4")
+    if "npo" in cols:
+        fig.text(0.5, -0.04, "* NPO barely reached the forgetting criterion (near-static regime): "
+                 "weak signal, not a channel.", ha="center", fontsize=7.5, color="0.4")
     out = Path(a.out)
     out.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out, dpi=170, bbox_inches="tight")
