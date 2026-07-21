@@ -59,9 +59,25 @@ def fmt(v: float | None, bold: bool = False) -> str:
     return rf"\textbf{{{s}}}" if bold else s
 
 
-def table1(rows: list[dict], interaction: dict | None) -> str:
+# objective status flags -> column-header markers + caption note.
+FLAG_MARK = {"notreached": r"$^{\dag}$", "collapsed": r"$^{\ddag}$"}
+FLAG_NOTE = {
+    "notreached": r"$^{\dag}$did not reach the preregistered forget criterion "
+                  "within budget (weak-signal column)",
+    "collapsed": r"$^{\ddag}$reached the criterion but with model-wide utility "
+                 "collapse",
+}
+
+
+def table1(rows: list[dict], interaction: dict | None,
+           flags: dict[str, str] | None = None,
+           demote: set[str] | None = None) -> str:
+    flags = flags or {}
+    demote = demote or set()
     rho: dict[str, dict[str, float]] = {}
     for r in rows:
+        if r["predictor"] in demote:
+            continue
         rho.setdefault(r["predictor"], {})[r["objective"]] = float(r["rho"])
     objs = order_objectives({r["objective"] for r in rows})
     lg = [o for o in objs if DECLARED_CHANNEL.get(o) == "loss_gradient"]
@@ -82,7 +98,8 @@ def table1(rows: list[dict], interaction: dict | None) -> str:
          r"\cmidrule(lr){4-%d}\cmidrule(lr){%d-%d}\cmidrule(lr){%d-%d}"
          % (3 + len(lg), 4 + len(lg), 3 + len(objs), 4 + len(objs), 5 + len(objs)),
          "Family & Predictor & Bwd-free & "
-         + " & ".join(OBJ_TEX.get(o, o) for o in objs) + r" & LG & Rep \\", r"\midrule"]
+         + " & ".join(OBJ_TEX.get(o, o) + FLAG_MARK.get(flags.get(o, ""), "")
+                      for o in objs) + r" & LG & Rep \\", r"\midrule"]
     prev_fam = None
     for p in preds:
         fam = PREDICTOR_FAMILY.get(p, "control")
@@ -102,7 +119,28 @@ def table1(rows: list[dict], interaction: dict | None) -> str:
         cap += ("\n% preregistered interaction delta = "
                 f"{interaction['delta']:+.3f}, 95% CI [{interaction['lo']:+.3f}, "
                 f"{interaction['hi']:+.3f}] (n={interaction['n_cands']})")
+    used_flags = {v for v in flags.values() if v in FLAG_NOTE}
+    if used_flags:
+        cap += "\n% flag notes: " + "; ".join(FLAG_NOTE[f] for f in sorted(used_flags)) + "."
     return cap + "\n" + "\n".join(L) + "\n"
+
+
+def table1c_controls(rows: list[dict], demote: set[str], flags: dict[str, str]) -> str:
+    """Appendix variant holding the demoted control rows (space fallback)."""
+    kept = [r for r in rows if r["predictor"] in demote]
+    objs = order_objectives({r["objective"] for r in rows})
+    rho: dict[str, dict[str, float]] = {}
+    for r in kept:
+        rho.setdefault(r["predictor"], {})[r["objective"]] = float(r["rho"])
+    L = [r"\begin{tabular}{l" + "c" * len(objs) + "}", r"\toprule",
+         "Control & " + " & ".join(OBJ_TEX.get(o, o) + FLAG_MARK.get(flags.get(o, ""), "")
+                                   for o in objs) + r" \\", r"\midrule"]
+    for p in sorted(rho, key=lambda p: (PRED_ORDER.index(p) if p in PRED_ORDER else 99, p)):
+        L.append(PRED_TEX.get(p, p) + " & "
+                 + " & ".join(fmt(rho[p].get(o)) for o in objs) + r" \\")
+    L += [r"\bottomrule", r"\end{tabular}"]
+    return ("% caption: control predictors (demoted from Table 1 for space); "
+            "same protocol and columns.\n" + "\n".join(L) + "\n")
 
 
 def table1b(rows: list[dict]) -> str:
@@ -155,18 +193,34 @@ def main() -> None:
     ap.add_argument("--report", default="", help="channel_report.csv from channel_report.py")
     ap.add_argument("--crossed", default="", help="crossed.json from crossed_protection.py")
     ap.add_argument("--out", default=str(ROOT / "docs" / "tables"))
+    ap.add_argument("--flags", default="",
+                    help="objective status flags, e.g. 'ga=collapsed,idkdpo=notreached,"
+                         "circuit_breakers=notreached' -> dag/ddag column markers")
+    ap.add_argument("--demote", default="",
+                    help="comma-separated predictors moved out of Table 1 into "
+                         "table1c_controls.tex (space fallback)")
     a = ap.parse_args()
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
+    flags = {k: v for k, v in (kv.split("=") for kv in a.flags.split(",") if kv.strip())}
+    bad = {v for v in flags.values() if v not in FLAG_MARK}
+    if bad:
+        ap.error(f"unknown flag values {sorted(bad)}; use {sorted(FLAG_MARK)}")
+    demote = {x.strip() for x in a.demote.split(",") if x.strip()}
     if a.report:
         rows = read_report(Path(a.report))
         jpath = Path(a.report).with_name("channel_report.json")
         inter = None
         if jpath.exists():
             inter = json.loads(jpath.read_text()).get("interaction_headline")
-        (out / "table1_channel_matrix.tex").write_text(table1(rows, inter), encoding="utf-8")
+        (out / "table1_channel_matrix.tex").write_text(
+            table1(rows, inter, flags, demote), encoding="utf-8")
         (out / "table1b_headline_secondary.tex").write_text(table1b(rows), encoding="utf-8")
         print(f"wrote {out}/table1_channel_matrix.tex and table1b_headline_secondary.tex")
+        if demote:
+            (out / "table1c_controls.tex").write_text(
+                table1c_controls(rows, demote, flags), encoding="utf-8")
+            print(f"wrote {out}/table1c_controls.tex ({len(demote)} demoted rows)")
     if a.crossed:
         crossed = json.loads(Path(a.crossed).read_text())
         (out / "table2_crossed_protection.tex").write_text(table2(crossed), encoding="utf-8")
