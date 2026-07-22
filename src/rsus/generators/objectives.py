@@ -1,16 +1,45 @@
-"""Minimal faithful implementations of the third-party unlearning objectives
-used as Table-1 generators and Table-2 baselines: GA, GradDiff, NPO(+retain),
-RMU. Each trains all parameters with AdamW and never sees susceptibility
-scores. Frozen quantities (NPO reference losses, RMU retain hiddens) are
-cached as scalars/tensors at setup; no second model copy is held.
+"""Controlled implementations of the unlearning objectives used as parents.
+
+The output-channel losses follow their published sequence-probability
+definitions; representation objectives implement the corresponding loss
+geometry inside the common experimental substrate.  A trajectory may update
+either the full model or a declared parameter block.  It never sees a
+susceptibility score.  Frozen quantities are cached at setup so no second
+model copy is held during optimization.
 """
 from __future__ import annotations
+
+import re
 
 import torch
 
 from rsus.data.base import Example, Request, collate
 from rsus.generators.base import TrajectoryConfig, register_objective
-from rsus.losses import IGNORE, batch_to_model_device, seq_mean_answer_nll
+from rsus.losses import (
+    IGNORE,
+    batch_to_model_device,
+    seq_mean_answer_nll,
+    seq_sum_answer_nll,
+)
+
+
+def _gru_projection_coefficient(
+    unlearning: list[torch.Tensor], retain: list[torch.Tensor | None]
+) -> torch.Tensor:
+    """Coefficient for the minimum-deviation GRU half-space projection."""
+    dot = sum(
+        (unlearn_grad * retain_grad).sum()
+        for unlearn_grad, retain_grad in zip(unlearning, retain)
+        if retain_grad is not None
+    )
+    norm_sq = sum(
+        (retain_grad * retain_grad).sum()
+        for retain_grad in retain
+        if retain_grad is not None
+    )
+    if not torch.is_tensor(dot):
+        return unlearning[0].new_zeros(())
+    return torch.clamp(dot / (norm_sq + 1e-12), max=0.0)
 
 
 class _Base:
@@ -19,11 +48,24 @@ class _Base:
         self.request = request
         self.retain = retain
         self.cfg = cfg
+        if cfg.trainable_pattern is None:
+            selected = {n: p for n, p in model.named_parameters() if p.requires_grad}
+        else:
+            rx = re.compile(cfg.trainable_pattern)
+            selected = {n: p for n, p in model.named_parameters() if rx.fullmatch(n)}
+            if not selected:
+                raise ValueError(
+                    f"trainable_pattern matched no parameters: {cfg.trainable_pattern!r}"
+                )
+            for name, param in model.named_parameters():
+                param.requires_grad_(name in selected)
+        self.params = list(selected.values())
+        self.param_names = list(selected)
         # ``foreach=False`` preserves AdamW semantics while avoiding the
         # parameter-sized temporary tensor lists used by the CUDA foreach
         # implementation.  This keeps a full-model 7B trajectory within one
         # 80GB device once the caller has serialized model residency.
-        self.opt = torch.optim.AdamW(model.parameters(), lr=cfg.lr, foreach=False)
+        self.opt = torch.optim.AdamW(self.params, lr=cfg.lr, foreach=False)
         self.gen = torch.Generator().manual_seed(cfg.seed)
         self.forget_batch = collate(list(request.forget))
 
@@ -52,8 +94,9 @@ class GradDiff(_Base):
 
     def step(self) -> float:
         loss = (
-            -seq_mean_answer_nll(self.model, self.forget_batch).mean()
-            + seq_mean_answer_nll(self.model, self.retain_minibatch()).mean()
+            -self.cfg.forget_weight * seq_mean_answer_nll(self.model, self.forget_batch).mean()
+            + self.cfg.retain_weight
+            * seq_mean_answer_nll(self.model, self.retain_minibatch()).mean()
         )
         return self._update(loss)
 
@@ -65,16 +108,20 @@ class NPO(_Base):
 
     def __init__(self, model, request, retain, cfg):
         super().__init__(model, request, retain, cfg)
+        if cfg.beta <= 0:
+            raise ValueError("NPO beta must be positive")
         with torch.no_grad():
-            self.ref_nll = seq_mean_answer_nll(model, self.forget_batch).detach()
+            self.ref_nll = seq_sum_answer_nll(model, self.forget_batch).detach()
 
     def step(self) -> float:
-        cur = seq_mean_answer_nll(self.model, self.forget_batch)
+        cur = seq_sum_answer_nll(self.model, self.forget_batch)
         beta = self.cfg.beta
         # -(2/beta) * log sigmoid(beta * (ell_theta - ell_ref)): decays to 0
         # as the forget answers become less likely than under the reference.
         npo = -(2.0 / beta) * torch.nn.functional.logsigmoid(beta * (cur - self.ref_nll)).mean()
-        loss = npo + seq_mean_answer_nll(self.model, self.retain_minibatch()).mean()
+        loss = (self.cfg.forget_weight * npo
+                + self.cfg.retain_weight
+                * seq_mean_answer_nll(self.model, self.retain_minibatch()).mean())
         return self._update(loss)
 
 
@@ -83,44 +130,61 @@ class SimNPO(_Base):
     """Reference-free NPO variant: length-normalized forget loss enters a
     sigmoid margin directly (no reference model), plus retain training."""
 
+    def __init__(self, model, request, retain, cfg):
+        super().__init__(model, request, retain, cfg)
+        if cfg.beta <= 0:
+            raise ValueError("SimNPO beta must be positive")
+
     def step(self) -> float:
         cur = seq_mean_answer_nll(self.model, self.forget_batch)
         beta, gamma = self.cfg.beta, self.cfg.simnpo_gamma
         simnpo = -(2.0 / beta) * torch.nn.functional.logsigmoid(beta * cur - gamma).mean()
-        loss = simnpo + seq_mean_answer_nll(self.model, self.retain_minibatch()).mean()
+        loss = (self.cfg.forget_weight * simnpo
+                + self.cfg.retain_weight
+                * seq_mean_answer_nll(self.model, self.retain_minibatch()).mean())
         return self._update(loss)
 
 
 @register_objective("idkdpo")
 class IdkDPO(_Base):
     """DPO with 'I don't know'-style responses preferred over the original
-    forget answers; per-sequence mean-NLL log-ratios against references
+    forget answers; summed sequence-NLL log-ratios against references
     cached at setup. Requires cfg.idk_examples aligned with the forget set."""
 
     def __init__(self, model, request, retain, cfg):
         super().__init__(model, request, retain, cfg)
+        if cfg.beta <= 0:
+            raise ValueError("IdkDPO beta must be positive")
         if not cfg.idk_examples or len(cfg.idk_examples) != len(request.forget):
             raise ValueError("idkdpo needs cfg.idk_examples aligned with the forget set")
         self.idk_batch = collate(list(cfg.idk_examples))
         with torch.no_grad():
-            self.ref_l = seq_mean_answer_nll(model, self.forget_batch).detach()
-            self.ref_w = seq_mean_answer_nll(model, self.idk_batch).detach()
+            self.ref_l = seq_sum_answer_nll(model, self.forget_batch).detach()
+            self.ref_w = seq_sum_answer_nll(model, self.idk_batch).detach()
 
     def step(self) -> float:
         beta = self.cfg.beta
-        cur_l = seq_mean_answer_nll(self.model, self.forget_batch)
-        cur_w = seq_mean_answer_nll(self.model, self.idk_batch)
-        margin = (self.ref_w - cur_w) - (self.ref_l - cur_l)  # mean-NLL log-ratio proxy
+        cur_l = seq_sum_answer_nll(self.model, self.forget_batch)
+        cur_w = seq_sum_answer_nll(self.model, self.idk_batch)
+        margin = (self.ref_w - cur_w) - (self.ref_l - cur_l)
         dpo = -torch.nn.functional.logsigmoid(beta * margin).mean()
-        loss = dpo + seq_mean_answer_nll(self.model, self.retain_minibatch()).mean()
+        loss = (self.cfg.forget_weight * dpo
+                + self.cfg.retain_weight
+                * seq_mean_answer_nll(self.model, self.retain_minibatch()).mean())
         return self._update(loss)
 
 
 @register_objective("gru")
 class GRU(_Base):
     """Retain-aware gradient rectification: the forget-ascent gradient is
-    stripped of its component that conflicts with retain descent, then
-    combined with the retain gradient (minimal faithful implementation)."""
+    projected onto the feasible half-space that does not increase retain loss.
+
+    This is the paper's minimum-deviation update: when the unlearning gradient
+    conflicts with the retain gradient, subtract its component along that
+    retain gradient; otherwise leave the unlearning gradient unchanged.  GRU
+    is therefore a rectifier around the output-side forget objective, not an
+    additional GradDiff retain-descent step.
+    """
 
     def step(self) -> float:
         # Keep only the forget-gradient copy.  The retain gradient remains in
@@ -128,47 +192,44 @@ class GRU(_Base):
         # known.  The former implementation cloned both gradients while also
         # retaining ``p.grad``, which could add three model-sized gradient
         # sets to a one-GPU run.
-        f_loss = -seq_mean_answer_nll(self.model, self.forget_batch).mean()
+        f_loss = (-self.cfg.forget_weight
+                  * seq_mean_answer_nll(self.model, self.forget_batch).mean())
         self.opt.zero_grad(set_to_none=True)
         f_loss.backward()
         f_value = float(f_loss.detach())
         g_f = [
             (p.grad.detach().clone() if p.grad is not None else torch.zeros_like(p))
-            for p in self.model.parameters()
+            for p in self.params
         ]
         del f_loss
 
-        r_loss = seq_mean_answer_nll(self.model, self.retain_minibatch()).mean()
+        r_loss = (self.cfg.retain_weight
+                  * seq_mean_answer_nll(self.model, self.retain_minibatch()).mean())
         self.opt.zero_grad(set_to_none=True)
         r_loss.backward()
-        r_value = float(r_loss.detach())
-        dot = sum(
-            (a * p.grad).sum()
-            for a, p in zip(g_f, self.model.parameters())
-            if p.grad is not None
-        )
-        rr = sum(
-            (p.grad * p.grad).sum()
-            for p in self.model.parameters()
-            if p.grad is not None
-        )
-        coef = torch.clamp(dot / (rr + 1e-12), max=0.0)  # remove conflicting part only
-        for p, a in zip(self.model.parameters(), g_f):
+        coef = _gru_projection_coefficient(g_f, [p.grad for p in self.params])
+        for p, a in zip(self.params, g_f):
             if p.grad is None:
                 p.grad = a
             else:
-                p.grad.mul_(1.0 - coef).add_(a)
+                # g_rect = g_unlearn - min(<g_u,g_r>/||g_r||^2, 0) g_retain
+                p.grad.mul_(-coef).add_(a)
         self.opt.step()
-        return f_value + r_value
+        return f_value
 
 
 class _RepBase(_Base):
-    """Representation-channel objectives: the loss is a function of INTERNAL
-    hidden states (not output token likelihoods). Collateral damage on retained
-    candidates is therefore governed by representation proximity, not gradient
-    magnitude -- the second damage channel."""
+    """Representation-channel objectives whose removal term reads hidden states.
+
+    The channel hypothesis predicts that representation proximity should be the
+    better retain-side risk signal; the implementation does not assume or force
+    that empirical outcome.
+    """
 
     def _answer_hiddens(self, batch: dict) -> torch.Tensor:
+        return torch.cat(list(self._answer_hiddens_by_example(batch).values()), dim=0)
+
+    def _answer_hiddens_by_example(self, batch: dict) -> dict[str, torch.Tensor]:
         batch = batch_to_model_device(self.model, batch)
         out = self.model(
             input_ids=batch["input_ids"],
@@ -177,7 +238,36 @@ class _RepBase(_Base):
         )
         h = out.hidden_states[-1][:, :-1, :]
         mask = batch["labels"][:, 1:] != IGNORE
-        return h[mask]  # [T_answer_total, H]
+        return {
+            example_id: h[index][mask[index]]
+            for index, example_id in enumerate(batch["example_ids"])
+        }
+
+    def _cache_retain_hiddens(self) -> dict[str, torch.Tensor]:
+        cache = {}
+        with torch.no_grad():
+            for start in range(0, len(self.retain), self.cfg.batch_size):
+                batch = collate(self.retain[start:start + self.cfg.batch_size])
+                for example_id, hidden in self._answer_hiddens_by_example(batch).items():
+                    cache[example_id] = hidden.detach().cpu()
+        return cache
+
+    def _retain_hidden_pair(self) -> tuple[torch.Tensor, torch.Tensor]:
+        if self.cfg.representation_retain_mode == "fixed":
+            batch = self.retain_batch
+        elif self.cfg.representation_retain_mode == "stream_cached":
+            batch = self.retain_minibatch()
+        else:
+            raise ValueError(
+                "representation_retain_mode must be 'fixed' or 'stream_cached', got "
+                f"{self.cfg.representation_retain_mode!r}"
+            )
+        current_by_id = self._answer_hiddens_by_example(batch)
+        current = torch.cat(list(current_by_id.values()), dim=0)
+        target = torch.cat(
+            [self.retain_h0[example_id] for example_id in current_by_id], dim=0
+        ).to(device=current.device, dtype=current.dtype)
+        return current, target
 
 
 @register_objective("rmu")
@@ -192,23 +282,31 @@ class RMU(_RepBase):
         u = torch.randn(hidden, generator=self.gen, dtype=next(model.parameters()).dtype)
         self.control = cfg.rmu_c * u / u.norm()
         self.retain_batch = collate(retain[: cfg.batch_size])
-        with torch.no_grad():
-            self.retain_h0 = self._answer_hiddens(self.retain_batch).detach()
+        if cfg.representation_retain_mode == "stream_cached":
+            self.retain_h0 = self._cache_retain_hiddens()
+        else:
+            with torch.no_grad():
+                fixed = self._answer_hiddens_by_example(self.retain_batch)
+            self.retain_h0 = {key: value.detach().cpu() for key, value in fixed.items()}
 
     def step(self) -> float:
         h_f = self._answer_hiddens(self.forget_batch)
         misdirect = (h_f - self.control.to(device=h_f.device, dtype=h_f.dtype)).pow(2).sum(dim=-1).mean()
-        h_r = self._answer_hiddens(self.retain_batch)
-        pin = (h_r - self.retain_h0).pow(2).sum(dim=-1).mean()
+        h_r, h_r0 = self._retain_hidden_pair()
+        pin = (h_r - h_r0).pow(2).sum(dim=-1).mean()
         return self._update(misdirect + self.cfg.rmu_alpha * pin)
 
 
 @register_objective("repnoise")
 class RepNoise(_RepBase):
-    """Representation noising: push forget answer-token hiddens toward FRESH
-    Gaussian noise each step (destroy recoverable structure rather than align to
-    a fixed target) while keeping the retain answer likelihood. Representation
-    channel; differs from RMU by the resampled target + token-loss retain."""
+    """Block-controlled RepNoise-style objective used in the frozen roster.
+
+    This lightweight adaptation matches hidden states to fresh Gaussian targets
+    at the measured layer and retains answer likelihood.  It is *not* the full
+    Rosati et al. implementation, whose loss uses multi-kernel MMD across all
+    post-MLP layers plus an auxiliary layer-wise ascent term.  Main-table code
+    must disclose this variant or replace it with the paper-faithful adapter.
+    """
 
     def step(self) -> float:
         h_f = self._answer_hiddens(self.forget_batch)
@@ -221,24 +319,33 @@ class RepNoise(_RepBase):
 
 @register_objective("circuit_breakers")
 class CircuitBreakers(_RepBase):
-    """Representation rerouting (Circuit Breakers): reroute forget answer-token
+    """Block-controlled Representation-Rerouting (Circuit Breakers) loss.
+
+    Reroute forget answer-token
     hiddens AWAY from their original direction -- penalize positive cosine to the
     frozen pre-unlearning representation (relu, stop at orthogonal) -- while
-    pinning retain hiddens. Representation channel; differs from RMU by
-    rerouting-from-origin rather than pushing to a fixed target."""
+    pinning retain hiddens.  The loss geometry is faithful; unlike the released
+    safety method, this controlled comparison uses the common full-rank block
+    rather than method-specific LoRA adapters and coefficient scheduling.
+    """
 
     def __init__(self, model, request, retain, cfg):
         super().__init__(model, request, retain, cfg)
         self.retain_batch = collate(retain[: cfg.batch_size])
         with torch.no_grad():
             self.forget_h0 = self._answer_hiddens(self.forget_batch).detach()
-            self.retain_h0 = self._answer_hiddens(self.retain_batch).detach()
+        if cfg.representation_retain_mode == "stream_cached":
+            self.retain_h0 = self._cache_retain_hiddens()
+        else:
+            with torch.no_grad():
+                fixed = self._answer_hiddens_by_example(self.retain_batch)
+            self.retain_h0 = {key: value.detach().cpu() for key, value in fixed.items()}
 
     def step(self) -> float:
         h_f = self._answer_hiddens(self.forget_batch)
         cos = torch.nn.functional.cosine_similarity(
             h_f, self.forget_h0.to(device=h_f.device, dtype=h_f.dtype), dim=-1)
         reroute = torch.relu(cos).mean()
-        h_r = self._answer_hiddens(self.retain_batch)
-        pin = (h_r - self.retain_h0.to(device=h_r.device, dtype=h_r.dtype)).pow(2).sum(dim=-1).mean()
+        h_r, h_r0 = self._retain_hidden_pair()
+        pin = (h_r - h_r0).pow(2).sum(dim=-1).mean()
         return self._update(reroute + self.cfg.rmu_alpha * pin)

@@ -13,7 +13,10 @@ from __future__ import annotations
 
 import argparse
 import gc
+import importlib.metadata
 import json
+import os
+import platform
 import sys
 from pathlib import Path
 
@@ -25,7 +28,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from transformers import AutoModelForCausalLM, AutoTokenizer, Qwen2Config, Qwen2ForCausalLM  # noqa: E402
 
 from rsus.analysis.prediction import table1_rows  # noqa: E402
-from rsus.blocks import mlp_down_last_layers  # noqa: E402
+from rsus.blocks import mlp_down_last_layers, set_trainable_  # noqa: E402
 from rsus.data.base import collate  # noqa: E402
 from rsus.data.tofu import (  # noqa: E402
     FORGET10_FIRST_AUTHOR,
@@ -42,7 +45,7 @@ from rsus.generators.ours import OursConfig, run_ours_trajectory  # noqa: E402
 from rsus.generators.repaired import RepairedConfig, run_engine_repaired  # noqa: E402
 from rsus.losses import seq_mean_answer_nll  # noqa: E402
 from rsus.partition import PartitionParams, build_partition, make_folds  # noqa: E402
-from rsus.probe.base import ProbeSpec, get_scorer  # noqa: E402
+from rsus.probe.base import ProbeSpec, get_scorer, scorer_names  # noqa: E402
 from rsus.sealing import seal_scores, unseal  # noqa: E402
 from rsus.stage1 import Stage1Config, calibrate_floor  # noqa: E402
 from rsus.stage2 import Stage2Config  # noqa: E402
@@ -53,11 +56,26 @@ GENERATORS = ["npo", "graddiff", "rmu"]
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--model", default="Qwen/Qwen2.5-1.5B-Instruct")
+    p.add_argument("--model-id", default="", help="stable campaign alias stored in the manifest")
     p.add_argument("--device", default="cpu")
     p.add_argument("--dtype", default="float32", choices=["float32", "bfloat16"])
     p.add_argument("--author", type=int, default=FORGET10_FIRST_AUTHOR)
     p.add_argument("--universe-authors", type=int, default=30)
+    p.add_argument(
+        "--candidate-authors",
+        default="",
+        help="exact retained-author pool, e.g. '1,3,5-9'; campaign use prevents "
+             "development/audit candidate overlap",
+    )
     p.add_argument("--block-last-n", type=int, default=8)
+    p.add_argument(
+        "--trainable-scope",
+        default="full",
+        choices=["full", "probe_block"],
+        help="parameters updated by SFT and every T1 objective. 'probe_block' makes "
+             "the parent update support identical to the block measured by gradient probes; "
+             "recommended for one-GPU fp32 7B channel-matrix runs",
+    )
     p.add_argument("--eta", type=float, default=3e-4)
     p.add_argument("--probe-norm-eta", type=float, default=3e-3,
                    help="FD radius for fd_norm (larger than --eta): random projections "
@@ -76,6 +94,20 @@ def parse_args():
     p.add_argument("--sft-lr", type=float, default=1e-5)
     p.add_argument("--sft-steps", type=int, default=400)
     p.add_argument("--sft-target-loss", type=float, default=0.8)
+    p.add_argument("--sft-eval-every", type=int, default=100,
+                   help="full memorization-set gate interval; avoids stopping on a lucky minibatch")
+    p.add_argument(
+        "--sft-cache",
+        default="",
+        help="optional development-only CPU state cache (.pt); validated against request, "
+             "model and SFT protocol before reuse",
+    )
+    p.add_argument(
+        "--require-sft-target",
+        action="store_true",
+        help="abort before scoring if the full memorization set remains above "
+             "--sft-target-loss; enabled by sealed channel-matrix campaigns",
+    )
     p.add_argument("--gen-lr", type=float, default=2e-6)
     p.add_argument("--gen-steps", type=int, default=60)
     p.add_argument("--gen-steps-per", default="",
@@ -84,10 +116,44 @@ def parse_args():
     p.add_argument("--gen-lr-per", default="",
                    help="per-generator lr overrides, e.g. 'npo=6e-6' "
                         "(unlisted generators keep --gen-lr)")
+    p.add_argument("--gen-beta-per", default="",
+                   help="per-generator beta overrides, e.g. 'npo=0.1,simnpo=4.5'")
+    p.add_argument("--gen-forget-weight-per", default="",
+                   help="per-generator forget-term weights, e.g. 'npo=0.125,simnpo=0.125'")
+    p.add_argument("--gen-retain-weight-per", default="",
+                   help="per-generator retain-term weights, e.g. 'npo=1,simnpo=1'")
+    p.add_argument("--gen-rmu-alpha-per", default="",
+                   help="per-generator representation retain weights (RMU/RepNoise/RR)")
+    p.add_argument("--gen-rmu-c-per", default="",
+                   help="per-generator representation target magnitudes (RMU/RepNoise)")
+    p.add_argument(
+        "--gen-rep-retain-mode",
+        default="fixed",
+        choices=["fixed", "stream_cached"],
+        help="representation retain reference: legacy fixed minibatch or a cached "
+             "development-pool stream (recommended for the 7B campaign)",
+    )
     p.add_argument("--generators", default="npo,graddiff,rmu",
                    help="Table-1 T1 generators whose damage is predicted (each becomes an "
                         "objective column). Output/loss-gradient channel: ga,graddiff,npo,"
-                        "simnpo,idkdpo,gru; representation channel: rmu. Drop near-static arms.")
+                        "simnpo,idkdpo,gru; representation channel: rmu,repnoise,"
+                        "circuit_breakers. Drop near-static arms only by a predeclared rule.")
+    p.add_argument(
+        "--predictors",
+        default="fd,fd_norm,knn_feature,knn_embed,knn_lexical,grad_norm,random_rank",
+        help="comma-separated sealed predictor roster; knn_embed is skipped with an explicit "
+             "log entry if sentence-transformers is unavailable",
+    )
+    p.add_argument(
+        "--require-all-predictors",
+        action="store_true",
+        help="fail before writing any seal if a requested predictor dependency is unavailable",
+    )
+    p.add_argument(
+        "--sentence-encoder",
+        default="sentence-transformers/all-MiniLM-L6-v2",
+        help="frozen local path or model id for knn_embed; recorded in the manifest",
+    )
     p.add_argument("--extra-predictors", default="",
                    help="comma-separated additional registered scorers to run and "
                         "seal alongside the default roster, e.g. 'jvp,vmap_graddot,grad_cosine'")
@@ -138,6 +204,8 @@ def parse_args():
     )
     p.add_argument("--smoke", action="store_true", help="tiny random model, CPU-sized budgets")
     p.add_argument("--run-tag", default="", help="suffix for the run directory (rerun without clobbering seals)")
+    p.add_argument("--out-dir", default="",
+                   help="explicit run directory (preferred by campaign launchers); overrides model/tag naming")
     return p.parse_args()
 
 
@@ -157,6 +225,22 @@ def apply_smoke(a):
     a.batch_size = 4
 
 
+def parse_int_ranges(raw: str) -> list[int]:
+    values: list[int] = []
+    for item in (part.strip() for part in raw.split(",") if part.strip()):
+        if "-" in item:
+            lo_raw, hi_raw = item.split("-", 1)
+            lo, hi = int(lo_raw), int(hi_raw)
+            if hi < lo:
+                raise ValueError(f"descending integer range is not allowed: {item!r}")
+            values.extend(range(lo, hi + 1))
+        else:
+            values.append(int(item))
+    if len(values) != len(set(values)):
+        raise ValueError(f"duplicate ids in integer range list: {raw!r}")
+    return values
+
+
 def load_model(a, tokenizer):
     dtype = torch.float32 if a.dtype == "float32" else torch.bfloat16
     if a.smoke:
@@ -167,7 +251,7 @@ def load_model(a, tokenizer):
             max_position_embeddings=512, pad_token_id=tokenizer.pad_token_id,
         )
         return Qwen2ForCausalLM(cfg).to(dtype).eval()
-    kw = {"dtype": dtype}
+    kw = {"torch_dtype": dtype}
     if a.attn_impl:
         kw["attn_implementation"] = a.attn_impl
     m = AutoModelForCausalLM.from_pretrained(a.model, **kw)
@@ -187,15 +271,32 @@ def clear_cuda_cache() -> None:
         torch.cuda.empty_cache()
 
 
-def sft(model, examples, a, log):
+def _mean_example_nll(model, examples, batch_size: int, device: str) -> float:
+    values = []
+    model.eval()
+    with torch.no_grad():
+        for start in range(0, len(examples), batch_size):
+            batch = collate(examples[start:start + batch_size])
+            batch = {k: v.to(device) if torch.is_tensor(v) else v for k, v in batch.items()}
+            values.extend(seq_mean_answer_nll(model, batch).detach().float().cpu().tolist())
+    if not values:
+        raise ValueError("cannot evaluate SFT target on an empty example set")
+    return sum(values) / len(values)
+
+
+def sft(model, examples, a, log, trainable_block=None) -> dict[str, float | int | bool]:
     # The foreach AdamW implementation holds an additional tensor list about
     # the size of the parameters during opt.step().  The scalar implementation
     # has the same update rule and a lower transient peak, which matters for a
     # full-model 7B update on one 80GB GPU.
-    opt = torch.optim.AdamW(model.parameters(), lr=a.sft_lr, foreach=False)
+    trainable = set_trainable_(model, trainable_block)
+    opt = torch.optim.AdamW(trainable.values(), lr=a.sft_lr, foreach=False)
+    log(f"  SFT trainable tensors={len(trainable)} params="
+        f"{sum(p.numel() for p in trainable.values()):,} scope={a.trainable_scope}")
     gen = torch.Generator().manual_seed(a.seed)
     loss = None
     batch = None
+    step = 0
     for step in range(1, a.sft_steps + 1):
         idx = torch.randperm(len(examples), generator=gen)[: a.batch_size]
         batch = {k: v.to(a.device) if torch.is_tensor(v) else v
@@ -206,25 +307,94 @@ def sft(model, examples, a, log):
         opt.step()
         if step % 20 == 0:
             log(f"  sft step {step} loss {float(loss.detach()):.3f}")
-            if float(loss.detach()) <= a.sft_target_loss:
+        if step % a.sft_eval_every == 0:
+            interim = _mean_example_nll(model, examples, a.batch_size, a.device)
+            log(f"  sft step {step} full-set mean NLL {interim:.3f}")
+            if interim <= a.sft_target_loss:
                 break
     model.zero_grad(set_to_none=True)
     del opt
     del loss
     del batch
     clear_cuda_cache()
+    full_mean = _mean_example_nll(model, examples, a.batch_size, a.device)
+    reached = full_mean <= a.sft_target_loss
+    log(f"  SFT full-set mean NLL={full_mean:.3f} target={a.sft_target_loss:.3f} "
+        f"reached={reached}")
+    return {"steps": step, "full_mean_nll": full_mean, "target": a.sft_target_loss,
+            "reached": reached}
+
+
+def _sft_cache_contract(a, req, probe_block) -> dict:
+    return {
+        "schema": "sft-cache-v1",
+        "model": a.model,
+        "dtype": a.dtype,
+        "request": req.request_id,
+        "candidate_universe_sha": req.universe.sha,
+        "forget_sha": req.forget_sha,
+        "trainable_scope": a.trainable_scope,
+        "trainable_pattern": (
+            probe_block.pattern if a.trainable_scope == "probe_block" else None
+        ),
+        "sft_lr": a.sft_lr,
+        "sft_steps": a.sft_steps,
+        "sft_target_loss": a.sft_target_loss,
+        "sft_eval_every": a.sft_eval_every,
+        "seed": a.seed,
+    }
+
+
+def _load_sft_cache(model, path: Path, contract: dict, log) -> dict | None:
+    meta_path = path.with_suffix(path.suffix + ".json")
+    if not path.exists() and not meta_path.exists():
+        return None
+    if not path.exists() or not meta_path.exists():
+        raise RuntimeError(f"incomplete SFT cache pair: {path} / {meta_path}")
+    metadata = json.loads(meta_path.read_text(encoding="utf-8"))
+    if metadata.get("contract") != contract:
+        raise RuntimeError(
+            f"SFT cache contract mismatch at {path}; preserve it and use a new cache path"
+        )
+    try:
+        state = torch.load(path, map_location="cpu", weights_only=True)
+    except TypeError:  # torch versions before weights_only
+        state = torch.load(path, map_location="cpu")
+    model.load_state_dict(state)
+    del state
+    result = metadata["sft_result"]
+    log(f"loaded validated development SFT cache {path} "
+        f"(full-set mean NLL={result['full_mean_nll']:.3f})")
+    return result
+
+
+def _write_sft_cache(path: Path, contract: dict, result: dict, state: dict, log) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    meta_path = path.with_suffix(path.suffix + ".json")
+    tmp_state = path.with_suffix(path.suffix + ".tmp")
+    tmp_meta = meta_path.with_suffix(meta_path.suffix + ".tmp")
+    torch.save(state, tmp_state)
+    tmp_meta.write_text(
+        json.dumps({"contract": contract, "sft_result": result}, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+    os.replace(tmp_state, path)
+    os.replace(tmp_meta, meta_path)
+    log(f"wrote development SFT cache {path}")
 
 
 def main():
     a = parse_args()
     if a.smoke:
         apply_smoke(a)
-    if "jvp" in a.extra_predictors and not a.attn_impl:
+    requested_predictors = [x.strip() for x in a.predictors.split(",") if x.strip()]
+    requested_predictors += [x.strip() for x in a.extra_predictors.split(",") if x.strip()]
+    if "jvp" in requested_predictors and not a.attn_impl:
         a.attn_impl = "eager"  # SDPA has no forward-AD support (jvp would crash)
     tag = "smoke" if a.smoke else a.model.split("/")[-1]
     if a.run_tag:
         tag += f"_{a.run_tag}"
-    out = ROOT / "runs" / f"gate_{tag}"
+    out = Path(a.out_dir).resolve() if a.out_dir else ROOT / "runs" / f"gate_{tag}"
     if (out / "seal_ledger.jsonl").exists():
         sys.exit(
             f"{out} already contains sealed scores (seals are append-only by design). "
@@ -239,10 +409,19 @@ def main():
             f.write(msg + "\n")
 
     torch.manual_seed(a.seed)
+    log(f"host={platform.node()} model={a.model} dtype={a.dtype} "
+        f"trainable_scope={a.trainable_scope} seed={a.seed}")
     tokenizer = AutoTokenizer.from_pretrained(a.model)
     log(f"loading TOFU (universe_authors={a.universe_authors}) ...")
     examples = load_tofu_examples(tokenizer)
-    req = tofu_request(a.author, examples, universe_authors=a.universe_authors, seed=a.seed)
+    candidate_authors = parse_int_ranges(a.candidate_authors) if a.candidate_authors else None
+    req = tofu_request(
+        a.author,
+        examples,
+        universe_authors=a.universe_authors,
+        seed=a.seed,
+        candidate_authors=candidate_authors,
+    )
     by_id = {e.example_id: e for e in req.universe.examples}
     log(f"request {req.request_id}: |Df|={len(req.forget)} |C|={len(req.universe)}")
 
@@ -262,12 +441,43 @@ def main():
             clear_cuda_cache()
 
     model0 = load_model(a, tokenizer)
-    log("SFT-memorizing the request universe ...")
-    sft(model0, list(req.forget) + list(req.universe.examples), a, log)
     probe_block = mlp_down_last_layers(model0, a.block_last_n)
+    selected_probe_params = probe_block.select(model0)
+    model_info = {
+        "architecture": type(model0).__name__,
+        "model_type": getattr(model0.config, "model_type", None),
+        "num_hidden_layers": int(model0.config.num_hidden_layers),
+        "hidden_size": int(model0.config.hidden_size),
+        "total_parameters": sum(parameter.numel() for parameter in model0.parameters()),
+        "probe_block_parameters": sum(
+            parameter.numel() for parameter in selected_probe_params.values()
+        ),
+        "tokenizer": type(tokenizer).__name__,
+        "vocab_size": len(tokenizer),
+    }
+    del selected_probe_params
+    sft_examples = list(req.forget) + list(req.universe.examples)
+    cache_path = Path(a.sft_cache).resolve() if a.sft_cache else None
+    cache_contract = _sft_cache_contract(a, req, probe_block)
+    sft_result = (
+        _load_sft_cache(model0, cache_path, cache_contract, log)
+        if cache_path is not None else None
+    )
+    if sft_result is None:
+        log("SFT-memorizing the request universe ...")
+        sft_result = sft(model0, sft_examples, a, log,
+                         probe_block if a.trainable_scope == "probe_block" else None)
+    if a.require_sft_target and not sft_result["reached"]:
+        raise RuntimeError(
+            "SFT memorization gate failed before susceptibility scoring: "
+            f"full-set mean NLL={sft_result['full_mean_nll']:.3f} > "
+            f"target={sft_result['target']:.3f}"
+        )
     # Keep the frozen target on host memory.  Otherwise model0 + state0 + the
     # fresh optimizer model coexist on device during every trajectory.
     state0 = {k: v.detach().cpu().clone() for k, v in model0.state_dict().items()}
+    if cache_path is not None and not cache_path.exists():
+        _write_sft_cache(cache_path, cache_contract, sft_result, state0, log)
     del model0
     clear_cuda_cache()
 
@@ -287,15 +497,43 @@ def main():
                      batch_size=a.batch_size, n_dirs=a.probe_dirs, norm_eta=a.probe_norm_eta)
     # fd_norm is the frozen headline gradient probe (prereg headline_probes);
     # it is in the default roster so a no-flags run cannot silently omit it.
-    predictors = ["fd", "fd_norm", "knn_feature", "knn_lexical", "grad_norm", "random_rank"]
-    try:
-        import sentence_transformers  # noqa: F401
-        predictors.insert(2, "knn_embed")
-    except ImportError:
-        log("sentence-transformers missing: skipping knn_embed row")
-    for extra in [x.strip() for x in a.extra_predictors.split(",") if x.strip()]:
-        if extra not in predictors:
-            predictors.insert(1, extra)  # next to fd for easy comparison
+    predictors = list(dict.fromkeys(requested_predictors))
+    unknown = sorted(set(predictors) - set(scorer_names()))
+    if unknown:
+        raise ValueError(f"unknown requested predictors before sealing: {unknown}")
+    sentence_transformers_version = None
+    if "knn_embed" in predictors:
+        try:
+            import sentence_transformers
+            from sentence_transformers import SentenceTransformer
+        except ImportError as error:
+            if a.require_all_predictors:
+                raise RuntimeError(
+                    "requested knn_embed but sentence-transformers is unavailable; "
+                    "install/provision it before sealed audit"
+                ) from error
+            predictors.remove("knn_embed")
+            log("sentence-transformers missing: skipping requested knn_embed row")
+        else:
+            from rsus.probe.baselines import set_embed_encoder
+
+            sentence_transformers_version = importlib.metadata.version("sentence-transformers")
+            sentence_model = SentenceTransformer(a.sentence_encoder, device="cpu")
+
+            def encode_sentences(examples):
+                texts = [example.text for example in examples]
+                if not all(texts):
+                    raise ValueError("knn_embed requires non-empty Example.text")
+                return torch.as_tensor(
+                    sentence_model.encode(
+                        texts,
+                        batch_size=a.batch_size,
+                        convert_to_numpy=True,
+                        show_progress_bar=False,
+                    )
+                )
+
+            set_embed_encoder(encode_sentences)
     scores_by_pred = {}
     for pred in predictors:
         log(f"scoring: {pred}")
@@ -312,23 +550,103 @@ def main():
     # ---- independent generator trajectories ----------------------------------
     gen_cfg = TrajectoryConfig(max_steps=a.gen_steps, checkpoint_every=a.gen_ckpt_every,
                                lr=a.gen_lr, batch_size=a.batch_size, seed=a.seed,
+                               trainable_pattern=(probe_block.pattern
+                                                  if a.trainable_scope == "probe_block"
+                                                  else None),
+                               representation_retain_mode=a.gen_rep_retain_mode,
                                **({"beta": a.beta} if a.beta else {}))
     import dataclasses as _dc
-    gen_steps_per = {k: int(v) for k, v in
-                     (kv.split("=") for kv in a.gen_steps_per.split(",") if kv.strip())}
-    gen_lr_per = {k: float(v) for k, v in
-                  (kv.split("=") for kv in a.gen_lr_per.split(",") if kv.strip())}
+    def parse_overrides(raw, cast):
+        out = {}
+        for item in (x.strip() for x in raw.split(",") if x.strip()):
+            if item.count("=") != 1:
+                raise ValueError(f"bad override {item!r}; expected objective=value")
+            key, value = item.split("=")
+            out[key.strip()] = cast(value)
+        return out
+
+    gen_steps_per = parse_overrides(a.gen_steps_per, int)
+    gen_lr_per = parse_overrides(a.gen_lr_per, float)
+    gen_beta_per = parse_overrides(a.gen_beta_per, float)
+    gen_forget_weight_per = parse_overrides(a.gen_forget_weight_per, float)
+    gen_retain_weight_per = parse_overrides(a.gen_retain_weight_per, float)
+    gen_rmu_alpha_per = parse_overrides(a.gen_rmu_alpha_per, float)
+    gen_rmu_c_per = parse_overrides(a.gen_rmu_c_per, float)
     retain_gen = [by_id[c] for c in disc_ids]
     gens = [x.strip() for x in a.generators.split(",") if x.strip()]
     idk_gen = idk_variants(tokenizer, list(req.forget)) if "idkdpo" in gens else None
+    objective_cfgs = {}
+    for g in gens:
+        cfg_g = _dc.replace(
+            gen_cfg,
+            max_steps=gen_steps_per.get(g, a.gen_steps),
+            lr=gen_lr_per.get(g, a.gen_lr),
+            beta=gen_beta_per.get(g, gen_cfg.beta),
+            forget_weight=gen_forget_weight_per.get(g, gen_cfg.forget_weight),
+            retain_weight=gen_retain_weight_per.get(g, gen_cfg.retain_weight),
+            rmu_alpha=gen_rmu_alpha_per.get(g, gen_cfg.rmu_alpha),
+            rmu_c=gen_rmu_c_per.get(g, gen_cfg.rmu_c),
+        )
+        if g == "idkdpo":
+            cfg_g = _dc.replace(cfg_g, idk_examples=idk_gen)
+        objective_cfgs[g] = cfg_g
+
+    manifest = {
+        "schema": "channel-matrix-run-v1",
+        "host": platform.node(),
+        "request": req.request_id,
+        "model": a.model,
+        "model_id": a.model_id or Path(a.model).name,
+        "model_info": model_info,
+        "dtype": a.dtype,
+        "seed": a.seed,
+        "probe_seed": a.probe_seed,
+        "candidate_universe_sha": req.universe.sha,
+        "forget_sha": req.forget_sha,
+        "candidate_authors": candidate_authors,
+        "trainable_scope": a.trainable_scope,
+        "trainable_pattern": gen_cfg.trainable_pattern,
+        "probe_config": {
+            "block_last_n": a.block_last_n,
+            "eta": a.eta,
+            "norm_eta": a.probe_norm_eta,
+            "n_dirs": a.probe_dirs,
+            "seed": a.probe_seed,
+            "loss": spec.loss,
+        },
+        "predictors": predictors,
+        "sentence_encoder": (
+            {"model": a.sentence_encoder, "package_version": sentence_transformers_version}
+            if "knn_embed" in predictors else None
+        ),
+        "objectives": gens,
+        "sft": sft_result,
+        "objective_configs": {
+            g: {
+                field.name: getattr(cfg, field.name)
+                for field in _dc.fields(cfg)
+                if field.name != "idk_examples"
+            }
+            for g, cfg in objective_cfgs.items()
+        },
+        "implementation_variants": {
+            "npo": "summed sequence-log-probability ratio plus retain GD",
+            "simnpo": "length-normalized reference-free NPO plus retain GD",
+            "gru": "minimum-deviation conflicting-gradient projection",
+            "repnoise": "block-controlled RepNoise-style; not full all-layer MMD implementation",
+            "circuit_breakers": "block-controlled RR loss; no LoRA or coefficient schedule",
+            "representation_retain_mode": a.gen_rep_retain_mode,
+        },
+        "cli": vars(a),
+    }
+    with open(out / "run_manifest.json", "w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2, sort_keys=True)
+
     markers = []
     damage_by_opt: dict[str, dict[str, dict[str, float]]] = {}
     for g in gens:
         log(f"generator: {g}")
-        cfg_g = _dc.replace(gen_cfg, max_steps=gen_steps_per.get(g, a.gen_steps),
-                            lr=gen_lr_per.get(g, a.gen_lr))
-        if g == "idkdpo":
-            cfg_g = _dc.replace(cfg_g, idk_examples=idk_gen)
+        cfg_g = objective_cfgs[g]
         trajectory_model = fresh()
         try:
             rec = run_trajectory(

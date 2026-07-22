@@ -53,6 +53,25 @@ def seq_mean_answer_nll(model: torch.nn.Module, batch: dict) -> torch.Tensor:
     return nll.sum(dim=1) / counts
 
 
+def seq_sum_answer_nll(model: torch.nn.Module, batch: dict) -> torch.Tensor:
+    """Summed answer-token NLL per sequence, shape ``[B]``.
+
+    NPO and DPO are defined through sequence log-probability ratios, so their
+    faithful loss uses a token *sum*.  The paper's candidate-damage estimand
+    remains :func:`seq_mean_answer_nll`; keeping the two functions explicit
+    prevents an accidental length-normalization of NPO (or, conversely, an
+    accidental length dependence in the reported damage).
+    """
+    batch = batch_to_model_device(model, batch)
+    out = model(input_ids=batch["input_ids"], attention_mask=batch["attention_mask"])
+    nll, mask = _shifted_nll(out.logits, batch["labels"])
+    counts = mask.sum(dim=1)
+    if (counts == 0).any():
+        bad = [batch["example_ids"][i] for i in torch.nonzero(counts == 0).flatten().tolist()]
+        raise ValueError(f"examples with no answer tokens: {bad}")
+    return nll.sum(dim=1)
+
+
 def token_answer_nll(
     model: torch.nn.Module, batch: dict
 ) -> tuple[torch.Tensor, list[tuple[str, int]]]:

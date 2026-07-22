@@ -39,6 +39,22 @@ def mlp_down_last_layers(model: torch.nn.Module, n_last: int) -> BlockSpec:
     return BlockSpec(pattern=rf".*\.layers\.(?:{idx})\.mlp\.down_proj\.weight")
 
 
+def set_trainable_(model: torch.nn.Module, block: BlockSpec | None) -> dict[str, torch.nn.Parameter]:
+    """Freeze parameters outside ``block`` and return the trainable mapping.
+
+    ``block=None`` selects the full model.  This is a persistent mutation,
+    intended for a disposable training model.  It is distinct from
+    :func:`only_block_grads`, which temporarily narrows a diagnostic backward
+    pass and then restores the original flags.
+    """
+    selected = ({n: p for n, p in model.named_parameters()} if block is None
+                else block.select(model))
+    names = set(selected)
+    for name, param in model.named_parameters():
+        param.requires_grad_(name in names)
+    return selected
+
+
 # ---- ParamVec algebra -------------------------------------------------------
 
 def vec_dot(a: ParamVec, b: ParamVec) -> torch.Tensor:

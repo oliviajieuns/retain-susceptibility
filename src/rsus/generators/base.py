@@ -57,6 +57,10 @@ class TrajectoryConfig:
     rmu_alpha: float = 10.0    # RMU retain weight
     rmu_c: float = 3.0         # RMU control-vector magnitude
     idk_examples: list | None = None  # IdkDPO preferred responses (per forget example)
+    trainable_pattern: str | None = None  # fullmatch regex; None updates every parameter
+    forget_weight: float = 1.0
+    retain_weight: float = 1.0
+    representation_retain_mode: str = "fixed"  # fixed (legacy) or stream_cached
 
 
 @dataclass

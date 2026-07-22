@@ -124,16 +124,38 @@ def tofu_request(
     examples: list[Example],
     universe_authors: int | None = None,
     seed: int = 0,
+    candidate_authors: list[int] | tuple[int, ...] | None = None,
 ) -> Request:
     """Deletion request for one forget10 author. ``universe_authors`` caps the
     candidate universe to that many whole retained authors (seeded, for the
-    gate experiment and smoke runs); None keeps the complete universe."""
+    gate experiment and smoke runs); None keeps the complete universe.
+
+    ``candidate_authors`` freezes the exact retained-author pool. Campaigns
+    use disjoint development and audit pools so calibration never observes a
+    candidate that later appears in a sealed audit. When both arguments are
+    supplied, ``universe_authors`` is a size assertion rather than a sampler.
+    """
     if not FORGET10_FIRST_AUTHOR <= author_id < AUTHORS_TOTAL:
         raise ValueError(f"author {author_id} is not a forget10 author")
     group = f"author-{author_id:03d}"
     forget = [e for e in examples if e.group == group]
     retained_groups = sorted({e.group for e in examples} - {group})
-    if universe_authors is not None:
+    if candidate_authors is not None:
+        authors = list(dict.fromkeys(int(value) for value in candidate_authors))
+        invalid = [value for value in authors if not 0 <= value < AUTHORS_TOTAL]
+        if invalid:
+            raise ValueError(f"candidate author ids out of range: {invalid}")
+        if author_id in authors:
+            raise ValueError(f"forget author {author_id} cannot be a retained candidate author")
+        if universe_authors is not None and len(authors) != universe_authors:
+            raise ValueError(
+                f"candidate_authors has {len(authors)} authors, expected {universe_authors}"
+            )
+        keep = {f"author-{value:03d}" for value in authors}
+        missing = keep - set(retained_groups)
+        if missing:
+            raise ValueError(f"candidate author groups absent from dataset: {sorted(missing)}")
+    elif universe_authors is not None:
         gen = torch.Generator().manual_seed(seed)
         perm = torch.randperm(len(retained_groups), generator=gen).tolist()
         keep = {retained_groups[i] for i in perm[:universe_authors]}

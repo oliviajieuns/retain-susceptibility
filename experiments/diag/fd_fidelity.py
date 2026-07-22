@@ -21,6 +21,8 @@ from __future__ import annotations
 
 import argparse
 import csv
+import json
+import math
 import statistics
 import sys
 from pathlib import Path
@@ -51,6 +53,22 @@ def _floats(s: str) -> list[float]:
     return [float(x) for x in s.split(",") if x.strip()]
 
 
+def _int_ranges(raw: str) -> list[int]:
+    values = []
+    for item in (part.strip() for part in raw.split(",") if part.strip()):
+        if "-" in item:
+            lo_raw, hi_raw = item.split("-", 1)
+            lo, hi = int(lo_raw), int(hi_raw)
+            if hi < lo:
+                raise ValueError(f"descending range: {item!r}")
+            values.extend(range(lo, hi + 1))
+        else:
+            values.append(int(item))
+    if len(values) != len(set(values)):
+        raise ValueError(f"duplicate candidate author: {raw!r}")
+    return values
+
+
 def agree(u: dict[str, float], v: dict[str, float], k: int) -> tuple[float, float]:
     ids = sorted(set(u) & set(v))
     rho = spearman([u[c] for c in ids], [v[c] for c in ids])
@@ -70,7 +88,11 @@ def main() -> None:
     p.add_argument("--dtype", default="float32", choices=["float32", "bfloat16"])
     p.add_argument("--author", type=int, default=180)
     p.add_argument("--universe-authors", type=int, default=30)
+    p.add_argument("--candidate-authors", default="",
+                   help="fixed development-only retained-author pool")
     p.add_argument("--n-cands", type=int, default=64)
+    p.add_argument("--candidate-seed", type=int, default=0)
+    p.add_argument("--batch-size", type=int, default=8)
     p.add_argument("--block-last-n", type=int, default=1,
                    help="fidelity MC variance is 2/R, independent of block dim; "
                         "1 layer is a valid, cheap estimator test")
@@ -79,6 +101,16 @@ def main() -> None:
     p.add_argument("--seeds", default="0,1")
     p.add_argument("--k", type=int, default=0, help="Overlap@k; 0 -> max(5, round(0.1*n))")
     p.add_argument("--out", default="")
+    p.add_argument("--certificate", default="")
+    p.add_argument("--gate-r", type=int, default=64)
+    p.add_argument("--gate-eta", type=float, default=3e-3)
+    p.add_argument("--gate-seed", type=int, default=0)
+    p.add_argument("--min-rho-ab", type=float, default=0.70)
+    p.add_argument("--min-rho-bc", type=float, default=0.80)
+    p.add_argument("--min-rho-ac", type=float, default=0.80)
+    p.add_argument("--min-eff-ratio", type=float, default=0.90)
+    p.add_argument("--min-frac-changed", type=float, default=0.90)
+    p.add_argument("--enforce-gate", action="store_true")
     a = p.parse_args()
 
     from transformers import AutoModelForCausalLM, AutoTokenizer
@@ -86,15 +118,28 @@ def main() -> None:
     dtype = torch.float32 if a.dtype == "float32" else torch.bfloat16
     tok = AutoTokenizer.from_pretrained(a.model)
     model = AutoModelForCausalLM.from_pretrained(a.model, torch_dtype=dtype).to(a.device).eval()
-    full = tofu_request(a.author, load_tofu_examples(tok), universe_authors=a.universe_authors, seed=0)
-    cands = list(full.universe.examples)[: a.n_cands]
+    candidate_authors = _int_ranges(a.candidate_authors) if a.candidate_authors else None
+    full = tofu_request(
+        a.author,
+        load_tofu_examples(tok),
+        universe_authors=a.universe_authors,
+        seed=0,
+        candidate_authors=candidate_authors,
+    )
+    all_cands = sorted(full.universe.examples, key=lambda example: example.example_id)
+    candidate_gen = torch.Generator().manual_seed(a.candidate_seed)
+    order = torch.randperm(len(all_cands), generator=candidate_gen).tolist()
+    cands = [all_cands[index] for index in order[: a.n_cands]]
     req = Request.build(full.request_id, list(full.forget), CandidateUniverse.freeze(cands))
     n = len(cands)
     k = a.k or max(5, round(0.1 * n))
     seeds, Rs, etas = _ints(a.seeds), _ints(a.dirs), _floats(a.etas)
 
+    if (a.gate_r not in Rs or a.gate_seed not in seeds
+            or not any(math.isclose(a.gate_eta, eta, rel_tol=0.0, abs_tol=1e-15) for eta in etas)):
+        p.error("the frozen --gate-r/--gate-seed/--gate-eta cell must be present in the grid")
     spec = ProbeSpec(block=mlp_down_last_layers(model, a.block_last_n), eta=etas[0],
-                     batch_size=8, n_dirs=max(Rs))
+                     batch_size=a.batch_size, n_dirs=max(Rs))
     sel = spec.block.select(model)
     d = sum(pp.numel() for pp in sel.values())
     print(f"model={a.model} dtype={a.dtype} device={a.device} |cands|={n} "
@@ -105,8 +150,10 @@ def main() -> None:
     print("=== realized perturbation (theta -> theta + eta*v, v unit) ===")
     print(f"{'eta':>8} | {'eff_norm':>10} {'eff/eta':>8} {'frac_changed':>13}")
     underflow = False
+    perturbations = {}
     for eta in etas:
         r = perturbation_report(model, spec, eta)
+        perturbations[eta] = r
         print(f"{eta:>8.0e} | {r['eff_norm']:>10.3e} {r['eff_over_eta']:>8.3f} {r['frac_changed']:>13.4f}")
         if r["eff_over_eta"] < 0.5 or r["frac_changed"] < 0.5:
             underflow = True
@@ -134,24 +181,29 @@ def main() -> None:
                 print(f"{s:>4} {R:>4} {eta:>8.0e} | {rab:>9.3f} {rbc:>9.3f} {rac:>9.3f}"
                       f" | {oac:>8.3f} | {mba:>7.2f} {mca:>7.2f} {mcb:>7.2f}")
                 rows.append({"seed": s, "R": R, "eta": eta, "rho_AB": rab, "rho_BC": rbc,
-                             "rho_AC": rac, "ov_AC": oac, "medB_A": mba, "medC_A": mca, "medC_B": mcb})
+                             "rho_AC": rac, "ov_AC": oac, "medB_A": mba, "medC_A": mca,
+                             "medC_B": mcb, **perturbations[eta]})
 
-    best = max(rows, key=lambda r: (r["R"], r["rho_AC"]))
-    print("\n=== VERDICT (best cell: seed={seed} R={R} eta={eta:.0e}) ===".format(**best))
-    if best["rho_AB"] < 0.7:
-        print(f"  rho(A,B)={best['rho_AB']:.3f} LOW -> Monte-Carlo (raise R) or direction-normalization; "
+    gate = next(
+        row for row in rows
+        if row["R"] == a.gate_r and row["seed"] == a.gate_seed
+        and math.isclose(row["eta"], a.gate_eta, rel_tol=0.0, abs_tol=1e-15)
+    )
+    print("\n=== FROZEN-CELL VERDICT (seed={seed} R={R} eta={eta:.0e}) ===".format(**gate))
+    if gate["rho_AB"] < a.min_rho_ab:
+        print(f"  rho(A,B)={gate['rho_AB']:.3f} LOW -> Monte-Carlo (raise R) or direction-normalization; "
               "NOT a finite-difference problem.")
-    elif best["rho_BC"] < 0.7:
-        print(f"  rho(A,B)={best['rho_AB']:.3f} ok but rho(B,C)={best['rho_BC']:.3f} LOW -> "
+    elif gate["rho_BC"] < a.min_rho_bc:
+        print(f"  rho(A,B)={gate['rho_AB']:.3f} ok but rho(B,C)={gate['rho_BC']:.3f} LOW -> "
               "finite-difference / eta / bf16 perturbation underflow. Re-run --dtype float32 "
               "and sweep eta; if C recovers under fp32, it was precision.")
-    elif best["rho_AC"] >= 0.8:
-        print(f"  rho(A,C)={best['rho_AC']:.3f} HIGH -> fd_norm is a FAITHFUL backward-free ||g||^2. "
+    elif gate["rho_AC"] >= a.min_rho_ac:
+        print(f"  rho(A,C)={gate['rho_AC']:.3f} HIGH -> fd_norm is a FAITHFUL backward-free ||g||^2. "
               "Any damage-prediction gap is the analysis pipeline / fold, not the estimator. "
               "Proceed to the mechanism-matched campaign (no optimizer averaging).")
     else:
-        print(f"  mixed: rho(A,B)={best['rho_AB']:.3f} rho(B,C)={best['rho_BC']:.3f} "
-              f"rho(A,C)={best['rho_AC']:.3f} -- inspect the grid above.")
+        print(f"  mixed: rho(A,B)={gate['rho_AB']:.3f} rho(B,C)={gate['rho_BC']:.3f} "
+              f"rho(A,C)={gate['rho_AC']:.3f} -- inspect the grid above.")
 
     out = Path(a.out) if a.out else ROOT / "runs" / f"fidelity_{a.model.split('/')[-1]}_{a.dtype}.csv"
     out.parent.mkdir(parents=True, exist_ok=True)
@@ -160,6 +212,42 @@ def main() -> None:
         w.writeheader()
         w.writerows(rows)
     print(f"\nwrote {out}")
+
+    passed = (
+        gate["rho_AB"] >= a.min_rho_ab
+        and gate["rho_BC"] >= a.min_rho_bc
+        and gate["rho_AC"] >= a.min_rho_ac
+        and gate["eff_over_eta"] >= a.min_eff_ratio
+        and gate["frac_changed"] >= a.min_frac_changed
+    )
+    certificate = {
+        "schema": "fd-fidelity-certificate-v1",
+        "passed": passed,
+        "model": a.model,
+        "dtype": a.dtype,
+        "author": a.author,
+        "candidate_authors": candidate_authors,
+        "candidate_seed": a.candidate_seed,
+        "n_candidates": n,
+        "block_last_n": a.block_last_n,
+        "R": a.gate_r,
+        "eta": a.gate_eta,
+        "probe_seed": a.gate_seed,
+        "metrics": gate,
+        "thresholds": {
+            "rho_AB": a.min_rho_ab,
+            "rho_BC": a.min_rho_bc,
+            "rho_AC": a.min_rho_ac,
+            "eff_over_eta": a.min_eff_ratio,
+            "frac_changed": a.min_frac_changed,
+        },
+    }
+    cert_path = Path(a.certificate) if a.certificate else out.with_suffix(".certificate.json")
+    cert_path.parent.mkdir(parents=True, exist_ok=True)
+    cert_path.write_text(json.dumps(certificate, indent=2, sort_keys=True), encoding="utf-8")
+    print(f"wrote {cert_path}; passed={passed}")
+    if a.enforce_gate and not passed:
+        raise SystemExit("frozen fd_norm fidelity cell failed; do not start sealed audit")
 
 
 if __name__ == "__main__":

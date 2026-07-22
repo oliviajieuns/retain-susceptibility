@@ -101,6 +101,50 @@ def test_ga_raises_forget_loss():
     assert sum(dmg[c] for c in adj) / len(adj) > 0
 
 
+def test_trajectory_can_be_restricted_to_declared_probe_block():
+    from rsus.blocks import mlp_down_last_layers
+
+    model = build_tiny(6)
+    req, truth = make_substrate(seed=52, n_remote=6)
+    retain = [e for e in req.universe.examples if truth[e.example_id] == "remote"]
+    block = mlp_down_last_layers(model, 1)
+    selected = set(block.select(model))
+    before = {name: param.detach().clone() for name, param in model.named_parameters()}
+    run_trajectory(
+        model,
+        "ga",
+        req,
+        retain,
+        TrajectoryConfig(
+            max_steps=2,
+            checkpoint_every=2,
+            lr=1e-3,
+            trainable_pattern=block.pattern,
+        ),
+    )
+    changed = {
+        name for name, param in model.named_parameters()
+        if not torch.equal(before[name], param.detach())
+    }
+    assert changed
+    assert changed <= selected
+    assert all(param.requires_grad == (name in selected) for name, param in model.named_parameters())
+
+
+def test_gru_projection_is_minimum_deviation_and_only_acts_on_conflict():
+    from rsus.generators.objectives import _gru_projection_coefficient
+
+    unlearn = [torch.tensor([1.0, 0.0])]
+    conflicting_retain = [torch.tensor([-1.0, 1.0])]
+    coef = _gru_projection_coefficient(unlearn, conflicting_retain)
+    rectified = unlearn[0] - coef * conflicting_retain[0]
+    assert coef == pytest.approx(-0.5)
+    assert torch.dot(rectified, conflicting_retain[0]) == pytest.approx(0.0)
+
+    aligned_retain = [torch.tensor([1.0, 1.0])]
+    assert _gru_projection_coefficient(unlearn, aligned_retain) == pytest.approx(0.0)
+
+
 def test_spearman_auroc_cvar_hand_cases():
     assert spearman([1, 2, 3], [10, 20, 30]) == pytest.approx(1.0)
     assert spearman([1, 2, 3], [30, 20, 10]) == pytest.approx(-1.0)

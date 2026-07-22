@@ -71,3 +71,12 @@ def test_request_construction(rows):
     assert all(e.group != f"author-{FORGET10_FIRST_AUTHOR:03d}" for e in req.universe.examples)
     capped = tofu_request(FORGET10_FIRST_AUTHOR, examples, universe_authors=2, seed=0)
     assert len(capped.universe) == 2 * QA_PER_AUTHOR
+    fixed = tofu_request(
+        FORGET10_FIRST_AUTHOR,
+        examples,
+        universe_authors=2,
+        candidate_authors=[0, 2],
+    )
+    assert {example.group for example in fixed.universe.examples} == {
+        "author-000", "author-002"
+    }

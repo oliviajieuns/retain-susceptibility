@@ -2,7 +2,7 @@ import torch
 import torch.nn.functional as F
 
 from rsus.data.base import collate
-from rsus.losses import IGNORE, seq_mean_answer_nll, token_answer_nll
+from rsus.losses import IGNORE, seq_mean_answer_nll, seq_sum_answer_nll, token_answer_nll
 
 
 def test_seq_mean_matches_manual(tiny_model, req):
@@ -17,6 +17,15 @@ def test_seq_mean_matches_manual(tiny_model, req):
         keep = tg != IGNORE
         manual = F.cross_entropy(lg[keep], tg[keep])
         assert torch.allclose(losses[i], manual, atol=1e-10), i
+
+
+def test_seq_sum_is_mean_times_answer_length(tiny_model, req):
+    examples = list(req.universe.examples[:3])
+    batch = collate(examples)
+    mean = seq_mean_answer_nll(tiny_model, batch)
+    summed = seq_sum_answer_nll(tiny_model, batch)
+    counts = torch.tensor([example.n_answer_tokens() for example in examples], dtype=mean.dtype)
+    assert torch.allclose(summed, mean * counts, atol=1e-10)
 
 
 def test_token_index_map_batch_invariant(tiny_model, req):
