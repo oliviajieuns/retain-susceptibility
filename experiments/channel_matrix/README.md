@@ -38,23 +38,39 @@ uses the current implementations.
 ```bash
 source /group-volume/jieuns.shin/venvs/exp/bin/activate
 cd /group-volume/jieuns.shin/retain-susceptibility
-git pull
-python -m pip install -e '.[dev,campaign]'
+git fetch origin codex/channel-matrix-7b
+git switch codex/channel-matrix-7b
+git pull --ff-only origin codex/channel-matrix-7b
 python -m pytest -q
 nvidia-smi
 ```
+
+The official shared environment already contains the campaign dependencies;
+do not create a node-local environment.  The convenience entry point below
+performs model-path, dependency, CUDA, and git-state checks:
+
+```bash
+GPU=0 MODEL_ID=qwen25_7b \
+  bash experiments/channel_matrix/h100_campaign.sh preflight
+```
+
+Keep every log below the git-ignored `runs/` directory.  A log written in the
+repository root makes the worktree dirty and therefore blocks sealed audit.
 
 Before the offline audit, pre-cache both TOFU and the configured
 `sentence-transformers/all-MiniLM-L6-v2` encoder. The audit process sets the
 Hugging Face libraries to offline mode and fails rather than resolving a new
 remote revision.
 
+```bash
+bash experiments/channel_matrix/h100_campaign.sh prefetch
+```
+
 Inspect the complete calibration launch without using a GPU:
 
 ```bash
-python experiments/channel_matrix/run_campaign.py \
-  --config configs/channel_matrix/7b_tofu.yaml \
-  --phase calibration --dry-run
+GPU=0 MODEL_ID=qwen25_7b \
+  bash experiments/channel_matrix/h100_campaign.sh dry-calibration
 ```
 
 Run the numerical fidelity gate at the already frozen operating point. This
@@ -62,19 +78,19 @@ uses only the disjoint development candidate pool and produces the certificate
 that the audit launcher requires:
 
 ```bash
-python experiments/channel_matrix/run_campaign.py \
-  --config configs/channel_matrix/7b_tofu.yaml \
-  --phase fidelity --resume
+mkdir -p runs/logs
+GPU=0 MODEL_ID=qwen25_7b nohup \
+  bash experiments/channel_matrix/h100_campaign.sh fidelity \
+  > "runs/logs/channel7b_fidelity_$(hostname).out" 2>&1 &
 ```
 
 Run development calibration. `--resume` skips complete cells; partial artifacts
 are preserved and cause a loud stop rather than an overwrite:
 
 ```bash
-python experiments/channel_matrix/run_campaign.py \
-  --config configs/channel_matrix/7b_tofu.yaml \
-  --phase calibration --resume \
-  > channel7b_calibration_$(hostname).out 2>&1
+GPU=0 MODEL_ID=qwen25_7b nohup \
+  bash experiments/channel_matrix/h100_campaign.sh calibration \
+  > "runs/logs/channel7b_calibration_$(hostname).out" 2>&1 &
 ```
 
 Calibration reuses one validated fp32 SFT snapshot per
@@ -85,10 +101,7 @@ Apply the predeclared reach/utility rule.  This script never reads predictor
 seals or correlations:
 
 ```bash
-python experiments/channel_matrix/select_freeze.py \
-  --config configs/channel_matrix/7b_tofu.yaml \
-  --root runs/channel_matrix_7b/calibration \
-  --out runs/channel_matrix_7b/objective_freeze.recommended.yaml
+bash experiments/channel_matrix/h100_campaign.sh select-freeze
 ```
 
 Review unresolved arms.  If all are resolved, copy the chosen values into
@@ -97,26 +110,21 @@ Review unresolved arms.  If all are resolved, copy the chosen values into
 that file **before** starting audit.
 The launcher rejects a draft freeze.
 
+The cluster cannot push.  Return the generated recommendation for review and
+remote commit, then pull that frozen commit back onto the cluster.  Do not edit
+the freeze and launch audit from an uncommitted worktree.
+
 ```bash
-python experiments/channel_matrix/run_campaign.py \
-  --config configs/channel_matrix/7b_tofu.yaml \
-  --phase audit --resume \
-  > channel7b_audit_$(hostname).out 2>&1
+GPU=0 MODEL_ID=qwen25_7b nohup \
+  bash experiments/channel_matrix/h100_campaign.sh audit \
+  > "runs/logs/channel7b_audit_$(hostname).out" 2>&1 &
 ```
 
 Aggregate with model/request/seed/candidate hierarchical bootstrap, then render
 the proposed main table:
 
 ```bash
-python experiments/channel_matrix/aggregate.py \
-  --root runs/channel_matrix_7b/audit \
-  --out runs/channel_matrix_7b/aggregate --n-boot 2000
-
-python experiments/channel_matrix/make_main_table.py \
-  --report runs/channel_matrix_7b/aggregate/pooled_channel_report.csv \
-  --summary runs/channel_matrix_7b/aggregate/pooled_channel_report.json \
-  --out docs/tables/table1_channel_matrix_7b.tex \
-  --stress-out docs/tables/table1_stress_7b.tex
+bash experiments/channel_matrix/h100_campaign.sh aggregate
 ```
 
 ## Second architecture
