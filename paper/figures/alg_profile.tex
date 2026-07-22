@@ -1,0 +1,38 @@
+% figures/alg_profile.tex
+% Gradient-channel probe: randomized loss-shake energy (backward-free).
+% Faithful to Sec. 4.1 (Gradient-Channel Probe) Eq. (loss-shake-identity).
+% Requires in preamble:  \usepackage[ruled,linesnumbered]{algorithm2e}
+\begin{algorithm}[t]
+\DontPrintSemicolon
+\SetKwInOut{Require}{Require}
+\SetKwInOut{Ensure}{Ensure}
+\SetKwComment{Comment}{$\triangleright$\ }{}
+
+\Require{start model $\theta_0$; candidate universe $\mathcal C$;
+  $d_B$-dimensional block $B$; probe radius $\eta$; directions $R$; seed}
+\Ensure{loss-shake energy $\widehat q_G(x)$ for all $x\in\mathcal C$}
+\BlankLine
+
+save a copy of block parameters $\theta_{0,B}$\;
+$q(x)\gets 0$ for all $x\in\mathcal C$
+  \Comment*[r]{accumulated squared central difference}
+\For{$r=1$ \KwTo $R$}{
+  draw shared seeded $v_r\sim\operatorname{Unif}(\mathbb S^{d_B-1})$
+    \Comment*[r]{same direction for all candidates}
+  restore $\theta_{0,B}$, set block parameters to $\theta_0+\eta v_r$\;
+  evaluate $\ell^+_{x,r}=\ell_x(\theta_0+\eta v_r)$ for all $x\in\mathcal C$
+    \Comment*[r]{batched forward sweep}
+  restore $\theta_{0,B}$, set block parameters to $\theta_0-\eta v_r$\;
+  evaluate $\ell^-_{x,r}=\ell_x(\theta_0-\eta v_r)$ for all $x\in\mathcal C$
+    \Comment*[r]{batched forward sweep}
+  \lFor{$x\in\mathcal C$}{$q(x)\gets q(x)
+    +\bigl((\ell^+_{x,r}-\ell^-_{x,r})/2\eta\bigr)^2$}
+}
+$\widehat q_G(x)\gets (d_B/R)\,q(x)$ for all $x\in\mathcal C$
+  \Comment*[r]{$\mathbb E_v[\widehat q_G]=\lVert\nabla_B\ell_x(\theta_0)\rVert_2^2+O(\eta^2)$}
+restore block parameters to $\theta_{0,B}$\;
+\Return $\widehat q_G$
+  \Comment*[r]{$2R$ forward sweeps; no candidate backward}
+\caption{Gradient-Channel Probe: Randomized Loss-Shake Energy}
+\label{alg:profile}
+\end{algorithm}

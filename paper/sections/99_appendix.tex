@@ -10,8 +10,7 @@
 %   E  Supplementary protection results (incl. strong-method context)
 %   F  Cost, replication, and stress details
 %   G  Additional limitations and reporting scope
-
-\appendix
+% (\appendix is issued once, in main.tex, before this file is input.)
 
 % ============================================================ A. Reproducibility
 
@@ -89,10 +88,9 @@ PISTOL
 \end{tabular}
 \end{table*}
 
-For every request, the complete candidate universe $\mathcal C$, its
-semantic-group discovery and audit folds, the native audit, and a
-uniform-random audit are frozen before scores or unlearning outcomes are
-computed. Groups are defined at the author, entity, article, or
+For every request, we freeze the complete candidate universe $\mathcal C$,
+semantic-group discovery and audit folds, native audit, and uniform-random
+audit before computing scores or outcomes. Groups are defined at the author, entity, article, or
 dataset-specific semantic unit so that directly related examples do not
 cross the discovery--audit boundary; the relation rule, group IDs,
 candidate counts, and audit membership are persisted in the frozen data
@@ -115,8 +113,10 @@ profile nor protection.
 \label{app:objectives}
 
 The preregistered channel table assigns each parent objective from its
-loss definition: output channel -- GA, GradDiff, NPO+retain, SimNPO,
+loss definition: output channel -- GA, GradDiff, NPO, SimNPO,
 IdkDPO, GRU; representation channel -- RMU, RepNoise, Circuit Breakers.
+Our NPO configuration includes a uniform retain term; it is written NPO
+throughout.
 Each parent's objective, trainable block, retain stream, learning rate,
 update budget, and saved-checkpoint grid are fixed on development requests
 without susceptibility scores. Representation parents receive longer step
@@ -169,7 +169,7 @@ Representation-channel parents (RMU, RepNoise, Circuit Breakers)
     & \tblph & \tblph \\
 \midrule
 Crossed protection arms (per parent)
-    & \{none, random, matched, mismatched, exact ceiling\}
+    & \{none, random, matched, mismatched\} (+ exact ceiling, output parent only)
     & \tblph & \tblph & \tblph & \tblph & \tblph
     & \tblph & \tblph \\
 \bottomrule
@@ -200,9 +200,8 @@ reaching checkpoint; repaired arms enter repair there and use the final
 saved repair output that still satisfies the same criterion. Conditional
 outcomes always report $n_{\mathrm{reach}}/n_{\mathrm{total}}$.
 
-Metrics are first averaged over unlearning seeds within request.
-Interaction endpoints use candidate-level bootstrap
-(Eq.~\eqref{eq:interaction}); request-level aggregation uses hierarchical
+Metrics are first averaged over seeds within request. For the interaction
+in Eq.~\eqref{eq:interaction}, we bootstrap candidates. Request-level aggregation uses hierarchical
 bootstrap over targets and requests, with leave-one-target-out ranges
 whenever the top level is small. Paraphrase, generation, extraction, and
 general-utility audits are evaluated at selected checkpoints but never
@@ -234,8 +233,9 @@ and never materialized as a bank. For every direction, block parameters
 are restored from the same saved copy before applying
 $\theta_0\pm\eta v_r$; candidate order, batching, padding, masks, and
 dropout state are identical across the paired sweeps. The implemented
-score is Eq.~\eqref{eq:randomized-susceptibility}; the common
-block-dimension factor and square root are omitted as rank-invariant.
+ranking score is $\widehat q_G/d_B$ from
+Eq.~\eqref{eq:loss-shake-identity}; the common block-dimension factor and
+square root are omitted as rank-invariant.
 Loss differences are accumulated in fp32 even when weights and
 activations use lower precision. The profile uses no forget-gradient
 backward, no candidate-side backward, and no per-example gradient
@@ -258,11 +258,14 @@ the setting before any correlation is computed.
 \emph{$A/B/C$ decomposition.} On the diagnostic subset we compare three
 quantities per candidate: the exact squared norm
 $A=\lVert g_x\rVert_2^2$; the exact projected proxy
-$B=(d_B/R)\sum_r (g_x^{\top}v_r)^2$, which shares the probe's Monte Carlo
-directions but uses exact inner products; and the finite-difference
-estimate $C=r_{\mathrm{rand}}(x)\,d_B$. Rank agreement of $B$ with $A$
-isolates Monte Carlo error (relative variance $2/R$, independent of
-block dimension); rank agreement of $C$ with $B$ isolates
+$B=(d_B/R)\sum_r (g_x^{\top}v_r)^2$, which shares the probe's direction
+distribution and operating $(\eta,R)$ but uses exact inner products
+(the gate's diagnostic sampler draws its own seeded directions); and the
+finite-difference
+estimate $C=\widehat q_G(x)$. Rank agreement of $B$ with $A$
+isolates Monte Carlo error (relative variance
+$2(d_B-1)/[R(d_B+2)]$, approaching $2/R$ in large blocks); rank agreement
+of $C$ with $B$ isolates
 finite-difference error, including catastrophic cancellation at small
 $\eta$. Because the central difference cancels the leading curvature
 term, disagreement between $C$ and $B$ at small radii is cancellation
@@ -287,8 +290,9 @@ no parameter perturbation.
 \label{app:alignment-impl}
 
 The alignment diagnostic computes one request-level forget gradient in
-block $B$, normalizes it, and evaluates candidates at
-$\theta_0\pm\eta\hat g_f$ (Eq.~\eqref{eq:directional-probe}). Exact JVP,
+block $B$, normalizes it, and scores candidates by
+$[\ell_x(\theta_0+\eta\hat g_f)-
+\ell_x(\theta_0-\eta\hat g_f)]/(2\eta)$. Exact JVP,
 vectorized reverse-mode gradient dot, and streaming candidate backward
 compute the same local target and are numerical implementations, not
 separate hypotheses; their role is to separate finite-difference error
@@ -340,8 +344,18 @@ guarantee.
 \subsection{Paired One-Sided Guard and Auxiliary Bound}
 \label{app:guard-proof}
 
+With $\bar u_i$ the cached post-unlearning forget loss and $u_i$ its
+current value, the identity-paired guard is
+\begin{equation}
+    D_{\downarrow}(u,\bar u)
+    =
+    \frac{1}{n}
+    \sum_{i=1}^{n}
+    \bigl[\bar u_i-\epsilon-u_i\bigr]_+^2.
+    \label{eq:guard}
+\end{equation}
 Sequence- and token-level guards (Eq.~\eqref{eq:guard}) have separate
-budgets and multipliers. At an audited refresh, a step exceeding either
+threshold and multipliers. At an audited refresh, a step exceeding either
 budget is rejected: the last accepted block parameters and optimizer state
 are restored, the repair step size is reduced, and updated multipliers are
 retained. Projection is proactive and mean-level; the guard is reactive
@@ -363,7 +377,7 @@ $I_\Delta$ the set of such indices,
     \frac{|I_\Delta|}{n}\leq\frac{\delta^2}{\Delta^2}:
 \]
 the fraction of forget examples whose loss regresses by more than
-$\Delta$ beyond tolerance is controlled by the accepted guard budget. The
+$\Delta$ beyond tolerance is controlled by the accepted guard threshold. The
 bound applies only to audited loss vectors at accepted refreshes; it is
 not a guarantee about generated continuations, extraction, relearning, or
 global deletion.
@@ -383,7 +397,6 @@ should reappear in each metric: the matched probe dominates AUROC and
 Overlap@$K_p$ on its own channel, and tail-restricted $\rho$ verifies that
 ranking quality persists inside the damage tail where protection budgets
 are spent.
-
 \begin{table*}[t]
 \caption{Secondary metrics for the headline probes (TOFU tofu-a180,
 sealed audit fold, $n{=}300$, $K_p{=}30$; chance Overlap@$K_p$ is
@@ -437,15 +450,15 @@ weaker under seed 2026 -- but the difference-in-differences absorbs
 these level shifts, and the CI excludes zero at every replicate: the
 interaction, not any single correlation, is the stable quantity.
 
-\begin{table*}[t]
+\begin{table}[t]
 \caption{Seed replication of the preregistered interaction $\Delta$
 (Eq.~\eqref{eq:interaction}; candidate bootstrap, 2{,}000 resamples,
 $n{=}300$). Each seed is a fully independent rerun of SFT, probe
 scoring, and all nine trajectories on the same request.}
 \label{tab:seed-replication}
 \centering
-\small
-\setlength{\tabcolsep}{5pt}
+\scriptsize
+\setlength{\tabcolsep}{3pt}
 \begin{tabular}{@{}lcc@{}}
 \toprule
 Seed & GradDiff/RMU $\Delta$ [95\% CI] & NPO/RepNoise $\Delta$ [95\% CI] \\
@@ -455,10 +468,47 @@ Seed & GradDiff/RMU $\Delta$ [95\% CI] & NPO/RepNoise $\Delta$ [95\% CI] \\
 2027 & \tblph & \tblph \\
 \bottomrule
 \end{tabular}
-\end{table*}
+\end{table}
 
 \subsection{Randomized-Estimator Accuracy and Stability}
 \label{app:estimator-stability}
+
+\begin{table*}[t]
+\caption{\textbf{The backward-free probe: fidelity to the exact profile
+and profiling cost.} Left: rank agreement with the exact gradient norm
+inside and outside the preregistered fidelity gate (Qwen models, fp32);
+at the gate-certified setting the probe's damage prediction matches the
+exact profile within $\pm 0.01$ on all nine objectives of
+Table~\ref{tab:channel-matrix}. Right: measured wall-clock and peak
+memory per pass over one candidate universe (Qwen2.5-7B, bf16, batch 4);
+``randomized sensitivity'' time is per symmetric direction pair
+($2\times$ forward sweep) -- total time scales linearly in $R$ while
+peak memory stays at the same inference-level $18.3$\,GB, so the claim
+is memory and backward-freedom, not universal wall-clock supremacy.}
+\label{tab:bwfree}
+\centering
+\scriptsize
+\setlength{\tabcolsep}{3.0pt}
+\begin{tabular}{@{}lcc c lcc@{}}
+\toprule
+\multicolumn{3}{c}{\textbf{Fidelity (fp32)}} & &
+\multicolumn{3}{c}{\textbf{Cost (7B, bf16, per pass)}} \\
+\cmidrule(r){1-3}\cmidrule(l){5-7}
+Regime & $\rho$(rand, exact) & Damage-$\rho$ retained & &
+Profiler & Time (s) & Peak mem (GB) \\
+\midrule
+Gate-certified ($\eta{=}3\mathrm{e}{-}3$, $R{=}64$) & 0.94 &
+9/9 obj.\ within $\pm 0.01$ & &
+Randomized sensitivity (per pair, fwd only) & 5.97 & \textbf{18.3} \\
+Cancellation zone ($\eta{=}3\mathrm{e}{-}4$) & 0.50 & \tblph & &
+Exact per-candidate backward (streaming) & 17.4 & 18.7 \\
+Low-precision underflow (bf16) & \tblph & \tblph & &
+Exact JVP (forward-mode) & 9.9 & 27.4 \\
+Curvature zone (large $\eta$) & \tblph & \tblph & &
+Vectorized gradient-dot & 10.0 & 35.2 \\
+\bottomrule
+\end{tabular}
+\end{table*}
 
 Table~\ref{tab:estimator-validation} varies one profiling factor at a
 time around the frozen operating point; direction-count rows report the
@@ -489,8 +539,8 @@ Random directions
     & $R=64$ (frozen) & \tblph & \tblph & \tblph & \tblph \\
 \midrule
 Radius
-    & $\eta_0/10$ (cancellation) & \tblph & \tblph & \tblph & \tblph \\
-    & $\eta_0$ (frozen) & \tblph & \tblph & \tblph & \tblph \\
+    & $\eta_0/10$ (cancellation) & 0.50 & \tblph & \tblph & \tblph \\
+    & $\eta_0$ (frozen) & 0.94 & \tblph & \tblph & \tblph \\
     & $10\eta_0$ (curvature) & \tblph & \tblph & \tblph & \tblph \\
 \midrule
 Precision
@@ -507,18 +557,21 @@ Parameter block
 \subsection{Alignment-Probe Post-Mortem}
 \label{app:alignment-postmortem}
 
-The forget-direction alignment probe is numerically correct and
-scientifically wrong, and the two facts are established separately.
-Table~\ref{tab:local-fidelity} shows that symmetric FD recovers the exact
-JVP directional derivative to high precision, so its failure in
-Table~\ref{tab:channel-matrix} is not estimator error.
+The post-mortem separates two questions about the forget-direction
+alignment probe: whether it is numerically correct, and whether the
+single-direction hypothesis survives the trajectory.
+Table~\ref{tab:local-fidelity} tests the first -- symmetric FD should
+recover the exact JVP directional derivative to high precision, so any
+failure in Table~\ref{tab:channel-matrix} would not be estimator error.
 Table~\ref{tab:score-anatomy} decomposes the local response on the
-diagnostic gradient subset: gradient magnitude carries the transferable
-signal on output-channel damage, whereas the signed-alignment factor --
-the part specific to the initial forget direction -- does not survive the
-trajectory. Table~\ref{tab:trajectory-mechanism} completes the account:
-saved-checkpoint displacement rotates away from the initial direction,
-and alignment's predictive value decays with that rotation.
+diagnostic gradient subset; the preregistered prediction is that gradient
+magnitude carries the transferable signal on output-channel damage,
+whereas the signed-alignment factor -- the part specific to the initial
+forget direction -- does not survive the trajectory.
+Table~\ref{tab:trajectory-mechanism} completes the account by measuring
+whether saved-checkpoint displacement rotates away from the initial
+direction and whether alignment's predictive value decays with that
+rotation.
 
 \begin{table*}[t]
 \caption{Numerical fidelity of implementations targeting the initial
@@ -601,7 +654,7 @@ $\rho(a_t,\text{alignment pred.})$ &
 Norm pred.\ [IQR] & Alignment pred.\ [IQR] \\
 \midrule
 GradDiff & \tblph & \tblph & \tblph & \tblph & \tblph \\
-NPO+retain & \tblph & \tblph & \tblph & \tblph & \tblph \\
+NPO & \tblph & \tblph & \tblph & \tblph & \tblph \\
 RMU & \tblph & \tblph & \tblph & \tblph & \tblph \\
 \bottomrule
 \end{tabular}
@@ -638,6 +691,60 @@ Random ranking & \tblph & \tblph & \tblph & \tblph \\
 \bottomrule
 \end{tabular}
 \end{table*}
+
+\subsection{Continuous Channel Diagnostic}
+\label{app:alpha-diagnostic}
+
+The mixture analysis is an append-only exploratory extension frozen after
+the primary channel design but before any $s_\alpha$ curve was computed on
+sealed outcomes.
+It uses the rank-normalized loss-shake and hidden-state profiles of
+Eq.~\eqref{eq:mixture}, with deterministic candidate-ID tie-breaking. The
+prediction analysis evaluates
+$\alpha\in\{0,0.125,\ldots,1\}$ offline on every
+sealed objective trajectory. The protection analysis uses the five-point
+subset $\{0,0.25,0.5,0.75,1\}$; the endpoint arms are the existing
+confirmatory selectors and only the three interior arms are additional.
+
+For prediction we report every per-objective
+$\rho(s_\alpha,\mathrm{damage})$ curve and its descriptive argmax. For
+protection we report audit CVaR and reach at every mixture weight, including
+parent-floor regimes. These argmax values summarize observed curves only:
+they neither tune deployment nor revise the fixed output-$0$/representation-$1$
+router. A mismatch between prediction- and protection-optimal weights is
+reported directly because individual risk ranking and repair transfer need
+not induce the same ordering.
+
+The measured prediction curves (seed 2025; seed-2026 replicate in
+parentheses): every output-channel objective peaks at an interior
+weight -- GradDiff $\alpha^{*}{=}0.5$, $\rho{=}0.612$ ($0.375$,
+$0.573$); GRU $0.5$, $0.592$ ($0.375$, $0.564$); NPO $0.375$, $0.466$
+($0.25$, $0.484$); SimNPO $0.375$, $0.460$ ($0.25$, $0.478$);
+GA$^{\ddag}$ $0.75$, $0.518$ ($0.75$, $0.660$); IdkDPO$^{\dag}$ $0.25$,
+$0.427$ ($0.25$, $0.534$) -- and every representation-channel objective
+is a corner solution at $\alpha^{*}{=}1$ in both seeds (RMU $0.339$ /
+$0.120$; RepNoise $0.136$ / $0.335$; CB$^{\dag}$ $0.092$ / $0.069$).
+The interior optima on the output channel exceed both endpoints by up to
+$+0.12$ absolute $\rho$; on the representation channel any gradient
+weight only hurts. The protection interior arms have not yet been run.
+
+\begin{figure}[t]
+\centering
+\fbox{\parbox{0.92\linewidth}{\centering\vspace{0.85cm}
+\resph{Top: all per-objective $\rho(s_\alpha,\mathrm{damage})$ curves on
+the frozen nine-point grid, grouped by declared channel. Bottom: audit
+CVaR and reach for each parent on the five-point protection grid. Mark
+descriptive optima without using them as router choices.}
+\vspace{0.85cm}}}
+\caption{\textbf{Continuous diagnostic, not routing.} Prediction uses the
+frozen nine-point grid; protection uses its five-point subset. Endpoints
+remain the only confirmatory routes. Interior, opposite-endpoint, and flat
+curves are all reported.}
+\Description{Two stacked diagnostic panels: prediction correlation versus
+alpha for each objective and protection tail damage versus alpha for each
+parent, with the fixed zero and one endpoints highlighted.}
+\label{fig:alpha-sweep}
+\end{figure}
 
 % ============================================ E. Supplementary protection
 
@@ -769,7 +876,7 @@ Retain-only retrain reference &
 \midrule
 GA & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph \\
 GradDiff & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph \\
-NPO+retain & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph \\
+NPO & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph \\
 IdkDPO & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph \\
 SimNPO & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph \\
 GRU & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph \\
@@ -794,8 +901,8 @@ Channel-matched probe + guarded repair (ours) &
 \subsection{Profiling-Cost Protocol}
 \label{app:cost-protocol}
 
-All profiling comparisons use identical candidate order, token batches,
-hardware, warm-up, model precision, and loss accumulation. Timing starts
+Profiling comparisons use the same candidate order, batches, hardware,
+warm-up, precision, and loss accumulation. Timing starts
 before method-specific shared setup and ends after all scores are
 persisted; direction-specific methods include their forget-gradient
 evaluation, which randomized sensitivity does not require. The systems
@@ -822,22 +929,22 @@ Exact gradient norm
     & \tblph & \tblph & \tblph \\
 Randomized sensitivity
     & 16 & $32\times$forward & no & 0
-    & \tblph & \tblph & \tblph \\
+    & \tblph & 18.3 & \tblph \\
 Randomized sensitivity
     & 64 & $128\times$forward & no & 0
-    & \tblph & \tblph & \tblph \\
+    & \tblph & 18.3 & \tblph \\
 Forget-direction FD
     & --- & $2\times$forward & 1 & 0
-    & \tblph & \tblph & \tblph \\
+    & 5.97 & 18.3 & \tblph \\
 Exact JVP
     & --- & $1\times$forward-mode JVP & 1 & 0
-    & \tblph & \tblph & \tblph \\
+    & 9.9 & 27.4 & \tblph \\
 Vmap gradient dot
     & --- & chunked F+B & 1 & yes
-    & \tblph & \tblph & \tblph \\
+    & 10.0 & 35.2 & \tblph \\
 Streaming backward
     & --- & $|\mathcal C|\times(\mathrm{F{+}B})$ & 1 & $|\mathcal C|$
-    & \tblph & \tblph & \tblph \\
+    & 17.4 & 18.7 & \tblph \\
 Hidden-state proximity
     & --- & representation forward & no & 0
     & \tblph & \tblph & \tblph \\
@@ -856,7 +963,7 @@ embedding proximity distributions are disclosed per dataset -- the
 confirmatory quantity is the interaction, not any absolute correlation.
 Stress settings follow the same protocol where the honesty clauses
 predict attenuation: PISTOL's maximal structural entanglement inflates
-proximity scores on candidates that outputs-channel updates do not damage,
+proximity scores even where output-channel damage may not follow them,
 and MUSE-Books tests whether verbatim-memorization removal behaves as an
 output-channel member as its loss definition declares.
 
@@ -876,7 +983,8 @@ Setting & Units & Forget--retain proximity profile &
 Prediction $\Delta$ [95\% CI] & Matched wins (GradDiff) &
 Matched wins (RMU) \\
 \midrule
-TOFU (primary) & 20 requests & \tblph & \tblph & \tblph & \tblph \\
+TOFU (primary, 1 request measured) & 20 requests & \tblph &
+$+0.300$ $[+0.131,+0.466]$ & no (proximity wins) & floor (unidentifiable) \\
 WMDP-bio & 1 corpus & \tblph & \tblph & \tblph & \tblph \\
 MUSE-News & 5 requests & \tblph & \tblph & \tblph & \tblph \\
 RWKU & 10 requests & \tblph & \tblph & \tblph & \tblph \\

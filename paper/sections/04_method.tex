@@ -5,86 +5,70 @@
 \section{Method}
 \label{sec:method}
 
-Section~\ref{sec:setup-channels} established which candidate property
-couples to each damage channel. This section supplies the operational
-pieces: a backward-free estimator of gradient magnitude for the output
-channel (Section~\ref{sec:method-gradient}), a forward-only proximity
-score for the representation channel
-(Section~\ref{sec:method-representation}), the routing and pool
-construction that turn a declared objective into a protect pool
-(Section~\ref{sec:method-routing}), and the guarded repair procedure that
-spends the protection budget without undoing forgetting
-(Section~\ref{sec:method-protection}).
+Section~\ref{sec:setup-channels} identified two objective readouts and their
+candidate-side exposure signals. We now give the paper's central estimator:
+random loss-shake energy recovers candidate gradient energy without a
+candidate backward pass. We then specify hidden-state proximity, the fixed
+endpoint router, and guarded repair. A continuous channel mixture appears
+only as a secondary diagnostic; it is not a routing rule or a second
+methodological contribution.
 
 \subsection{Gradient-Channel Probe: Randomized Sensitivity}
 \label{sec:method-gradient}
 
-Let $B$ be a declared parameter block and
-$g_x=\nabla_B\ell(x;\theta_0)$ the candidate gradient at the
-pre-unlearning model. The output-channel target quantity is the
-direction-agnostic sensitivity
+Let $B$ be a declared $d_B$-dimensional parameter block,
+$\ell_x(\theta)=\ell(x;\theta)$, and draw shared seeded directions
+$v_r\sim\operatorname{Unif}(\mathbb S^{d_B-1})$. Write
+$\ell^\pm_{x,r}=\ell_x(\theta_0\pm\eta v_r)$. One identity is the
+mathematical core of the method:
 \begin{equation}
-    m(x)=\lVert g_x\rVert_2.
-    \label{eq:exact-susceptibility}
+\boxed{
+\begin{aligned}
+    \widehat q_G(x)
+    &=
+    \frac{d_B}{R}\sum_{r=1}^{R}
+    \left(\frac{\ell^+_{x,r}-\ell^-_{x,r}}{2\eta}\right)^2,\\[-1mm]
+    \mathbb E_v[\widehat q_G(x)]
+    &=
+    \lVert\nabla_B\ell_x(\theta_0)\rVert_2^2+O(\eta^2).
+\end{aligned}
+}
+\label{eq:loss-shake-identity}
 \end{equation}
-Computing $m(x)$ exactly requires one backward evaluation per candidate;
-we retain this exact profile as the expensive reference. The scalable
-estimator reuses symmetric forward perturbations. Let
-$v_1,\ldots,v_R$ be seeded random unit vectors in $B$, and let
-\begin{equation}
-    \delta_\eta(x;v)
-    =
-    \frac{\ell(x;\theta_0+\eta v)-\ell(x;\theta_0-\eta v)}{2\eta}
-    \label{eq:directional-probe}
-\end{equation}
-be the symmetric response of candidate $x$ along $v$. The randomized
-sensitivity score is
-\begin{equation}
-    r_{\mathrm{rand}}(x)
-    =
-    \frac{1}{R}
-    \sum_{r=1}^{R}
-    \delta_\eta(x;v_r)^2 .
-    \label{eq:randomized-susceptibility}
-\end{equation}
-Because $\mathbb E_v[(g_x^\top v)^2]=\lVert g_x\rVert_2^2/d_B$ for random
-unit directions in a $d_B$-dimensional block, and the central difference
-cancels the leading curvature term,
-$r_{\mathrm{rand}}(x)\approx\lVert g_x\rVert_2^2/d_B$ up to Monte Carlo
-and $O(\eta^2)$ error; the shared factor $d_B$ does not affect ranking.
-The relative Monte Carlo variance is $2/R$ independently of $d_B$, so a
-few dozen directions suffice. The directions are shared across the entire
-candidate universe: $R$ directions cost $2R$ batched candidate-pool
-forward sweeps in total, versus one backward evaluation \emph{per
-candidate} for the exact profile. Memory never exceeds inference: no
-per-example gradient is materialized.
+The central difference observes how much a candidate's loss shakes along a
+random parameter direction; squaring removes its sign, and averaging over
+isotropic directions converts response energy into gradient energy. Thus
+we never try to infer the unlearner's update direction. We use
+\emph{loss-shake energy} and \emph{randomized sensitivity} interchangeably
+for $\widehat q_G$. The known factor
+$d_B$ and the square root are rank-invariant and may be omitted in code.
+The exact gradient norm remains an expensive reference, requiring one
+candidate backward evaluation. In contrast, shared directions profile the
+entire candidate universe in $2R$ batched forward sweeps, at inference
+memory, without materializing a per-example gradient. Algorithm~\ref{alg:profile} states the resulting backward-free profiler.
+
+\input{figures/alg_profile}
 
 \paragraph{Fidelity gate.}
-The estimator is trusted only where a preregistered gate certifies it. The
-radius $\eta$ must sit between two failure regimes: too small, and the
-paired losses agree to within floating-point resolution so their
-difference is cancellation noise; too large, and higher-order terms
-contaminate the response. The gate first verifies the perturbation is
-realized at all (measured $\lVert\eta v\rVert/\eta$ and the fraction of
-changed block parameters, which catches low-precision underflow), then
-decomposes agreement between three quantities on a diagnostic subset: the
-exact squared norm $A=\lVert g_x\rVert^2$, the exact projected proxy
-$B=(d_B/R)\sum_r (g_x^\top v_r)^2$, and the finite-difference estimate
-$C$. Rank agreement of $B$ with $A$ isolates Monte Carlo error; rank
-agreement of $C$ with $B$ isolates finite-difference error, including
-cancellation. The radius and $R$ are frozen once the gate passes and
-before any target trajectory is unsealed.
+The identity is asymptotic in $\eta$, so the estimator is used only after a
+pre-outcome gate verifies that the perturbation is numerically realized and
+that finite-difference rankings agree with exact projections on a diagnostic
+subset. This separates underflow or cancellation at small radii from
+higher-order contamination at large radii. The complete perturbation report,
+finite-dimensional Monte Carlo variance, and $A/B/C$ decomposition are in
+Appendix~\ref{app:fidelity-gate}; $\eta$ and $R$ are frozen before target
+trajectories are unsealed.
 
-\paragraph{Rejected diagnostic: forget-direction alignment.}
-The same probe evaluated along the normalized initial forget gradient
-$\hat g_f$ yields the classical alignment score
-$\delta_\eta(x;\hat g_f)\approx\langle g_x,\hat g_f\rangle$. We verified
-this estimate against exact Jacobian--vector products, confirmed its
-numerical validity, and preregistered its rejection as a susceptibility
-predictor: across engines it correlates weakly or negatively with realized
-damage, because a multi-step trajectory does not preserve its initial
-direction. It appears in our tables as a cautionary baseline; the
-supporting analysis is in the appendix.
+\paragraph{Direction is a baseline, not our target.}
+For comparison, one can replace the random directions by the normalized
+initial forget gradient and estimate the signed alignment
+$\langle\nabla_B\ell_x,\hat g_f\rangle$. This single-direction hypothesis
+is reported as a prespecified cautionary baseline. Its preregistered
+failure mode is rotation: the score is anchored to the initial forget
+gradient, from which a multi-step trajectory rotates away, whereas the
+isotropic energy average is invariant to that rotation. Its numerical
+validation and trajectory analysis are in
+Appendix~\ref{app:alignment-impl}.
 
 \subsection{Representation-Channel Probe: Hidden-State Proximity}
 \label{sec:method-representation}
@@ -93,12 +77,12 @@ The representation channel damages candidates whose hidden states occupy
 the displaced region, so its matched probe is proximity, not gradient
 magnitude. Candidate and forget examples are embedded with mean-pooled
 final hidden states of the pre-unlearning model; each candidate is scored
-by its mean cosine similarity to its $k$ nearest forget examples. The
-score is forward-only, needs no parameter perturbation, and -- decisively
-for the crossed design -- selects an almost disjoint candidate set from
-the gradient probe: the two families' rankings are nearly uncorrelated on
-our benchmarks. External sentence embeddings and lexical overlap provide
-weaker members of the same family and are reported as comparators.
+by $\widehat q_H(x)$, its mean cosine similarity to its $k$ nearest forget
+examples. The
+score is forward-only and needs no parameter perturbation. Its overlap with
+the gradient-energy profile is measured rather than assumed. External
+sentence embeddings and lexical overlap provide additional members of the
+same family and are reported as comparators.
 
 \subsection{Channel Routing and Profile Construction}
 \label{sec:method-routing}
@@ -106,9 +90,14 @@ weaker members of the same family and are reported as comparators.
 Given a deletion request and a declared parent objective, the router reads
 the objective's channel from its loss definition
 (Section~\ref{sec:setup-channels}) and selects the matched probe family:
-randomized sensitivity for output-channel parents, hidden-state proximity
-for representation-channel parents. Nothing in the router depends on
-outcomes; it is a lookup on the preregistered channel table.
+loss-shake gradient energy for output-channel parents, hidden-state
+proximity for representation-channel parents. Equivalently, the
+confirmatory rule is
+$\alpha_{\mathrm{fixed}}(\mathcal U)=
+\mathbb 1[c(\mathcal U)=\mathrm{representation}]$: output maps to endpoint $0$
+and representation to endpoint $1$. Nothing in the router depends on candidate
+damage or downstream outcomes; it is an objective-level lookup on the
+frozen channel table.
 
 The selected scorer assigns one value to every candidate in the declared
 universe. For a fixed budget $K_p$, the protect pool is
@@ -120,52 +109,39 @@ quantile, group-disjoint folds, seed, and fallback rules are fixed before
 target outcomes are observed, and no audit candidate can enter either
 pool.
 
-\subsection{Soft Channel Routing: The Channel-Mixture Score}
+\subsection{Secondary Diagnostic: Continuous Channel Mixture}
 \label{sec:method-mixture}
 
-The discrete router commits fully to one probe family. The spectrum
-clause of Section~\ref{sec:setup-channels}, however, predicts residual
-off-channel signal -- output-channel objectives perturb representations
-incidentally -- so we generalize routing to a one-parameter family. Let
-$\tilde r_g,\tilde r_h:\mathcal C\to[0,1]$ be the two headline probes
-after rank normalization over the candidate universe (rank transforms
-because the raw scales -- a squared-gradient estimate and a cosine -- are
-not commensurable; the normalization is part of the frozen definition).
-The \emph{channel-mixture score} is
+The endpoint router above is the method. To diagnose cross-channel signal
+without changing it, we place the two headline profiles on a common rank
+scale. Let $\widetilde q_G$ and $\widetilde q_H$ be candidate-ID-tie-broken
+rank transforms of $\widehat q_G$ and $\widehat q_H$ onto $[0,1]$ and
+define
 \begin{equation}
     s_\alpha(x)
     =
-    (1-\alpha)\,\tilde r_g(x)
+    (1-\alpha)\,\widetilde q_G(x)
     +
-    \alpha\,\tilde r_h(x),
-    \qquad \alpha\in[0,1],
+    \alpha\,\widetilde q_H(x),
+    \qquad
+    \alpha\in[0,1].
     \label{eq:mixture}
 \end{equation}
-so that $\alpha$ is the weight on the representation route. The
-endpoints recover the discrete router exactly -- $\alpha{=}0$ is the
-randomized-sensitivity probe, $\alpha{=}1$ the proximity probe -- so
-every result of the preceding sections is the $\alpha\in\{0,1\}$ special
-case, and the declared channel now supplies a \emph{prior} over $\alpha$
-rather than a hard switch: output-channel parents map to $\alpha{=}0$,
-representation-channel parents to $\alpha{=}1$, and hybrid objectives
-(e.g.\ RepNoise's auxiliary output term) to interior values.
+Rank normalization is fixed because the two scores have different units; a
+z-score variant is appendix-only. Under the deterministic tie rule,
+$\alpha=0$ recovers the loss-shake allocation and $\alpha=1$ recovers the
+hidden-state allocation, exactly so whenever the raw scores are tie-free.
 
-Two disciplines keep the mixture honest. First, $\alpha$ is never chosen
-on sealed data: it is either (i) the preregistered channel-to-$\alpha$
-mapping, fixed before any outcome is read (primary -- the deployed
-router is unchanged, and the mixture is preregistered as exploratory
-instrumentation that does not reweight the primary endpoints), or
-(ii) fit on discovery folds only (adaptive variant), with the sealed
-audit untouched in both cases. Second, prediction and protection are allowed different
-optima: the crossed experiment of Section~\ref{sec:exp-protection}
-motivates measuring the prediction-optimal $\alpha^{*}_{\mathrm{pred}}$
-(which maximizes damage correlation) separately from the
-protection-optimal $\alpha^{*}_{\mathrm{prot}}$ (which minimizes sealed
-audit tail damage when the pool is $\operatorname{TopK}$ by $s_\alpha$),
-because repair generalization can propagate through representation-space
-neighborhoods regardless of the parent's channel. The mixture sweep of
-Section~\ref{sec:exp-mixture} reports both curves; how far the two
-optima separate is itself an empirical finding, not an assumption.
+\paragraph{Diagnostic discipline.}
+Interior $\alpha$ values are never deployed, tuned, or used to revise the
+declared channel. This exploratory extension was appended after the primary
+design, then frozen before any mixture curve was computed on sealed
+outcomes. Prediction and
+protection curves show whether the two signals combine or interfere; their
+argmax values are descriptive summaries observed after outcomes, not router
+choices. The primary interaction is unchanged.
+Section~\ref{sec:exp-alpha} states the frozen grids, and
+Appendix~\ref{app:alpha-diagnostic} reports the full curves.
 
 \subsection{Guarded Channel-Matched Repair}
 \label{sec:method-protection}
@@ -180,32 +156,22 @@ references, then minimize answer-token NLL on $\mathcal P_{K_p}$.
 Repair must not silently undo forgetting. At fixed refresh intervals we
 compute mean forget and reference-stream gradients and project the repair
 update away from their span, making those mean losses locally invariant to
-first order. Because a mean-level projection does not protect every forget
-target, an identity-paired one-sided guard supplements it: with
-$\bar u_i$ the cached post-unlearning forget loss and $u_i$ its current
-value,
-\begin{equation}
-    D_{\downarrow}(u,\bar u)
-    =
-    \frac{1}{n}
-    \sum_{i=1}^{n}
-    \bigl[\bar u_i-\epsilon-u_i\bigr]_+^2
-    \label{eq:guard}
-\end{equation}
-penalizes any per-example forgetting regression beyond tolerance
-$\epsilon$, at sequence and (where enabled) token level. At audited
-refreshes, a repair step that exceeds either paired-loss budget is
-rejected, the last accepted parameters are restored, and the step size is
-reduced. The output is the final saved repair checkpoint that still
-satisfies the forget criterion; retention is evaluated only on the sealed
-audit.
+first order up to the ridge regularization of the projection
+(Appendix~\ref{app:guard-proof}). An identity-paired one-sided guard also penalizes sequence- or
+token-level forgetting regression beyond a fixed tolerance. At audited
+refreshes, a violating step is rejected, the last accepted parameters are
+restored, and the step size is reduced. The exact guard and its tail bound
+are given in Appendix~\ref{app:guard-proof}. The output is the final saved
+checkpoint that still satisfies the forget criterion; retention is then evaluated only on the sealed audit. Algorithm~\ref{alg:repair} summarizes this engine-then-repair pipeline.
+
+\input{figures/alg_repair}
 
 In the crossed design of Section~\ref{sec:setup-protection}, every
 selector arm -- matched, mismatched, random -- runs this identical
-pipeline with the identical budget; only the ranking that fills
-$\mathcal P_{K_p}$ changes. Any difference between arms is therefore
-attributable to where the budget went, which is exactly the channel
-question.
+pipeline with the identical budget. The frozen score-specific construction
+changes the protect pool and its matched low-score reference stream together;
+the crossed comparison therefore evaluates the complete allocation policy,
+not a candidate-level causal effect of swapping only Top-$K_p$ membership.
 
 \subsection{Scope of the Method}
 \label{sec:method-scope}

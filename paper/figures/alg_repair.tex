@@ -1,0 +1,63 @@
+% figures/alg_repair.tex
+% Guarded channel-matched repair (engine-then-repair pipeline).
+% Faithful to Sec. 4.5 (Guarded Channel-Matched Repair) and App. C.
+% Requires in preamble:  \usepackage[ruled,linesnumbered]{algorithm2e}
+\begin{algorithm}[t]
+\DontPrintSemicolon
+\SetKwInOut{Require}{Require}
+\SetKwInOut{Ensure}{Ensure}
+\SetKwComment{Comment}{$\triangleright$\ }{}
+
+\Require{start model $\theta_0$; forget set $\mathcal D_f$; protect pool
+  $\mathcal P_{K_p}$; reference stream $\mathcal R_0$; forget criterion
+  $\Gamma_f\le\tau_f$; ridge $\varepsilon$; repair step size $\alpha$;
+  guard tolerance $\epsilon$; guard thresholds
+  $\tau_g^{\mathrm{seq}},\tau_g^{\mathrm{tok}}$}
+\Ensure{final repair checkpoint satisfying $\Gamma_f\le\tau_f$}
+\BlankLine
+
+\tcp{Stage 1: parent engine to first reaching checkpoint}
+run parent from $\theta_0$ to first saved $\theta_{\mathrm{reach}}$ with
+  $\Gamma_f(\theta_{\mathrm{reach}})\le\tau_f$\;
+\lIf{no reaching checkpoint within budget}{\Return reach failure}
+cache paired references $\bar u_i$ (per-sequence and per-token forget
+  losses) at $\theta_{\mathrm{reach}}$\;
+$\theta\gets\theta_{\mathrm{reach}}$;\quad
+  $\theta_{\mathrm{acc}}\gets\theta$ \Comment*[r]{last accepted state}
+\BlankLine
+
+\tcp{Stage 2: projected, guarded repair}
+\While{repairing}{
+  $v\gets\nabla_B\,\mathrm{NLL}(\mathcal P_{K_p};\theta)$
+    \Comment*[r]{answer-token NLL on protect pool}
+  \eIf{declared refresh step}{
+    compute mean forget and reference-stream gradients $b_1,\dots,b_m$\;
+    $\zeta\gets(G+\varepsilon I)^{-1}[\langle b_i,v\rangle]_i$,\quad
+      $G_{ij}=\langle b_i,b_j\rangle$\;
+    \lIf{condition-number threshold exceeded}{fall back to primary
+      forget basis}
+    $\widetilde v\gets v-\sum_i\zeta_i b_i$
+      \Comment*[r]{project off forget/reference span}
+  }{
+    $\widetilde v\gets v$\;
+  }
+  $\theta\gets\theta-\alpha\widetilde v$
+    \Comment*[r]{descent on protect NLL; projection is proactive}
+  \If{audited refresh}{
+    measure current forget losses $u_i$ at $\theta$\;
+    $D_{\downarrow}^{\mathrm{seq}},D_{\downarrow}^{\mathrm{tok}}
+      \gets\frac{1}{n}\sum_i[\bar u_i-\epsilon-u_i]_+^2$
+      \Comment*[r]{at sequence \& token level; reactive}
+    \eIf{$D_{\downarrow}^{\mathrm{seq}}>\tau_g^{\mathrm{seq}}$
+        \textbf{ or } $D_{\downarrow}^{\mathrm{tok}}>\tau_g^{\mathrm{tok}}$}{
+      restore $\theta\gets\theta_{\mathrm{acc}}$ and optimizer state\;
+      reduce step size $\alpha$; retain updated multipliers\;
+    }{
+      $\theta_{\mathrm{acc}}\gets\theta$ \Comment*[r]{accept}
+    }
+  }
+}
+\Return last saved repair checkpoint still satisfying $\Gamma_f\le\tau_f$\;
+\caption{Guarded Channel-Matched Repair}
+\label{alg:repair}
+\end{algorithm}

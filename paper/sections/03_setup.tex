@@ -1,30 +1,6 @@
 \section{Problem Setup and Damage Channels}
 \label{sec:setup}
 
-\begin{figure*}[t]
-\centering
-\input{figures/fig1_channel_mechanism}
-\caption{\textbf{Damage channels and channel-matched probing.}
-First-order collateral damage couples a candidate's sensitivity to the
-update, $d(x)\approx g_x^{\top}\Delta\theta$, and the update's structure is
-fixed by where the objective's loss reads the model. Output-channel
-objectives (top row) assemble $\Delta\theta$ from output-loss gradients, so
-the candidates that move are those with large gradient magnitude; our
-randomized-sensitivity probe estimates every candidate's
-$\lVert g_x\rVert$ from $2R$ shared forward sweeps without candidate-side
-backward passes. Representation-channel objectives (bottom row) displace
-hidden-state geometry, so the candidates that move are those whose
-representations lie near the forget set; forward-only proximity is the
-matched probe. The channel-matched probe selects the protect pool for
-guarded repair, evaluated on a sealed audit. No probe wins on both rows --
-the winner flips with the channel, which is the paper's central claim.}
-\Description{Two-row diagram. Each row runs from an unlearning objective
-family, to the update it induces and the candidate property that couples to
-that update, to the matched pre-unlearning probe. Both rows merge into a
-channel-matched protect pool with guarded repair and a sealed audit.}
-\label{fig:channel-mechanism}
-\end{figure*}
-
 \subsection{Deletion Request and Retained-Behavior Scope}
 
 Let $\theta_0$ denote the model before unlearning. A deletion request
@@ -67,36 +43,43 @@ with positive values indicating harmful retention loss.
 
 To first order in the update,
 \[
-    d(x)\;\approx\;g_x^{\top}\Delta\theta,
-    \qquad g_x=\nabla_\theta\,\ell(x;\theta_0):
+    d(x)\approx g_x^{\top}\Delta\theta,
+    \qquad
+    |d(x)|\lesssim\lVert g_x\rVert_2\lVert\Delta\theta\rVert_2,
+    \qquad
+    g_x=\nabla_\theta\ell(x;\theta_0).
 \]
-collateral damage is a coupling between the candidate's local sensitivity
-and the realized update. The update, in turn, is not arbitrary: it is
-assembled by an optimizer from the gradients of the unlearning objective's
-loss, and the structure of those gradients is fixed by \emph{where the loss
-reads the model}. Current LLM unlearning objectives read one of two places.
+This first-order coupling between a candidate's local gradient and the
+realized update is the \emph{update-conditioned gradient interference}
+mechanism named in the abstract. Gradient magnitude is then a
+direction-free \emph{exposure envelope}; it
+does not imply damage to every high-score candidate. Whether the envelope
+ranks realized damage is an empirical interaction tested across objectives.
+The method instantiates the envelope on a declared parameter block $B$
+covering the parents' trainable parameters (Section~\ref{sec:method}).
+The update is nevertheless structured: its gradients are set by where the
+unlearning loss directly reads the model. Current objectives place their
+forget-suppression signal at one of two readouts.
 
 \paragraph{Output channel (loss-gradient).}
-If the loss is a function of model outputs -- answer-token likelihoods or
-preferences, as in GA, GradDiff, NPO, SimNPO, IdkDPO, and GRU -- then
-$\Delta\theta$ points along combinations of output-loss gradients. A
-retained candidate couples to such an update in proportion to how strongly
-its own loss responds to parameter motion of that kind; over a multi-step
-trajectory whose direction rotates with the model and optimizer state, the
-component of this coupling that persists is the candidate's
-\emph{gradient magnitude} $\lVert g_x\rVert$. Candidates with small
-gradients are locally flat and shrug off likelihood-space pressure
-regardless of its direction.
+If the forget-suppression loss directly supervises outputs -- answer-token
+likelihoods or preferences, as in GA, GradDiff, NPO, SimNPO, IdkDPO, and
+GRU -- then $\Delta\theta$ is assembled from output-loss gradients. Trying
+to predict each candidate's signed exposure $g_x^{\top}\Delta\theta$
+requires anticipating the realized update direction, which is brittle over
+a multi-step trajectory because that direction rotates with the model and
+optimizer state. We instead measure the direction-free exposure envelope
+$\lVert g_x\rVert_2$: how strongly the candidate loss can respond to small
+parameter motion, before knowing which output-channel trajectory will run.
 
 \paragraph{Representation channel.}
-If the loss is a function of internal representations -- hidden states, as
-in RMU, RepNoise, and Circuit Breakers -- then the update is chosen to
-displace activation geometry in a region of representation space occupied
-by the forget set. A retained candidate is harmed to the extent that its
-own representations occupy that region: \emph{proximity in hidden-state
-space}, not output-loss gradient magnitude, determines coupling. A
-candidate can have a negligible loss gradient and still be damaged because
-its representations ride along with the displaced region.
+If the forget-suppression loss directly supervises internal hidden states,
+as in RMU, RepNoise, and Circuit Breakers, the update is chosen to displace
+activation geometry in a region occupied by the forget set. The matched
+hypothesis is therefore \emph{proximity in hidden-state space}: candidates
+whose representations share that region are more exposed to its
+displacement. This is complementary to, rather than implied by, an
+output-loss gradient norm.
 
 \paragraph{Declaration, not post-hoc labeling.}
 The channel of an objective is read off its loss definition before any
@@ -113,12 +96,13 @@ and never revise it against results. Two honesty clauses apply. First, the
 dichotomy reflects where \emph{existing} objectives read the model, not a
 law of nature; an objective reading some third quantity would define a
 third channel, and the framework extends to it. Second, the channels are
-poles of a spectrum rather than a partition of effects: an output-channel
-objective also perturbs representations incidentally, so
-representation-proximity probes retain partial signal on it, whereas a pure
-representation objective like RMU induces damage to which gradient probes
-are essentially blind. This asymmetry is itself a prediction that the
-experiments test.
+poles of a spectrum rather than a partition of downstream effects: an
+output-channel objective also perturbs representations incidentally, while
+a representation objective ultimately changes outputs. The declaration is
+about the objective's direct supervision signal, not every tensor in its
+computation graph. Cross-channel signal is therefore measured rather than
+ruled out; the confirmatory claim concerns the interaction between declared
+channel and probe family.
 
 \subsection{Prospective Prediction and the Interaction Endpoint}
 \label{sec:setup-prediction}
@@ -163,7 +147,7 @@ Protection methods are compared only at a common forgetting criterion
 $\Gamma_f(\theta)\leq\tau_f$; a run that does not reach the criterion is a
 reach failure, not a comparison point. Conditional on reach, the
 confirmatory outcomes on the sealed audit are mean damage and upper-tail
-damage $\operatorname{CVaR}_\alpha(\{d(x)\})$ -- the tail because that is
+damage $\operatorname{CVaR}_{.95}(\{d(x)\})$ -- the tail because that is
 where collateral damage concentrates and where aggregate metrics hide it.
 
 The operational endpoint is again an interaction, realized as a

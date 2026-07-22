@@ -31,32 +31,55 @@ behave inconsistently across methods, and each new proposal appears to win
 on some objectives and lose on others. This paper explains that
 inconsistency and turns it into structure:
 
-\begin{quote}
-\emph{Retain-side susceptibility is not a model-intrinsic scalar. It is
-conditional on the damage channel induced by the unlearning objective --
-and the channel is declared in advance by where the objective's loss reads
-the model.}
-\end{quote}
+\noindent\emph{Retain-side susceptibility is not a model-intrinsic scalar.
+It is conditional on the damage channel induced by the unlearning objective
+-- declared in advance by where its loss reads the model.}
+
+\begin{figure*}[t]
+\centering
+\input{figures/fig1_channel_mechanism}
+\caption{\textbf{Susceptibility is tested as an objective-conditioned
+interaction.} \textbf{(a)} For the objectives studied, the direct
+forget-suppression term reads either outputs or hidden states; the same
+$\theta_0$ and retained candidates may therefore yield different damage
+rankings. \textbf{(b)} The loss-shake gradient-energy and hidden-state-proximity
+hypotheses score the same candidates at $\theta_0$ and are sealed before any
+outcome is observed. \textbf{(c)} Independent unlearning trajectories that
+never access the scores produce the two damage columns; matrix entries are
+Spearman correlations. The preregistered endpoint asks whether the relative
+predictive advantage crosses over between channels, $\Delta>0$, not whether
+one probe is universally superior. Candidate intensities are schematic, not
+experimental results.}
+\Description{A three-panel schematic with no observed results. Panel (a)
+applies an output-reading and a hidden-state-reading unlearning objective to
+the same initial model and retained-candidate set; qualitative bands under
+the repeated candidate identifiers illustrate two possible damage orderings.
+Panel (b) applies loss-shake gradient-energy and hidden-state-proximity
+profiles to that same candidate set and marks both profiles as sealed before
+unlearning. Panel (c) shows two independent objective trajectories producing
+output-channel and representation-channel damage, followed by a two-by-two
+matrix of correlations between each sealed profile and each damage outcome.
+The difference-in-differences expression below the matrix asks whether the
+relative predictive winner crosses over between channels.}
+\label{fig:channel-mechanism}
+\end{figure*}
 
 To first order, the damage to a retained candidate $x$ under a parameter
-update $\Delta\theta$ is $d(x)\approx g_x^{\top}\Delta\theta$: a coupling
-between the candidate's sensitivity $g_x$ and the update. What
+update $\Delta\theta$ is $d(x)\approx g_x^{\top}\Delta\theta$, which makes
+$\lVert g_x\rVert$ a direction-free exposure envelope rather than a
+guarantee of realized damage. What
 $\Delta\theta$ looks like is determined by the objective's loss. Objectives
 whose loss is a function of model \emph{outputs} -- token likelihoods or
 preferences, as in GA, GradDiff, NPO, SimNPO, IdkDPO, and GRU
 \cite{yao2024large,zhang2024negative,fan2024simplicity,maini2024tofu,
-wang2025gru} -- push probability mass, and the candidates that move with
-them are those with large loss gradients. Objectives whose loss is a
+wang2025gru} -- motivate gradient-energy exposure. Objectives whose loss is a
 function of internal \emph{representations} -- hidden states, as in RMU,
 RepNoise, and Circuit Breakers
 \cite{li2024wmdp,rosati2024repnoise,zou2024circuit} -- displace activation
-geometry, and the candidates that move are those whose representations lie
-close to the forget set, however small their loss gradients. The two
-channels call for different predictor families, and we find the
-correspondence empirically sharp in one direction: gradient-magnitude
-probes light up on output-channel objectives and go dark on RMU, while
-representation-proximity probes peak exactly there. No probe wins
-everywhere; the winner flips with the channel.
+geometry and motivate proximity to forget representations. The two
+channels therefore call for different predictor families. We test that
+claim at the family level with a frozen objective-by-probe interaction;
+individual objectives may show partial, mixed, or reversed signal.
 
 Acting on this structure is only useful if the matching signal is cheap at
 candidate-pool scale. Exact per-candidate gradient norms require one
@@ -64,11 +87,12 @@ backward pass per candidate. We instead estimate the entire pool's gradient
 magnitudes with a \emph{backward-free randomized-sensitivity probe}:
 symmetric forward evaluations at $\theta_0\pm\eta v_r$ along a few shared
 random directions $v_r$ turn squared central differences into an unbiased
-estimate of every candidate's squared gradient norm simultaneously. A
+(up to $O(\eta^2)$) estimate of every candidate's gradient energy
+simultaneously, with Monte Carlo variance controlled by the number of
+shared directions. A
 fidelity gate separates the estimator's numerical validity from its
-predictive value, and the probe recovers most of the exact norm's
-predictive power at a fraction of its cost. The representation channel is
-cheaper still: forward-only hidden-state proximity to the forget set.
+predictive value. The representation channel uses a complementary
+forward-only hidden-state proximity profile.
 
 Prediction becomes protection through routing. Given a deletion request and
 a declared objective, the channel determines the probe; the probe ranks the
@@ -79,17 +103,17 @@ success criterion is deliberately not a leaderboard: it is the
 parent (GradDiff) and a representation-channel parent (RMU), we cross each
 with matched, mismatched, random, and no-protection selectors and test
 whether the channel-matched selector yields the lowest audit-tail damage at
-matched forgetting -- per parent. If matching were unnecessary, the
-mismatched and random arms would do as well; they do not.
+matched forgetting -- per parent. All arms and reach failures are reported;
+the channel claim is not declared successful unless both parent-wise tests
+pass.
 
 Our contributions are threefold:
 \begin{itemize}
-    \item \textbf{Channel-conditioned susceptibility.} We show that which
-    pre-unlearning signal predicts collateral damage depends on the
-    unlearning objective's damage channel, declared in advance from its
-    loss definition (outputs vs.\ representations). The evidence is an
-    objective$\times$predictor-family interaction across balanced rosters
-    of both channels, not a per-method anecdote.
+    \item \textbf{Channel-conditioned susceptibility.} We test whether the
+    predictive signal changes with the objective's channel, declared from
+    its loss definition. Evidence comes from a frozen family-level
+    interaction over a channel-stratified objective roster, not a
+    per-method anecdote.
 
     \item \textbf{A backward-free probe for the gradient channel.} A
     randomized symmetric-perturbation estimator profiles gradient
@@ -97,11 +121,10 @@ Our contributions are threefold:
     forward sweeps, with a preregistered fidelity gate that certifies when
     the estimate is trustworthy under a given radius and precision.
 
-    \item \textbf{Channel-matched protection.} Routing a fixed protection
-    budget through the channel-matched probe reduces mean and worst-tail
-    audit damage at matched forgetting, while mismatched and random
-    routing do not -- establishing that the channel prediction is
-    actionable, for any parent unlearner, at near-zero forgetting cost.
+    \item \textbf{A falsifiable protection test.} A crossed design routes
+    the same repair budget through matched, mismatched, random, and no-score
+    selectors, testing whether the pre-unlearning channel distinction is
+    operationally useful at matched forgetting.
 \end{itemize}
 
 We position this work as a prediction-and-protection \emph{layer} on top of

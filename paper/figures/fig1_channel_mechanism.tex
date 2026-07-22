@@ -1,89 +1,176 @@
-% Figure 1: damage channels and channel-matched probing (mechanism level).
-% Two rows = two channels. Left: where the objective's loss reads the model.
-% Middle: the induced update and which candidate property couples to it.
-% Right: the matched probe. Both rows merge into channel-matched protection.
-\resizebox{\textwidth}{!}{%
+% Figure 1: objective-conditioned damage -> sealed profiles -> crossed test.
+% Candidate intensities are deliberately schematic.  The palette is
+% grayscale plus one muted blue-gray accent so the logic survives printing.
+\definecolor{accent}{HTML}{5E7180}
+\definecolor{ink}{HTML}{333333}
+
 \begin{tikzpicture}[
   x=1cm,y=1cm,
-  font=\scriptsize,
-  >=Latex,
-  card/.style={draw=gray!50,rounded corners=1mm,fill=white,align=center,
-               inner sep=2.0mm,text width=3.35cm},
-  wide/.style={draw=gray!50,rounded corners=1mm,fill=white,align=center,
-               inner sep=2.0mm,text width=2.9cm},
-  chanA/.style={draw=orange!70!black,fill=orange!4},
-  chanB/.style={draw=teal!60!black,fill=teal!4},
-  probe/.style={very thick},
-  note/.style={align=center,text=gray!60!black,font=\scriptsize},
-  title/.style={font=\footnotesize\bfseries,align=center},
-  arr/.style={->,thick,gray!60!black}
+  font=\sffamily\scriptsize,
+  >={Latex[length=1.65mm,width=1.05mm]},
+  paneltitle/.style={font=\sffamily\scriptsize\bfseries,text=ink,anchor=west},
+  panelsub/.style={font=\sffamily\scriptsize,text=gray!78!black,anchor=west},
+  objective/.style={draw=gray!54,rounded corners=.65mm,fill=white,
+                    minimum width=1.58cm,minimum height=1.02cm,line width=.52pt},
+  profile/.style={draw=gray!54,rounded corners=.65mm,fill=white,
+                  minimum width=1.42cm,minimum height=.98cm,line width=.52pt,
+                  align=center},
+  candidate/.style={draw=gray!48,rounded corners=.35mm,fill=white,
+                    minimum width=.44cm,minimum height=.60cm,inner sep=0pt,
+                    line width=.42pt,font=\sffamily\tiny,text=ink},
+  seal/.style={draw=accent,rounded corners=.35mm,fill=accent!5,
+               inner xsep=.65mm,inner ysep=.45mm,line width=.52pt,
+               font=\sffamily\tiny\bfseries,text=accent},
+  flow/.style={->,draw=gray!70!black,line width=.62pt},
+  trajectory/.style={->,draw=ink!82,line width=.64pt},
+  cell/.style={draw=gray!48,fill=gray!3,minimum width=1.00cm,
+               minimum height=.63cm,inner sep=0pt,line width=.48pt}
 ]
 
-% ---- mechanism header -----------------------------------------------------
-\node[title] at (8.35,6.55)
-  {first-order collateral damage\quad
-   $d(x)\;\approx\;g_x^{\top}\,\Delta\theta$
-   \quad --\quad the \emph{objective} shapes $\Delta\theta$;
-   the \emph{channel} decides which $x$ couples to it};
+\path[use as bounding box] (0,.16) rectangle (17.35,4.72);
 
-% ---- column headers -------------------------------------------------------
-\node[note] at (2.05,5.75) {unlearning objective:\\where does the loss read the model?\\
-  {\tiny (declared from the loss formula -- no run needed)}};
-\node[note] at (6.55,5.75) {induced update $\Delta\theta$\\and coupled candidates};
-\node[note] at (11.05,5.75) {channel-matched probe\\(pre-unlearning, cheap)};
-\node[note] at (15.15,5.75) {protection};
+% Quiet panel separators.
+\draw[gray!25,line width=.4pt] (5.55,.34) -- (5.55,4.58);
+\draw[gray!25,line width=.4pt] (11.15,.34) -- (11.15,4.58);
 
-% ---- row 1: output / loss-gradient channel --------------------------------
-\node[card,chanA] (a1) at (2.05,4.55)
-  {\textbf{Output channel}\\
-   loss on token likelihoods / preferences\\[0.6mm]
-   {\scriptsize GA, GradDiff, NPO,\\SimNPO, IdkDPO, GRU}};
+% -------------------------------------------------------------------------
+% (a) The same candidates can face different objective-conditioned damage.
+\node[paneltitle] at (.16,4.50) {(a)\quad OBJECTIVE-CONDITIONED DAMAGE};
+\node[panelsub] at (.16,4.10)
+  {same $\theta_0$ and $\mathcal C$; different damage futures};
 
-\node[card,chanA] (a2) at (6.55,4.55)
-  {$\Delta\theta$ assembled from\\output-loss gradients\\[0.6mm]
-   damaged: candidates with\\ \textbf{large gradient magnitude} $\lVert g_x\rVert$};
+% Output-reading objective.
+\node[objective] (uout) at (.98,3.14) {};
+\node[font=\sffamily\tiny\bfseries,text=ink] at (.98,3.48)
+  {$\mathcal U_{\mathrm{out}}$};
+\foreach \x/\h in {.55/.12,.70/.22,.85/.31,1.00/.18}
+  \draw[accent,line width=1.15pt] (\x,2.78) -- (\x,{2.78+\h});
+\draw[gray!44,line width=.35pt] (.48,2.78) -- (1.07,2.78);
+\node[anchor=west,align=left,font=\sffamily\tiny,text=ink] at (1.12,2.97)
+  {loss reads\\[-.35mm]\textbf{outputs}};
 
-\node[card,chanA,probe] (a3) at (11.05,4.55)
-  {\textbf{Randomized sensitivity (ours)}\\[0.4mm]
-   $\dfrac{1}{R}\sum_r\Bigl[\tfrac{\ell(x;\theta_0+\eta v_r)-\ell(x;\theta_0-\eta v_r)}{2\eta}\Bigr]^2
-    \;\propto\;\lVert g_x\rVert_2^2$\\[0.6mm]
-   {\scriptsize $2R$ shared forward sweeps,\\no candidate backward pass}};
+% Representation-reading objective.
+\node[objective] (urep) at (.98,1.54) {};
+\node[font=\sffamily\tiny\bfseries,text=ink] at (.98,1.88)
+  {$\mathcal U_{\mathrm{rep}}$};
+\foreach \x in {.51,.68,.85}
+  \draw[draw=accent,fill=white,rounded corners=.12mm,line width=.4pt]
+    (\x,1.18) rectangle ++(.11,.39);
+\foreach \y in {1.25,1.37,1.49}
+  \fill[accent] (1.02,\y) circle (.75pt);
+\node[anchor=west,align=left,font=\sffamily\tiny,text=ink] at (1.13,1.37)
+  {loss reads\\[-.35mm]\textbf{hidden states}};
 
-% ---- row 2: representation channel ----------------------------------------
-\node[card,chanB] (b1) at (2.05,1.75)
-  {\textbf{Representation channel}\\
-   loss on hidden states\\[0.6mm]
-   {\scriptsize RMU, RepNoise,\\Circuit Breakers}};
+\draw[flow] (uout.east) -- (2.05,3.14);
+\draw[flow] (urep.east) -- (2.05,1.54);
 
-\node[card,chanB] (b2) at (6.55,1.75)
-  {$\Delta\theta$ displaces\\activation geometry\\[0.6mm]
-   damaged: candidates\\ \textbf{near the forget set}\\in hidden-state space};
-
-\node[card,chanB,probe] (b3) at (11.05,1.75)
-  {\textbf{Representation proximity}\\[0.4mm]
-   mean cosine to $k$ nearest forget\\examples, pre-unlearning hidden states\\[0.6mm]
-   {\scriptsize forward-only}};
-
-% ---- merge: routed protection --------------------------------------------
-\node[wide] (p1) at (15.15,3.15)
-  {\textbf{channel-matched\\protect pool}\\[0.5mm]
-   top-$K_p$ by the\\matched probe\\[0.8mm]
-   guarded repair;\\forgetting capped\\[0.8mm]
-   sealed audit:\\mean + CVaR tail};
-
-% ---- arrows ---------------------------------------------------------------
-\draw[arr] (a1) -- (a2);
-\draw[arr] (a2) -- (a3);
-\draw[arr] (b1) -- (b2);
-\draw[arr] (b2) -- (b3);
-\draw[arr,orange!70!black] (a3.east) -- (p1.north west);
-\draw[arr,teal!60!black]  (b3.east) -- (p1.south west);
-
-% ---- crossover note --------------------------------------------------------
-\node[note,text width=8.6cm] at (6.55,0.05)
-  {no probe wins on both rows: gradient probes go dark on the representation
-   channel, proximity probes underperform on the output channel
-   (Table~\ref{tab:channel-matrix}) -- matching is necessary};
-
-\end{tikzpicture}%
+% Identical candidate locations; mini-bar height changes the qualitative
+% ordering.  The bars carry no numeric experimental value.
+\foreach \x/\lab/\height in {2.30/1/.20,2.86/2/.06,3.42/3/.15,3.98/4/.04,4.54/5/.10}{
+  \node[candidate] at (\x,3.14) {$x_{\lab}$};
+  \fill[gray!68] ({\x-.065},2.85) rectangle ({\x+.065},{2.85+\height});
 }
+\foreach \x/\lab/\height in {2.30/1/.06,2.86/2/.20,3.42/3/.04,3.98/4/.15,4.54/5/.10}{
+  \node[candidate] at (\x,1.54) {$x_{\lab}$};
+  \fill[gray!68] ({\x-.065},1.25) rectangle ({\x+.065},{1.25+\height});
+}
+\node[font=\sffamily\tiny\bfseries,text=ink] at (3.36,.66)
+  {same candidates, different damage orderings};
+
+% -------------------------------------------------------------------------
+% (b) Both profiles are prospective and use the same candidate universe.
+\node[paneltitle] at (5.78,4.50) {(b)\quad PROFILES BEFORE UNLEARNING};
+\node[panelsub] at (5.78,4.10)
+  {same $\mathcal C$; computed at $\theta_0$ and sealed};
+
+\node[profile] (qg) at (6.55,3.14) {};
+\node[font=\sffamily\tiny\bfseries,text=ink] at (6.55,3.48)
+  {$\widehat q_G$};
+\node[font=\sffamily\tiny,text=ink] at (6.55,3.15)
+  {$\ell^-\!\leftarrow\!\theta_0\!\rightarrow\!\ell^+$};
+\node[font=\sffamily\tiny,text=ink] at (6.55,2.84)
+  {shake energy};
+
+\node[profile] (qh) at (6.55,1.54) {};
+\node[font=\sffamily\tiny\bfseries,text=ink] at (6.55,1.88)
+  {$\widehat q_H$};
+\node[circle,draw=accent,fill=white,minimum size=3.0mm,inner sep=0pt,
+      line width=.42pt,font=\sffamily\tiny,text=ink] at (6.55,1.56) {$x$};
+\foreach \x/\y in {6.27/1.66,6.82/1.68,6.79/1.39}
+  \node[rectangle,draw=accent,fill=accent,minimum size=2.6pt,inner sep=0pt]
+    at (\x,\y) {};
+\node[font=\sffamily\tiny,text=ink] at (6.55,1.22)
+  {hidden neighbors};
+
+\node[font=\sffamily\scriptsize,text=gray!78!black] at (8.82,3.72)
+  {shared $\pm$ loss shakes; no candidate backward};
+\node[font=\sffamily\scriptsize,text=gray!78!black] at (8.82,2.12)
+  {nearest forget-state neighbors};
+\draw[flow] (qg.east) -- (7.35,3.14);
+\draw[flow] (qh.east) -- (7.35,1.54);
+
+% Accent mini-bars denote prospective exposure, not observed damage.
+\foreach \x/\lab/\height in {7.58/1/.18,8.11/2/.07,8.64/3/.15,9.17/4/.05,9.70/5/.10}{
+  \node[candidate] at (\x,3.14) {$x_{\lab}$};
+  \fill[accent!82] ({\x-.065},2.85) rectangle ({\x+.065},{2.85+\height});
+}
+\foreach \x/\lab/\height in {7.58/1/.07,8.11/2/.18,8.64/3/.05,9.17/4/.15,9.70/5/.09}{
+  \node[candidate] at (\x,1.54) {$x_{\lab}$};
+  \fill[accent!82] ({\x-.065},1.25) rectangle ({\x+.065},{1.25+\height});
+}
+\node[seal] at (10.48,3.14) {SEALED};
+\node[seal] at (10.48,1.54) {SEALED};
+\node[font=\sffamily\tiny\bfseries,text=ink] at (8.48,.66)
+  {two prospective hypotheses, no outcome access};
+
+% -------------------------------------------------------------------------
+% (c) Independent trajectories populate a crossed, preregistered endpoint.
+\node[paneltitle] at (11.38,4.50) {(c)\quad PREREGISTERED CROSSED TEST};
+\node[panelsub] at (11.38,4.10)
+  {test, not result: does the relative winner flip?};
+
+% The target trajectories never consume the prospective profiles.
+\node[draw=gray!58,rounded corners=.45mm,fill=white,minimum width=.62cm,
+      minimum height=.48cm,line width=.5pt,font=\sffamily\tiny\bfseries]
+      (theta) at (11.82,2.37) {$\theta_0$};
+\node[font=\sffamily\scriptsize,text=gray!78!black] at (12.65,3.72)
+  {independent runs};
+\node[draw=gray!55,rounded corners=.4mm,fill=white,minimum width=.62cm,
+      minimum height=.46cm,line width=.48pt,font=\sffamily\tiny]
+      (co) at (12.62,3.12) {$\mathcal U_{\mathrm{out}}$};
+\node[draw=gray!55,rounded corners=.4mm,fill=white,minimum width=.62cm,
+      minimum height=.46cm,line width=.48pt,font=\sffamily\tiny]
+      (cr) at (12.62,1.62) {$\mathcal U_{\mathrm{rep}}$};
+\node[draw=gray!55,rounded corners=.4mm,fill=gray!4,minimum width=.58cm,
+      minimum height=.46cm,line width=.48pt,font=\sffamily\tiny]
+      (do) at (13.57,3.12) {$d_{\mathrm{out}}$};
+\node[draw=gray!55,rounded corners=.4mm,fill=gray!4,minimum width=.58cm,
+      minimum height=.46cm,line width=.48pt,font=\sffamily\tiny]
+      (dr) at (13.57,1.62) {$d_{\mathrm{rep}}$};
+\draw[trajectory] (theta.east) -- (12.14,2.37) |- (co.west);
+\draw[trajectory] (theta.east) -- (12.14,2.37) |- (cr.west);
+\draw[trajectory] (co) -- (do);
+\draw[trajectory] (cr) -- (dr);
+
+% Correlation matrix.  All four cells remain visually neutral because the
+% preregistered interaction is a question, not an observed result.
+\node[font=\sffamily\scriptsize,text=gray!78!black,align=center] at (15.23,3.57)
+  {output\\damage};
+\node[font=\sffamily\scriptsize,text=gray!78!black,align=center] at (16.39,3.57)
+  {representation\\damage};
+\node[font=\sffamily\tiny\bfseries,text=ink,align=right] at (14.42,2.82)
+  {$\widehat q_G$};
+\node[font=\sffamily\tiny\bfseries,text=ink,align=right] at (14.42,2.02)
+  {$\widehat q_H$};
+\node[cell]        at (15.23,2.82) {$\rho_{G,\mathrm{out}}$};
+\node[cell]        at (16.39,2.82) {$\rho_{G,\mathrm{rep}}$};
+\node[cell]        at (15.23,2.02) {$\rho_{H,\mathrm{out}}$};
+\node[cell]        at (16.39,2.02) {$\rho_{H,\mathrm{rep}}$};
+
+\node[font=\sffamily\scriptsize,text=ink] at (15.17,.79)
+  {$\displaystyle
+    \Delta=
+    (\rho_{G,\mathrm{out}}-\rho_{H,\mathrm{out}})
+    -(\rho_{G,\mathrm{rep}}-\rho_{H,\mathrm{rep}})>0\;?$};
+
+\end{tikzpicture}

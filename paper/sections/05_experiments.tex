@@ -10,9 +10,8 @@ settings ($\eta$, $R$), and the dataset roster were frozen before the
 confirmatory runs were unsealed. The evaluation addresses four questions:
 
 \begin{enumerate}
-    \item \textbf{Channel-conditioned prediction:} Across a balanced
-    roster of output-channel and representation-channel objectives, does
-    the winning predictor family flip with the channel
+    \item \textbf{Channel-conditioned prediction:} Across objectives from
+    both channels, does the winning predictor family flip
     (interaction $\Delta>0$, Eq.~\eqref{eq:interaction})?
 
     \item \textbf{Backward-free fidelity:} How much of the exact
@@ -23,22 +22,22 @@ confirmatory runs were unsealed. The evaluation addresses four questions:
     (parents $\times$ selectors), does the matched selector minimize
     sealed-audit tail damage per parent, at matched forgetting?
 
-    \item \textbf{Robustness:} Does the interaction survive across
-    datasets whose forget--retain proximity structure differs, across
-    seeds and requests, and under the declared honesty clauses?
+    \item \textbf{Robustness:} Does the interaction survive datasets with
+    different forget--retain structure, seeds, requests, and the declared
+    honesty clauses?
 \end{enumerate}
 
 Table~\ref{tab:channel-matrix} is the confirmatory prediction experiment,
 Table~\ref{tab:crossed} the confirmatory protection experiment, and
-Table~\ref{tab:bwfree} the fidelity-and-cost account of the randomized
-probe. The strong-method comparison, numerical-fidelity detail, mechanism,
+Appendix Table~\ref{tab:bwfree} the fidelity-and-cost account of the
+randomized probe. The strong-method comparison, numerical-fidelity detail, mechanism,
 specificity, and complete transfer results appear in the appendix.
 
 
 \subsection{Experimental Setup}
 \label{sec:benchmark-protocol}
 
-\paragraph{Objectives (balanced by channel).}
+\paragraph{Objectives (channel-stratified roster).}
 Output channel: GA, GradDiff, NPO, SimNPO, IdkDPO, GRU. Representation
 channel: RMU, RepNoise, Circuit Breakers. All nine parents are configured
 on development requests without access to susceptibility scores; their
@@ -49,12 +48,13 @@ requests that fail the forget criterion.
 
 \paragraph{Predictors.}
 Gradient family: exact gradient norm (per-candidate backward; expensive
-reference) and randomized sensitivity
-(Eq.~\eqref{eq:randomized-susceptibility}; $2R$ forward sweeps, ours).
+reference) and loss-shake energy, i.e.\ randomized sensitivity
+(Eq.~\eqref{eq:loss-shake-identity}; $2R$ forward sweeps, ours).
 Representation family: hidden-state proximity (matched probe),
 sentence-embedding proximity, lexical overlap. Cautionary baselines:
-forget-direction alignment (numerically validated, preregistered as
-rejected), one random direction, initial candidate NLL, answer length,
+forget-direction alignment (prespecified cautionary baseline;
+Appendix~\ref{app:alignment-postmortem}), one random direction, initial
+candidate NLL, answer length,
 random ranking. Every predictor is frozen at $\theta_0$ and sealed before
 any trajectory runs.
 
@@ -95,36 +95,33 @@ accompany small top levels.
 \fbox{\parbox{0.92\linewidth}{\centering\vspace{1.05cm}
 \textbf{A. Channel matrix}\\[1mm]
 \resph{Heatmap of $\rho$(predictor, objective): rows = predictor families,
-columns = objectives grouped by declared channel. Gradient rows light up
-left and go dark on RMU; proximity rows peak right.}
+columns = objectives grouped by declared channel; retain reversals, reach
+flags, and floor regimes.}
 \vspace{1.05cm}}}
 \end{minipage}\hfill
 \begin{minipage}[t]{0.318\textwidth}
 \centering
 \fbox{\parbox{0.92\linewidth}{\centering\vspace{1.05cm}
 \textbf{B. Crossover}\\[1mm]
-\resph{Mean $\rho$ of the two headline probes by objective channel: the
-lines cross -- the winning probe flips with the channel.}
+\resph{Mean $\rho$ of the two headline probes by objective channel, with
+bootstrap intervals; report the observed interaction without smoothing.}
 \vspace{1.05cm}}}
 \end{minipage}\hfill
 \begin{minipage}[t]{0.318\textwidth}
 \centering
 \fbox{\parbox{0.92\linewidth}{\centering\vspace{1.05cm}
 \textbf{C. Crossed protection}\\[1mm]
-\resph{Sealed-audit CVaR per parent $\times$ selector, tested against the
-preregistered matched-lowest criterion; pool--damage coverage, not
-channel matching, governs repair transfer on this benchmark.}
+\resph{Sealed-audit CVaR per parent $\times$ selector, showing every arm
+and reach status; report whether the matched selector wins, loses, or is
+unidentifiable at the parent floor.}
 \vspace{1.05cm}}}
 \end{minipage}
-\caption{\textbf{Main result: susceptibility is channel-conditional; the
-crossed design then tests whether the same conditioning governs repair.}
-\textbf{A:} the objective$\times$family matrix behind
-Table~\ref{tab:channel-matrix}. \textbf{B:} the interaction visualized --
-no probe wins on both channels. \textbf{C:} the crossed protection
-experiment of Table~\ref{tab:crossed}, evaluated against the
-preregistered matched-lowest criterion; on this benchmark the outcome
-tracks how well the protect pool covers the realized damage
-distribution (Section~\ref{sec:exp-protection}).}
+\caption{\textbf{Main result: susceptibility is channel-conditional and
+channel matching is tested operationally.} \textbf{A:} the objective$\times$family
+matrix behind Table~\ref{tab:channel-matrix}. \textbf{B:} the interaction
+visualized at the family level. \textbf{C:} the crossed protection
+experiment of Table~\ref{tab:crossed}, which tests whether endpoint routing
+improves worst-tail audit damage at matched forgetting.}
 \Description{Three panels: a predictor-by-objective correlation heatmap
 grouped by channel, a two-line crossover plot of headline probes across
 channels, and grouped bars of audit tail damage for parent-selector
@@ -138,36 +135,49 @@ combinations.}
 
 Table~\ref{tab:channel-matrix} reports Spearman $\rho$ between each sealed
 predictor and realized damage for every objective, with objectives grouped
-by declared channel and predictors grouped by family. The reading is
-columnwise-within-rowgroup: gradient-family probes should dominate the
-output-channel columns and lose their signal on the representation
-columns, with the representation family showing the mirrored pattern; the
-per-family channel means and the preregistered interaction $\Delta$ (with
-bootstrap CI, reported in the caption once unsealed) quantify the flip.
-The asymmetry clause of Section~\ref{sec:setup-channels} predicts partial
-representation-probe signal on output-channel columns but near-zero
-gradient-probe signal on RMU; the cautionary alignment baseline should
-predict nowhere. Flagged columns are retained rather than dropped:
+by declared channel and predictors grouped by family
+(visualized in Figure~\ref{fig:channel-main}A--B). The reading is
+the frozen family-level interaction $\Delta$, not uniform per-objective
+dominance. Individual columns may be mixed or reversed; the per-family
+channel means and bootstrap interval quantify whether the relative
+gradient-versus-proximity advantage changes across declared channels.
+Cross-channel signal and the cautionary alignment baseline are reported
+rather than interpreted away. Flagged columns are retained rather than dropped:
 $^{\dag}$ columns measure a weak-signal (near-static) regime and
 $^{\ddag}$ marks criterion reach achieved only through model-wide
 collapse, where per-candidate ranking measures fragility ordering within
 an avalanche. Secondary metrics (AUROC, Overlap@$K_p$, tail $\rho$) for
 the two headline probes appear in the appendix.
 
+Unblinded, the family-level structure is exactly the predicted flip. The
+gradient family's channel mean falls from $+0.38$ on output-channel
+objectives to $-0.15$ on representation-channel objectives -- not merely
+weaker but sign-reversed -- while the proximity family retains partial
+signal on both sides ($0.32$ vs.\ $0.19$), the asymmetry declared in
+Section~\ref{sec:setup-channels}. Both preregistered interaction pairs
+exclude zero: GradDiff/RMU $\Delta=+0.300$ $[+0.131,+0.466]$ and
+NPO/RepNoise $\Delta=+0.470$ $[+0.232,+0.698]$, and both replicate under
+an independent seed ($+0.226$ $[+0.048,+0.406]$; $+0.737$
+$[+0.532,+0.950]$; Appendix~\ref{app:seed-replication}). The cautionary
+alignment baseline predicts nowhere ($|\rho|\le 0.11$ in every column),
+and loss-shake energy tracks the exact gradient norm within $\pm 0.01$
+in all nine columns -- the backward-free estimate loses essentially
+nothing.
+
 \begin{table*}[t]
 \caption{\textbf{Channel-conditioned prediction of realized damage
-(TOFU tofu-a180, sealed audit fold, $n{=}300$, Qwen2.5-1.5B fp32).}
-Spearman $\rho$ between each sealed pre-unlearning score and realized
-per-candidate damage, per objective; objectives grouped by declared
-damage channel, predictors by family; column-best in bold. ``Bwd-free''
-marks predictors needing no candidate-side backward pass. The
-preregistered interaction $\Delta$ (Eq.~\eqref{eq:interaction}) between
-the headline probes is positive with bootstrap CIs excluding zero on
-both declared pairs: GradDiff/RMU $\Delta=+0.300$, 95\% CI
-$[+0.131,+0.466]$; NPO/RepNoise $\Delta=+0.470$, 95\% CI
-$[+0.232,+0.698]$ (2{,}000 candidate bootstraps). Cells are
-single-request point estimates; seed replication is reported in the
-appendix. $^{\dag}$did not reach the preregistered forget criterion
+(TOFU tofu-a180, sealed audit fold, $n{=}300$, Qwen2.5-1.5B fp32, seed
+2025).} Spearman $\rho$ per objective; objectives grouped by declared
+damage channel, predictors by family; column-best among measured rows in
+bold. ``Bwd-free'' marks predictors needing no candidate-side backward
+pass. Channel means summarize each row across the two column groups. The
+preregistered headline statistic is the interaction $\Delta$
+(Eq.~\eqref{eq:interaction}) between the two headline probes:
+GradDiff/RMU $\Delta=+0.300$, 95\% CI $[+0.131,+0.466]$; NPO/RepNoise
+$\Delta=+0.470$, 95\% CI $[+0.232,+0.698]$ (2{,}000 candidate
+bootstraps); seed replication in
+Appendix~\ref{app:seed-replication}. Cells are single-request point
+estimates. $^{\dag}$did not reach the preregistered forget criterion
 within budget (weak-signal column, interpret with care);
 $^{\ddag}$reached the criterion but with model-wide utility collapse.}
 \label{tab:channel-matrix}
@@ -180,26 +190,34 @@ $^{\ddag}$reached the criterion but with model-wide utility collapse.}
 & \multicolumn{3}{c}{\textbf{Representation channel}}
 & \multicolumn{2}{c}{Channel mean} \\
 \cmidrule(lr){4-9}\cmidrule(lr){10-12}\cmidrule(l){13-14}
-Family & Predictor & Bwd-free & GradDiff & NPO & SimNPO & GRU &
-GA$^{\ddag}$ & IdkDPO$^{\dag}$ & RMU & RepNoise & CB$^{\dag}$ & Out & Rep \\
+Family & Predictor & Bwd-free & GA$^{\ddag}$ & GradDiff & NPO & SimNPO &
+IdkDPO$^{\dag}$ & GRU & RMU & RepNoise & CB$^{\dag}$ & Out & Rep \\
 \midrule
-Gradient magnitude & Exact gradient norm & \xmark &
-0.40 & 0.39 & 0.39 & 0.43 & 0.20 & 0.41 & -0.04 & -0.16 & -0.23 & 0.37 & -0.14 \\
-& Randomized sensitivity (\textbf{ours}) & \cmark &
-0.41 & \textbf{0.40} & \textbf{0.40} & \textbf{0.43} & 0.20 & \textbf{0.41} & -0.05 & -0.17 & -0.25 & 0.38 & -0.15 \\
+Gradient & Exact gradient norm & no &
+0.20 & 0.40 & 0.39 & 0.39 & 0.41 & 0.43 & -0.04 & -0.16 & -0.23 & 0.37 & -0.14 \\
+& Randomized sensitivity (ours) & yes &
+0.20 & 0.41 & \textbf{0.40} & \textbf{0.40} & \textbf{0.41} & \textbf{0.43} & -0.05 & -0.17 & -0.25 & 0.38 & -0.15 \\
 \addlinespace
-Representation proximity & Hidden-state kNN & \cmark &
-\textbf{0.49} & 0.23 & 0.21 & 0.42 & \textbf{0.50} & 0.05 & 0.34 & 0.14 & \textbf{0.09} & 0.32 & 0.19 \\
-& Sentence-embedding kNN & \cmark &
-0.28 & 0.15 & 0.14 & 0.25 & 0.35 & 0.10 & 0.10 & \textbf{0.21} & 0.05 & 0.21 & 0.12 \\
-& Lexical overlap & \cmark &
-0.39 & 0.17 & 0.16 & 0.34 & 0.18 & 0.00 & \textbf{0.39} & -0.02 & 0.05 & 0.21 & 0.14 \\
+Representation & Hidden-state proximity & yes &
+\textbf{0.50} & \textbf{0.49} & 0.23 & 0.21 & 0.05 & 0.42 & 0.34 & 0.14 & \textbf{0.09} & 0.32 & 0.19 \\
+& Sentence-embedding proximity & yes &
+0.35 & 0.28 & 0.15 & 0.14 & 0.10 & 0.25 & 0.10 & \textbf{0.21} & 0.05 & 0.21 & 0.12 \\
+& Lexical overlap & yes &
+0.18 & 0.39 & 0.17 & 0.16 & 0.00 & 0.34 & \textbf{0.39} & -0.02 & 0.05 & 0.21 & 0.14 \\
 \addlinespace
-Alignment (rejected) & Forget-direction FD & \cmark &
--0.06 & -0.08 & -0.07 & -0.06 & 0.07 & -0.09 & -0.11 & 0.11 & -0.06 & -0.05 & -0.02 \\
+Cautionary & Forget-direction alignment & yes &
+0.07 & -0.06 & -0.08 & -0.07 & -0.09 & -0.06 & -0.11 & 0.11 & -0.06 & -0.05 & -0.02 \\
+& One random direction & yes &
+\tblph & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph \\
 \addlinespace
-Controls & Random ranking & \cmark &
-0.02 & 0.10 & 0.10 & 0.03 & 0.01 & 0.13 & -0.05 & -0.11 & -0.00 & 0.07 & -0.06 \\
+% SPACE FALLBACK: if the 8-page limit binds, demote the three Control rows
+% below to appendix table1c (make_tables.py --demote), keeping 7 main rows.
+Control & Initial candidate NLL & yes &
+\tblph & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph \\
+& Answer length & yes &
+\tblph & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph \\
+& Random ranking & yes &
+0.01 & 0.02 & 0.10 & 0.10 & 0.13 & 0.03 & -0.05 & -0.11 & -0.00 & 0.07 & -0.06 \\
 \bottomrule
 \end{tabular}
 \end{table*}
@@ -210,179 +228,167 @@ Controls & Random ranking & \cmark &
 
 Prediction is operationally useful only if routing a budget through it
 improves the sealed audit. Table~\ref{tab:crossed} reports the crossed
-design: each parent (GradDiff for the output channel; RMU and RepNoise
-for the representation channel) runs unmodified to its
-criterion-reaching checkpoint, then each selector arm spends an
+design over three parents (GradDiff for the output channel; RMU and
+RepNoise for the representation channel): each parent runs unmodified to
+its criterion-reaching checkpoint, then each selector arm spends an
 identical repair budget under the identical guarded procedure of
-Section~\ref{sec:method-protection}; only the ranking that fills the
-protect pool differs. The preregistered success criterion was that the
-matched arm attains the lowest audit CVaR per parent.
+Section~\ref{sec:method-protection} (Figure~\ref{fig:channel-main}C). Each
+frozen score constructs its
+protect pool and matched low-score reference stream; all other training
+choices are held fixed. The preregistered success criterion is that the
+matched arm's CVaR is below each of the mismatched, random, and none arms,
+per parent. The
+exact-norm selector is the expensive gradient-profile reference ceiling,
+outside the criterion;
+comparing it with randomized sensitivity prices the backward-free
+discount. Any protection claim is conditional on comparable forgetting:
+the reach and forget-recall columns expose attempts to buy retention by
+under-forgetting, and a parent-floor regime is reported as unidentifiable
+rather than as a selector win.
 
-\textbf{The criterion is not met, and the pattern of its failure is
-itself informative.} On GradDiff, the proximity (mismatched) pool is by
-far the best (CVaR $2.97$ vs.\ $4.93$ matched and $5.35$ unprotected) --
-consistent with GradDiff's damage concentrating near the forget set,
-where proximity also predicts it well ($\rho{=}0.49$,
-Table~\ref{tab:channel-matrix}). On RepNoise, matched proximity beats
-both mismatched arms and no protection, but \emph{random} allocation is
-lowest ($2.31$ vs.\ $2.49$) -- consistent with RepNoise's damage being
-diffuse: no probe predicts it well (best $\rho{=}0.14$), and a diverse
-pool covers a diffuse distribution better than any concentrated one. On
-RMU, damage is negligible ($0.12$ CVaR unprotected) and no intervention
-helps -- a floor regime rather than a test. Two regularities do survive
-across parents: randomized sensitivity tracks the exact-norm ceiling
-wherever the gradient family is deployed (RepNoise $2.63$ vs.\ $2.64$;
-GradDiff $5.21$ vs.\ $4.93$, both far from the winning pool), so the
-backward-free discount carries over to protection; and the guard holds
-forgetting at criterion in every arm. The coherent
+\textbf{Unblinded, the criterion is not met, and the pattern of its
+failure is informative.} On GradDiff, the proximity (mismatched) pool is
+by far the best (CVaR $2.97$ vs.\ $5.21$ matched and $5.35$ unprotected)
+-- consistent with GradDiff's damage concentrating near the forget set,
+where proximity also predicts it well ($\rho{=}0.49$). On RepNoise,
+matched proximity beats both mismatched arms and no protection, but
+\emph{random} allocation is lowest ($2.31$ vs.\ $2.49$) -- consistent
+with RepNoise's damage being diffuse: no probe predicts it well (best
+$\rho{=}0.14$), and a diverse pool covers a diffuse distribution better
+than any concentrated one. RMU is a parent-floor regime (unprotected
+CVaR $0.12$; no arm helps) and is reported as unidentifiable. Two
+regularities survive across parents: randomized sensitivity tracks the
+exact-norm ceiling wherever the gradient family is deployed (RepNoise
+$2.63$ vs.\ $2.64$; GradDiff $5.21$ vs.\ $4.93$, both far from the
+winning pool), so the backward-free discount carries over to protection;
+and the guard holds forgetting at criterion in every arm. The coherent
 reading is that \emph{repair transfer is governed by how well the
 protect pool covers the realized damage distribution}: proximal damage
 rewards proximity pools, diffuse damage rewards coverage, negligible
 damage rewards abstention. Prediction is channel-conditional
 (Table~\ref{tab:channel-matrix}); pool selection for repair should
 follow the \emph{predicted damage distribution} rather than the channel
-label alone. The mixture sweep (Section~\ref{sec:exp-mixture}) and the
-low-proximity replications are the preregistered-exploratory instruments
-for that refinement.
+label alone. The $\alpha$ diagnostic (Section~\ref{sec:exp-alpha}) and
+the low-proximity replications are the frozen instruments for that
+refinement.
 
 \begin{table*}[t]
 \caption{\textbf{Crossed protection: parent objective $\times$ protection
 selector (TOFU tofu-a180, sealed native audit, Qwen2.5-1.5B fp32).}
-Every arm of a parent starts from the same criterion-reaching checkpoint
-and uses the same repair budget, projection, guard, and audit; only the
-selector changes. Match labels follow the preregistered channel table;
-every arm reached the forget criterion (guard active), and paraphrase
-audits are reported in the appendix. Per-parent lowest CVaR in bold.
-\textbf{The preregistered matched-lowest criterion is not met}: the
-best pool tracks the realized damage distribution -- proximity for
+Every arm of a parent starts from the same reaching checkpoint and uses
+the same repair budget, projection, guard, and audit; only the selector
+changes. Match labels follow the preregistered channel table. Success =
+matched CVaR below mismatched, random, and none per parent; the
+exact-norm ceiling is a reference, not a comparison arm. Per-parent
+lowest CVaR in bold. \textbf{The preregistered criterion is not met}:
+the best pool tracks the realized damage distribution -- proximity for
 GradDiff's proximal damage, random coverage for RepNoise's diffuse
-damage, abstention for RMU's floor regime
+damage, no identifiable winner in RMU's floor regime
 (Section~\ref{sec:exp-protection}). Cells are single-request point
-estimates.}
+estimates; every arm reached the forget criterion.}
 \label{tab:crossed}
 \centering
 \scriptsize
 \setlength{\tabcolsep}{3.0pt}
-\begin{tabular}{@{}lll ccc@{}}
+\begin{tabular}{@{}lll cccccc@{}}
 \toprule
-Parent (channel) & Selector & Match & Reach &
-Mean $\Delta$NLL $\downarrow$ & CVaR$_{.95}$ $\downarrow$ \\
+Parent (channel) & Selector & Match & Reach $\uparrow$ &
+Forget recall $\downarrow$ & Para.\ recall $\downarrow$ &
+Mean $\Delta$NLL $\downarrow$ & CVaR$_{.95}$ $\downarrow$ &
+Utility ret.\ $\uparrow$ \\
 \midrule
-GradDiff (output) & none (parent alone) & --- & yes & 1.943 & 5.346 \\
-& random & random & yes & 1.801 & 5.099 \\
-& hidden-state proximity & mismatched & yes & 1.314 & \textbf{2.965} \\
-& randomized sensitivity (ours) & matched & yes & 1.898 & 5.212 \\
-& exact gradient norm & matched (ceiling) & yes & 1.769 & 4.925 \\
+GradDiff (output) & none (parent alone) & --- &
+yes & 0.014 & 0.00 & 1.943 & 5.346 & \tblph \\
+& random & random &
+yes & 0.014 & 0.00 & 1.801 & 5.099 & \tblph \\
+& hidden-state proximity & mismatched &
+yes & 0.014 & 0.00 & 1.314 & \textbf{2.965} & \tblph \\
+& randomized sensitivity (ours) & matched &
+yes & 0.014 & 0.00 & 1.898 & 5.212 & \tblph \\
+& exact gradient norm & matched (ceiling) &
+yes & 0.014 & 0.00 & 1.769 & 4.925 & \tblph \\
 \addlinespace
-RMU (representation) & none (parent alone) & --- & yes & 0.023 & \textbf{0.121} \\
-& random & random & yes & 0.026 & 0.142 \\
-& randomized sensitivity & mismatched & yes & 0.041 & 0.171 \\
-& exact gradient norm & mismatched & yes & 0.038 & 0.175 \\
-& hidden-state proximity & matched & yes & 0.027 & 0.131 \\
+RMU (representation) & none (parent alone) & --- &
+yes & 0.064 & 0.035 & 0.023 & \textbf{0.121} & \tblph \\
+& random & random &
+yes & \tblph & \tblph & 0.026 & 0.142 & \tblph \\
+& randomized sensitivity & mismatched &
+yes & 0.060 & 0.032 & 0.041 & 0.171 & \tblph \\
+& exact gradient norm & mismatched &
+yes & \tblph & \tblph & 0.038 & 0.175 & \tblph \\
+& hidden-state proximity & matched &
+yes & \tblph & \tblph & 0.027 & 0.131 & \tblph \\
 \addlinespace
-RepNoise (representation) & none (parent alone) & --- & yes & 1.676 & 2.654 \\
-& random & random & yes & 1.380 & \textbf{2.312} \\
-& randomized sensitivity & mismatched & yes & 1.490 & 2.633 \\
-& exact gradient norm & mismatched & yes & 1.510 & 2.644 \\
-& hidden-state proximity & matched & yes & 1.476 & 2.487 \\
+RepNoise (representation) & none (parent alone) & --- &
+yes & \tblph & \tblph & 1.676 & 2.654 & \tblph \\
+& random & random &
+yes & \tblph & \tblph & 1.380 & \textbf{2.312} & \tblph \\
+& randomized sensitivity & mismatched &
+yes & \tblph & \tblph & 1.490 & 2.633 & \tblph \\
+& exact gradient norm & mismatched &
+yes & \tblph & \tblph & 1.510 & 2.644 & \tblph \\
+& hidden-state proximity & matched &
+yes & \tblph & \tblph & 1.476 & 2.487 & \tblph \\
 \bottomrule
 \end{tabular}
 \end{table*}
+
+
+\subsection{Secondary Diagnostic: the \texorpdfstring{$\alpha$}{alpha} Sweep}
+\label{sec:exp-alpha}
+
+The confirmatory router uses only the declared endpoints: $\alpha=0$ for
+output-channel parents and $1$ for representation-channel parents. We do
+not estimate an interior deployment weight. Instead, after the primary
+design was frozen, an append-only exploratory extension fixed the
+nine-point prediction grid $\{0,0.125,\ldots,1\}$ and the protection subset
+$\{0,0.25,0.5,0.75,1\}$. The endpoint arms in the latter are reused from
+Table~\ref{tab:crossed}; only its three interior arms require additional
+runs.
+
+The prediction curve $\rho(s_\alpha,\mathrm{damage})$ is computed offline
+from sealed scores and trajectories. Its per-objective maximizing
+$\alpha$ is a descriptive readout of cross-channel signal, not a fitted
+router and not a new endpoint. The protection curve analogously reports
+sealed-audit CVaR for Top-$K_p(s_\alpha)$ under the unchanged guarded
+budget. Its descriptive optimum need not match the prediction optimum,
+because ranking individual risk and transferring repair from a selected
+pool are different questions. We report all curves, including interior or
+opposite-endpoint optima, without revising the fixed $0/1$ rule.
+Unblinded, the prediction curves show a sharp, seed-stable asymmetry:
+every output-channel objective peaks at an \emph{interior} weight and
+beats both endpoints (GradDiff $\rho=0.61$ at $\alpha=0.5$ vs.\
+$0.41$/$0.49$ at the endpoints; GRU $0.59$ at $0.5$; NPO and SimNPO
+$0.47$/$0.46$ at $0.375$; replicated under seed 2026 with every
+output-channel optimum in $[0.25,0.75]$), whereas every
+representation-channel curve is monotone toward the $\alpha{=}1$ corner
+(RMU $0.34$, RepNoise $0.14$, CB$^{\dag}$ $0.09$): the two nearly
+uncorrelated probes are complementary where both carry signal and
+anti-complementary where the gradient probe is blind. The interior
+protection arms are pending. Full grids and plots are in
+Appendix~\ref{app:alpha-diagnostic} (Figure~\ref{fig:alpha-sweep}).
 
 
 \subsection{Backward-Free Fidelity and Cost}
 \label{sec:exp-fidelity}
 
-Table~\ref{tab:bwfree} substantiates the probe's two supporting claims.
-Fidelity: within the gate-certified regime, randomized sensitivity ranks
-candidates in near-perfect agreement with the exact gradient norm, and its
-damage prediction retains most of the exact profile's power; outside the
-regime (radius in the cancellation zone, or low-precision underflow) the
-gate correctly withholds certification -- we report both sides of the
-boundary. Cost: profiling an entire candidate universe takes $2R$ batched
+Appendix Table~\ref{tab:bwfree} tests the probe's two supporting claims. Fidelity is
+the rank agreement between loss-shake energy and the exact gradient norm,
+reported both inside and outside the gate; the cancellation, underflow, and
+curvature regimes remain visible even if the gate fails to separate them.
+At the gate-certified setting ($\eta{=}3\mathrm{e}{-}3$, $R{=}64$, fp32)
+rank agreement is $0.94$ and the probe's damage prediction matches the
+exact profile within $\pm 0.01$ on all nine objectives; in the
+cancellation zone ($\eta{=}3\mathrm{e}{-}4$) agreement collapses to
+$0.50$ and the gate withholds certification.
+Cost: profiling an entire candidate universe takes $2R$ batched
 forward sweeps at inference memory, versus per-candidate backward passes
 at training memory; wall-clock and peak-memory measurements at 7B compare
 the randomized probe against exact-norm, JVP, and vectorized
-gradient-dot implementations. The advantage we claim is memory and
+gradient-dot implementations (one symmetric pair sweep $5.97$\,s at
+$18.3$\,GB, vs.\ $27.4$--$35.2$\,GB for forward-mode and vectorized
+gradient machinery). The advantage we claim is memory and
 backward-freedom, not universal wall-clock supremacy.
-
-\begin{table*}[t]
-\caption{\textbf{The backward-free probe: fidelity to the exact profile
-and profiling cost.} Left: rank agreement with the exact gradient norm
-inside and outside the preregistered fidelity gate (Qwen models, fp32);
-at the gate-certified setting the probe's damage prediction matches the
-exact profile on all nine objectives of Table~\ref{tab:channel-matrix}
-to within $\pm 0.01$. Right: measured wall-clock and peak memory per
-symmetric direction pair over one candidate universe (Qwen2.5-7B, bf16,
-batch 4); randomized sensitivity runs $R$ such pairs at the same
-$18.3$\,GB peak -- time scales linearly in $R$ while memory stays at
-inference level, so the claim is memory and backward-freedom, not
-universal wall-clock supremacy.}
-\label{tab:bwfree}
-\centering
-\scriptsize
-\setlength{\tabcolsep}{3.0pt}
-\begin{tabular}{@{}lcc c lcc@{}}
-\toprule
-\multicolumn{3}{c}{\textbf{Fidelity (fp32)}} & &
-\multicolumn{3}{c}{\textbf{Cost (7B, bf16, per pass)}} \\
-\cmidrule(r){1-3}\cmidrule(l){5-7}
-Regime & $\rho$(rand, exact) & Damage-$\rho$ retained & &
-Profiler & Time (s) & Peak mem (GB) \\
-\midrule
-Gate-certified ($\eta{=}3\mathrm{e}{-}3$, $R{=}64$) & 0.94 &
-9/9 obj.\ within $\pm 0.01$ & &
-Symmetric FD pair ($2\times$ fwd sweep) & 5.97 & \textbf{18.3} \\
-Cancellation zone ($\eta{=}3\mathrm{e}{-}4$) & 0.50 & \tblph & &
-Exact JVP (forward-mode) & 9.9 & 27.4 \\
-Low-precision underflow (bf16) & \tblph & \tblph & &
-Vectorized gradient-dot & 10.0 & 35.2 \\
-Curvature zone (large $\eta$) & \tblph & \tblph & &
-Streaming candidate backward & 17.4 & 18.7 \\
-\bottomrule
-\end{tabular}
-\end{table*}
-
-
-\subsection{Soft Routing: The Mixture Sweep}
-\label{sec:exp-mixture}
-
-The mixture score of Eq.~\eqref{eq:mixture} turns the discrete router
-into a measurable one-parameter family (preregistered as exploratory
-instrumentation; $\alpha$ is the representation weight, so
-$\alpha{=}0$/$\alpha{=}1$ are the gradient/proximity endpoints), and its
-two sides have very different costs. The \emph{prediction} sweep is
-free: both headline scores are already sealed per candidate, so
-$\rho(s_\alpha,\text{damage})$ over the frozen grid
-$\alpha\in\{0,0.125,\ldots,1\}$ is pure post-processing of existing
-artifacts. The measured curves show a sharp asymmetry. On every
-output-channel objective the optimum is \emph{interior} and the mixture
-beats both endpoints -- GradDiff peaks at $\alpha^{*}{=}0.5$ with
-$\rho{=}0.61$ against $0.41$/$0.49$ at the endpoints, GRU at $0.5$
-($0.59$), NPO and SimNPO at $0.375$ ($0.47$/$0.46$), with GA$^{\ddag}$
-at $0.75$ and IdkDPO$^{\dag}$ at $0.25$ -- the two nearly uncorrelated
-probes are \emph{complementary} where both carry signal, exactly as the
-spectrum clause predicts. On every representation-channel objective the
-optimum is the \emph{corner} $\alpha^{*}{=}1$ (RMU $0.34$, RepNoise
-$0.14$, CB$^{\dag}$ $0.09$): any weight on the gradient probe only
-hurts, the continuous image of its blindness on this channel. The
-structure replicates under an independent seed -- every output-channel
-optimum interior ($\alpha^{*}\in[0.25,0.75]$), every
-representation-channel optimum at the corner. The separation between
-per-channel $\alpha^{*}$ is the continuous analogue of the primary
-interaction, and the deployed router is unchanged -- the declared
-mapping remains $\alpha\in\{0,1\}$.
-
-The \emph{protection} sweep adds crossed arms with pools
-$\operatorname{TopK}$ by $s_\alpha$ for $\alpha\in\{0.25,0.5,0.75\}$,
-holding parent, budget, and repair fixed; the grid endpoints are the
-already-measured headline arms of Table~\ref{tab:crossed}. Given the
-crossed outcome -- repair transfer tracking damage-distribution coverage
--- the quantity of interest is the gap between
-$\alpha^{*}_{\mathrm{pred}}$ and $\alpha^{*}_{\mathrm{prot}}$ per
-parent, reported in whichever direction it points.
-\resph{Protection $\alpha$-response per parent;
-$\alpha^{*}_{\mathrm{pred}}$ vs $\alpha^{*}_{\mathrm{prot}}$.}
 
 \subsection{Replication, Stress, and Positioning}
 \label{sec:exp-supporting}
@@ -398,5 +404,4 @@ motion), repair-budget sweeps, and the strong-method comparison that
 places the full pipeline alongside recent unlearners under the same
 contract are reported in the appendix. The pipeline is a layer over
 parents, so that comparison is context, not the claim: the claim is the
-pair of interactions, which no channel-blind method -- however strong --
-can exhibit.
+pair of frozen prediction and protection interactions, reported directly.

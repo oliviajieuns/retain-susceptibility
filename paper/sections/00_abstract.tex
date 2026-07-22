@@ -1,9 +1,3 @@
-% Abstract: keeps the registered abstract's structure, framing phrases, and
-% closing sentence (problem -> mechanism -> when-it-transfers -> profile ->
-% prediction -> protection -> framework). The channel-conditional result is
-% presented as the completed answer to the registered abstract's
-% characterization sentence ("We further characterize when this local signal
-% transfers across unlearning methods"), not as a new research question.
 \begin{abstract}
 An LLM asked to forget specific information should not lose unrelated
 knowledge or capabilities that users still rely on. Yet approximate
@@ -20,8 +14,8 @@ where its loss reads the model. Objectives whose loss reads model outputs
 (GA, GradDiff, NPO, SimNPO, and preference variants) damage candidates
 with large loss-gradient magnitude, whereas objectives whose loss reads
 internal representations (RMU, RepNoise, Circuit Breakers) damage
-candidates whose hidden states lie close to the forget set; no single
-score predicts well on both channels.
+candidates whose hidden states lie close to the forget set; which probe
+family predicts best flips with the declared channel.
 
 Guided by this mechanism, we construct candidate-level susceptibility
 profiles without candidate-side backpropagation. For the output channel,
@@ -30,14 +24,15 @@ shared random direction -- estimate every candidate's gradient magnitude
 at once and recover most of the exact gradient norm's predictive power;
 for the representation channel, forward-only hidden-state proximity
 suffices. Across balanced objective rosters, the channel-matched profile
-reliably predicts per-example and tail damage along independently
-configured trajectories, where channel-mismatched alternatives do not.
-We then use the matched profile to allocate a fixed protection budget to
-high-risk retained behaviors. At matched forgetting, channel-matched
+predicts per-example damage along independently configured trajectories,
+and the relative advantage of the two probe families reverses with the
+declared channel. We then use the matched profile to allocate a fixed
+protection budget to high-risk retained behaviors, and test, in a
+preregistered crossed design over both channels, whether channel-matched
 protection reduces mean and worst-tail collateral damage on held-out
-native audits, with comparable overall utility, relative to mismatched,
-random, and no-protection allocation -- in a preregistered crossed design
-over both channels. Together, these results support a probe-to-protection
+native audits at matched forgetting, relative to mismatched, random, and
+no-protection allocation. Together, the mechanism, the backward-free
+probes, and the crossed protocol constitute a probe-to-protection
 framework that shifts LLM unlearning from post-hoc damage assessment
 toward mechanism-informed pre-unlearning risk prediction and targeted
 preservation.
