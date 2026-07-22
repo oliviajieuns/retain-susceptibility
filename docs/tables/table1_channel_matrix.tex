@@ -1,0 +1,21 @@
+% caption: Spearman rho(predictor score, realized audit dNLL) per objective, objectives grouped by DECLARED damage channel. No predictor wins everywhere; the winner flips with the channel.
+% preregistered interaction delta = +0.300, 95% CI [+0.131, +0.466] (n=300)
+% flag notes: $^{\ddag}$reached the criterion but with model-wide utility collapse; $^{\dag}$did not reach the preregistered forget criterion within budget (weak-signal column).
+\begin{tabular}{llcccccccccccc}
+\toprule
+ & & & \multicolumn{6}{c}{\textbf{Output / loss-gradient channel}} & \multicolumn{3}{c}{\textbf{Representation channel}} & \multicolumn{2}{c}{channel mean $\rho$} \\
+\cmidrule(lr){4-9}\cmidrule(lr){10-12}\cmidrule(lr){13-14}
+Family & Predictor & Bwd-free & GA$^{\ddag}$ & GradDiff & GRU & IdkDPO$^{\dag}$ & NPO & SimNPO & CB$^{\dag}$ & RepNoise & RMU & LG & Rep \\
+\midrule
+Gradient magnitude & Exact gradient norm & \xmark & 0.20 & 0.40 & 0.43 & 0.41 & 0.39 & 0.39 & -0.23 & -0.16 & -0.04 & 0.37 & -0.14 \\
+ & Randomized FD norm (\textbf{ours}) & \cmark & 0.20 & 0.41 & \textbf{0.43} & \textbf{0.41} & \textbf{0.40} & \textbf{0.40} & -0.25 & -0.17 & -0.05 & 0.38 & -0.15 \\
+\addlinespace
+Representation proximity & Hidden-state kNN & \cmark & \textbf{0.50} & \textbf{0.49} & 0.42 & 0.05 & 0.23 & 0.21 & \textbf{0.09} & 0.14 & 0.34 & 0.32 & 0.19 \\
+ & Sentence-embedding kNN & \cmark & 0.35 & 0.28 & 0.25 & 0.10 & 0.15 & 0.14 & 0.05 & \textbf{0.21} & 0.10 & 0.21 & 0.12 \\
+ & Lexical overlap & \cmark & 0.18 & 0.39 & 0.34 & 0.00 & 0.17 & 0.16 & 0.05 & -0.02 & \textbf{0.39} & 0.21 & 0.14 \\
+\addlinespace
+Alignment (rejected) & Forget-direction FD & \cmark & 0.07 & -0.06 & -0.06 & -0.09 & -0.07 & -0.07 & -0.06 & 0.11 & -0.12 & -0.05 & -0.02 \\
+\addlinespace
+Controls & Random ranking & \cmark & 0.01 & 0.02 & 0.03 & 0.13 & 0.10 & 0.10 & -0.00 & -0.11 & -0.05 & 0.07 & -0.06 \\
+\bottomrule
+\end{tabular}

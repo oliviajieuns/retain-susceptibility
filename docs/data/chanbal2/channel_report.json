@@ -1,0 +1,12 @@
+{
+ "request": "tofu-a180",
+ "interaction_headline": {
+  "grad_probe": "fd_norm",
+  "rep_probe": "knn_feature",
+  "delta": 0.3,
+  "lo": 0.131,
+  "hi": 0.466,
+  "n_cands": 300,
+  "n_boot": 2000
+ }
+}

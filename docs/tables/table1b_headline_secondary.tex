@@ -1,0 +1,24 @@
+\begin{tabular}{llcccc}
+\toprule
+Probe & Objective (channel) & $\rho$ & AUROC & Overlap@$K$ & tail $\rho$ \\
+\midrule
+fd\_norm & GA (LG) & 0.20 & 0.51 & 0.07 & -0.18 \\
+fd\_norm & GradDiff (LG) & 0.41 & 0.75 & 0.20 & -0.06 \\
+fd\_norm & GRU (LG) & 0.43 & 0.77 & 0.23 & -0.10 \\
+fd\_norm & IdkDPO (LG) & 0.41 & 0.82 & 0.30 & -0.26 \\
+fd\_norm & NPO (LG) & 0.40 & 0.79 & 0.27 & 0.10 \\
+fd\_norm & SimNPO (LG) & 0.40 & 0.79 & 0.27 & 0.18 \\
+fd\_norm & CB (Rep) & -0.25 & 0.53 & 0.17 & -0.12 \\
+fd\_norm & RepNoise (Rep) & -0.17 & 0.55 & 0.17 & 0.26 \\
+fd\_norm & RMU (Rep) & -0.05 & 0.58 & 0.10 & 0.02 \\
+knn\_feature & GA (LG) & 0.50 & 0.77 & 0.30 & 0.53 \\
+knn\_feature & GradDiff (LG) & 0.49 & 0.70 & 0.27 & -0.15 \\
+knn\_feature & GRU (LG) & 0.42 & 0.68 & 0.23 & -0.18 \\
+knn\_feature & IdkDPO (LG) & 0.05 & 0.57 & 0.10 & -0.00 \\
+knn\_feature & NPO (LG) & 0.23 & 0.67 & 0.23 & -0.38 \\
+knn\_feature & SimNPO (LG) & 0.21 & 0.67 & 0.23 & -0.31 \\
+knn\_feature & CB (Rep) & 0.09 & 0.66 & 0.17 & -0.03 \\
+knn\_feature & RepNoise (Rep) & 0.14 & 0.42 & 0.10 & -0.02 \\
+knn\_feature & RMU (Rep) & 0.34 & 0.66 & 0.30 & -0.67 \\
+\bottomrule
+\end{tabular}
