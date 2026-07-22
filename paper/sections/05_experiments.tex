@@ -27,6 +27,40 @@ confirmatory runs were unsealed. The evaluation addresses four questions:
     honesty clauses?
 \end{enumerate}
 
+Figure~\ref{fig:exp-anatomy} fixes the logic that every table below
+shares. All experiments branch from one frozen starting point (the SFT'd
+model, forget set, and candidate universe), and every predictor scores
+every candidate exactly once at that point, before any unlearner is
+chosen; those rankings are then sealed and never revised. Running one
+unlearning objective creates one counterfactual world, and the ground
+truth in that world is descriptive, not normative: it is the victim
+distribution that this particular imperfect tool realizes. The deletion
+requester's ideal answer is an \emph{empty} victim list -- so there is no
+tool-independent list of vulnerable candidates for a predictor to
+recover, and what our experiments test is the mapping from a chosen
+objective to \emph{its own} damage distribution. Prediction
+(Table~\ref{tab:channel-matrix}) asks how well each frozen ranking
+anticipates each world's victims; protection (Table~\ref{tab:crossed})
+acts on a ranking inside one world and re-measures the sealed audit.
+
+\begin{figure*}[t]
+\centering
+\input{figures/fig5_experiment_anatomy}
+\caption{\textbf{Anatomy of the experiments.} One frozen start; sealed
+pre-scores computed once; one counterfactual world per unlearning
+objective; each world realizes its own victim distribution (its ground
+truth -- the requester's ideal is an empty list, so no tool-independent
+victim list exists); evaluation compares the frozen rankings against
+each world's victims (prediction) and spends a repair budget through a
+ranking inside a world (protection).}
+\Description{Four-stage flow diagram: a frozen model and candidate pool
+with sealed predictor rankings; a fan-out into per-objective
+counterfactual unlearning worlds; per-world victim strips highlighting
+different damaged candidates; and evaluation boxes for prediction and
+protection.}
+\label{fig:exp-anatomy}
+\end{figure*}
+
 Table~\ref{tab:channel-matrix} is the confirmatory prediction experiment,
 Table~\ref{tab:crossed} the confirmatory protection experiment, and
 Appendix Table~\ref{tab:bwfree} the fidelity-and-cost account of the

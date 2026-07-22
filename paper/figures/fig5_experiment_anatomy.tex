@@ -1,0 +1,100 @@
+% Figure: anatomy of the experiment (conceptual opener for Sec. 5).
+% One frozen world -> sealed pre-scores -> counterfactual unlearning worlds,
+% each realizing its OWN victim distribution (the per-world ground truth;
+% the requester's ideal is an empty victim list) -> evaluation.
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[
+  x=1cm,y=1cm,
+  font=\scriptsize,
+  >=Latex,
+  box/.style={draw=gray!55,rounded corners=1.2mm,fill=white,align=center,inner sep=2.0mm},
+  world/.style={draw=gray!55,rounded corners=1.2mm,align=center,inner sep=1.6mm},
+  hdr/.style={font=\footnotesize\bfseries,align=center},
+  note/.style={align=center,text=gray!55!black,font=\tiny},
+  arr/.style={->,thick,gray!55!black}
+]
+
+% ---------- column headers ----------
+\node[hdr] at (1.9,6.1)  {\textcircled{\raisebox{-0.9pt}{1}} Before: score once, seal};
+\node[hdr] at (7.4,6.1)  {\textcircled{\raisebox{-0.9pt}{2}} Run one unlearner per world};
+\node[hdr] at (12.1,6.1) {\textcircled{\raisebox{-0.9pt}{3}} Ground truth = that world's victims};
+\node[hdr] at (16.4,6.1) {\textcircled{\raisebox{-0.9pt}{4}} Evaluate};
+
+% ---------- (1) frozen world + sealed scores ----------
+\node[box,text width=3.1cm] (start) at (1.9,4.35)
+  {\textbf{One frozen start}\\
+   SFT'd model $\theta_0$\\
+   forget set $\mathcal D_f$\\
+   retain candidates $x_1{:}x_n$};
+
+\node[box,text width=3.1cm,draw=black,thick] (scores) at (1.9,1.7)
+  {\textbf{Sealed pre-scores}\\[0.4mm]
+   {\color{orange!75!black}gradient energy rank}\\
+   {\color{teal!60!black}proximity rank}\\
+   {\color{gray}baselines}\\[0.4mm]
+   {\tiny computed once, before any\\unlearner is chosen; never revised}};
+
+\draw[arr] (start) -- (scores);
+
+% ---------- (2) counterfactual worlds ----------
+\node[world,fill=orange!6,text width=3.2cm] (w1) at (7.4,4.7)
+  {\textbf{NPO world} {\tiny(output)}\\
+   $\theta_0 \to \theta_T^{\mathrm{NPO}}$};
+\node[world,fill=orange!6,text width=3.2cm] (w2) at (7.4,3.1)
+  {\textbf{GradDiff world} {\tiny(output)}\\
+   $\theta_0 \to \theta_T^{\mathrm{GD}}$};
+\node[world,fill=teal!7,text width=3.2cm] (w3) at (7.4,1.5)
+  {\textbf{RMU world} {\tiny(repr.)}\\
+   $\theta_0 \to \theta_T^{\mathrm{RMU}}$};
+\node[note] at (7.4,0.45) {$\cdots$ nine objectives = nine worlds,\\all branching from the same $\theta_0$};
+
+\draw[arr] (start.east) -- (w1.west);
+\draw[arr] (start.east) -- (w2.west);
+\draw[arr] (start.east) -- (w3.west);
+
+% ---------- (3) per-world victim lists ----------
+% small bar strips: same 8 candidate slots per world, different slots filled
+\newcommand{\strip}[9]{% x y  f1..f6 color  -> draws 6 slots
+  \foreach [count=\i] \f in {#3,#4,#5,#6,#7,#8}{
+    \ifnum\f=1
+      \fill[#9] ({#1+(\i-1)*0.34},{#2}) rectangle ({#1+(\i-1)*0.34+0.28},{#2+0.30});
+    \else
+      \draw[gray!45] ({#1+(\i-1)*0.34},{#2}) rectangle ({#1+(\i-1)*0.34+0.28},{#2+0.30});
+    \fi}}
+\node[world,text width=3.3cm] (d1) at (12.1,4.7)
+  {damage $d^{\mathrm{NPO}}(x)$\\[0.2mm]};
+\strip{11.05}{4.30}{1}{1}{0}{0}{1}{0}{orange!75!black}
+\node[world,text width=3.3cm] (d2) at (12.1,3.1)
+  {damage $d^{\mathrm{GD}}(x)$\\[0.2mm]};
+\strip{11.05}{2.70}{1}{0}{1}{0}{1}{0}{orange!75!black}
+\node[world,text width=3.3cm] (d3) at (12.1,1.5)
+  {damage $d^{\mathrm{RMU}}(x)$\\[0.2mm]};
+\strip{11.05}{1.10}{0}{0}{1}{1}{0}{1}{teal!60!black}
+
+\draw[arr] (w1) -- (d1);
+\draw[arr] (w2) -- (d2);
+\draw[arr] (w3) -- (d3);
+
+\node[note,text width=4.6cm] at (12.1,0.35)
+  {the requester's ideal answer is an \emph{empty} victim list;\\
+   each imperfect tool realizes its \emph{own} side-effect pattern\\
+   -- there is no tool-independent list to predict};
+
+% ---------- (4) evaluation ----------
+\node[box,text width=2.9cm] (t1) at (16.4,3.9)
+  {\textbf{Prediction (Tab.~\ref{tab:channel-matrix})}\\
+   $\rho(\text{sealed score},$\\$\ d^{\mathcal U})$ per world\\[0.3mm]
+   {\tiny interaction $\Delta$: does the\\winning family flip with\\the channel?}};
+\node[box,text width=2.9cm] (t2) at (16.4,1.35)
+  {\textbf{Protection (Tab.~\ref{tab:crossed})}\\
+   repair Top-$K_p$ of one\\score inside one world;\\re-measure sealed audit\\[0.3mm]
+   {\tiny at matched forgetting}};
+
+\draw[arr] (d1.east) -- (t1.west);
+\draw[arr] (d2.east) -- (t1.west);
+\draw[arr] (d3.east) -- (t2.west);
+\draw[arr,dashed] (scores.south) .. controls (5.2,-0.35) and (13.5,-0.5) .. (t2.south west);
+\node[note] at (9.0,-0.55) {the same sealed rankings enter every comparison and every protect pool};
+
+\end{tikzpicture}%
+}
