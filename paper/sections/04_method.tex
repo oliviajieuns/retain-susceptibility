@@ -135,25 +135,28 @@ The \emph{channel-mixture score} is
 \begin{equation}
     s_\alpha(x)
     =
-    \alpha\,\tilde r_g(x)
+    (1-\alpha)\,\tilde r_g(x)
     +
-    (1-\alpha)\,\tilde r_h(x),
-    \qquad \alpha\in[0,1].
+    \alpha\,\tilde r_h(x),
+    \qquad \alpha\in[0,1],
     \label{eq:mixture}
 \end{equation}
-The endpoints recover the discrete router exactly -- $\alpha{=}1$ is the
-randomized-sensitivity probe, $\alpha{=}0$ the proximity probe -- so
+so that $\alpha$ is the weight on the representation route. The
+endpoints recover the discrete router exactly -- $\alpha{=}0$ is the
+randomized-sensitivity probe, $\alpha{=}1$ the proximity probe -- so
 every result of the preceding sections is the $\alpha\in\{0,1\}$ special
 case, and the declared channel now supplies a \emph{prior} over $\alpha$
-rather than a hard switch: output-channel parents map to high $\alpha$,
-representation-channel parents to low $\alpha$, and hybrid objectives
+rather than a hard switch: output-channel parents map to $\alpha{=}0$,
+representation-channel parents to $\alpha{=}1$, and hybrid objectives
 (e.g.\ RepNoise's auxiliary output term) to interior values.
 
 Two disciplines keep the mixture honest. First, $\alpha$ is never chosen
 on sealed data: it is either (i) the preregistered channel-to-$\alpha$
-mapping, fixed before any outcome is read (primary), or (ii) fit on
-discovery folds only (adaptive variant), with the sealed audit untouched
-in both cases. Second, prediction and protection are allowed different
+mapping, fixed before any outcome is read (primary -- the deployed
+router is unchanged, and the mixture is preregistered as exploratory
+instrumentation that does not reweight the primary endpoints), or
+(ii) fit on discovery folds only (adaptive variant), with the sealed
+audit untouched in both cases. Second, prediction and protection are allowed different
 optima: the crossed experiment of Section~\ref{sec:exp-protection}
 motivates measuring the prediction-optimal $\alpha^{*}_{\mathrm{pred}}$
 (which maximizes damage correlation) separately from the

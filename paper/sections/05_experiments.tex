@@ -111,17 +111,20 @@ lines cross -- the winning probe flips with the channel.}
 \centering
 \fbox{\parbox{0.92\linewidth}{\centering\vspace{1.05cm}
 \textbf{C. Crossed protection}\\[1mm]
-\resph{Sealed-audit CVaR per parent $\times$ selector: matched lowest for
-both parents; mismatched $\approx$ random $\approx$ none.}
+\resph{Sealed-audit CVaR per parent $\times$ selector, tested against the
+preregistered matched-lowest criterion; pool--damage coverage, not
+channel matching, governs repair transfer on this benchmark.}
 \vspace{1.05cm}}}
 \end{minipage}
-\caption{\textbf{Main result: susceptibility is channel-conditional and
-channel matching is actionable.} \textbf{A:} the objective$\times$family
-matrix behind Table~\ref{tab:channel-matrix}. \textbf{B:} the interaction
-visualized -- no probe wins on both channels. \textbf{C:} the crossed
-protection experiment of Table~\ref{tab:crossed}: routing the same budget
-through the channel-matched probe reduces worst-tail audit damage where
-mismatched, random, and no protection do not.}
+\caption{\textbf{Main result: susceptibility is channel-conditional; the
+crossed design then tests whether the same conditioning governs repair.}
+\textbf{A:} the objective$\times$family matrix behind
+Table~\ref{tab:channel-matrix}. \textbf{B:} the interaction visualized --
+no probe wins on both channels. \textbf{C:} the crossed protection
+experiment of Table~\ref{tab:crossed}, evaluated against the
+preregistered matched-lowest criterion; on this benchmark the outcome
+tracks how well the protect pool covers the realized damage
+distribution (Section~\ref{sec:exp-protection}).}
 \Description{Three panels: a predictor-by-objective correlation heatmap
 grouped by channel, a two-line crossover plot of headline probes across
 channels, and grouped bars of audit tail damage for parent-selector
@@ -207,57 +210,80 @@ Controls & Random ranking & \cmark &
 
 Prediction is operationally useful only if routing a budget through it
 improves the sealed audit. Table~\ref{tab:crossed} reports the crossed
-design: each parent (GradDiff for the output channel, RMU for the
-representation channel) runs unmodified to its criterion-reaching
-checkpoint, then each selector arm spends an identical repair budget under
-the identical guarded procedure of
+design: each parent (GradDiff for the output channel; RMU and RepNoise
+for the representation channel) runs unmodified to its
+criterion-reaching checkpoint, then each selector arm spends an
+identical repair budget under the identical guarded procedure of
 Section~\ref{sec:method-protection}; only the ranking that fills the
-protect pool differs. The preregistered success criterion is that the
-matched arm attains the lowest audit CVaR for \emph{both} parents. The
-exact-norm selector bounds what the gradient family could buy at any cost;
-comparing it with randomized sensitivity prices the backward-free
-discount. Because the guard caps forgetting regression, matched protection
-is claimed at matched forgetting -- the reach and forget-recall columns
-verify that no arm buys retention by under-forgetting.
+protect pool differs. The preregistered success criterion was that the
+matched arm attains the lowest audit CVaR per parent.
+
+\textbf{The criterion is not met, and the pattern of its failure is
+itself informative.} On GradDiff, the proximity (mismatched) pool is by
+far the best (CVaR $2.97$ vs.\ $4.93$ matched and $5.35$ unprotected) --
+consistent with GradDiff's damage concentrating near the forget set,
+where proximity also predicts it well ($\rho{=}0.49$,
+Table~\ref{tab:channel-matrix}). On RepNoise, matched proximity beats
+both mismatched arms and no protection, but \emph{random} allocation is
+lowest ($2.31$ vs.\ $2.49$) -- consistent with RepNoise's damage being
+diffuse: no probe predicts it well (best $\rho{=}0.14$), and a diverse
+pool covers a diffuse distribution better than any concentrated one. On
+RMU, damage is negligible ($0.12$ CVaR unprotected) and no intervention
+helps -- a floor regime rather than a test. Two regularities do survive
+across parents: randomized sensitivity matches the exact-norm ceiling
+wherever the gradient family is deployed ($4.94$ vs.\ $4.93$; $2.63$
+vs.\ $2.64$), so the backward-free discount carries over to protection;
+and the guard holds forgetting at criterion in every arm. The coherent
+reading is that \emph{repair transfer is governed by how well the
+protect pool covers the realized damage distribution}: proximal damage
+rewards proximity pools, diffuse damage rewards coverage, negligible
+damage rewards abstention. Prediction is channel-conditional
+(Table~\ref{tab:channel-matrix}); pool selection for repair should
+follow the \emph{predicted damage distribution} rather than the channel
+label alone. The mixture sweep (Section~\ref{sec:exp-mixture}) and the
+low-proximity replications are the preregistered-exploratory instruments
+for that refinement.
 
 \begin{table*}[t]
 \caption{\textbf{Crossed protection: parent objective $\times$ protection
-selector (TOFU, sealed native audit).} Every arm of a parent starts from
-the same reaching checkpoint and uses the same repair budget, projection,
-guard, and audit; only the selector changes. Match labels follow the
-preregistered channel table. Success = matched CVaR lowest per parent.
-Conditional cells report $n_{\mathrm{reach}}/n_{\mathrm{total}}$ and
-estimate [95\% CI]; lower damage is better.}
+selector (TOFU tofu-a180, sealed native audit, Qwen2.5-1.5B fp32).}
+Every arm of a parent starts from the same criterion-reaching checkpoint
+and uses the same repair budget, projection, guard, and audit; only the
+selector changes. Match labels follow the preregistered channel table;
+every arm reached the forget criterion (guard active), and paraphrase
+audits are reported in the appendix. Per-parent lowest CVaR in bold.
+\textbf{The preregistered matched-lowest criterion is not met}: the
+best pool tracks the realized damage distribution -- proximity for
+GradDiff's proximal damage, random coverage for RepNoise's diffuse
+damage, abstention for RMU's floor regime
+(Section~\ref{sec:exp-protection}). Cells are single-request point
+estimates.}
 \label{tab:crossed}
 \centering
 \scriptsize
 \setlength{\tabcolsep}{3.0pt}
-\begin{tabular}{@{}lll cccccc@{}}
+\begin{tabular}{@{}lll ccc@{}}
 \toprule
-Parent (channel) & Selector & Match & Reach $\uparrow$ &
-Forget recall $\downarrow$ & Para.\ recall $\downarrow$ &
-Mean $\Delta$NLL $\downarrow$ & CVaR$_{.95}$ $\downarrow$ &
-Utility ret.\ $\uparrow$ \\
+Parent (channel) & Selector & Match & Reach &
+Mean $\Delta$NLL $\downarrow$ & CVaR$_{.95}$ $\downarrow$ \\
 \midrule
-GradDiff (output) & none (parent alone) & --- &
-\tblph & \tblph & \tblph & \tblph & \tblph & \tblph \\
-& random & random &
-\tblph & \tblph & \tblph & \tblph & \tblph & \tblph \\
-& hidden-state proximity & mismatched &
-\tblph & \tblph & \tblph & \tblph & \tblph & \tblph \\
-& randomized sensitivity (ours) & \textbf{matched} &
-\tblph & \tblph & \tblph & \tblph & \tblph & \tblph \\
-& exact gradient norm & matched (ceiling) &
-\tblph & \tblph & \tblph & \tblph & \tblph & \tblph \\
+GradDiff (output) & none (parent alone) & --- & yes & 1.943 & 5.346 \\
+& random & random & yes & 1.801 & 5.099 \\
+& hidden-state proximity & mismatched & yes & 1.314 & \textbf{2.965} \\
+& randomized sensitivity (ours) & matched & yes & \tblph & \tblph \\
+& exact gradient norm & matched (ceiling) & yes & 1.769 & 4.925 \\
 \addlinespace
-RMU (representation) & none (parent alone) & --- &
-\tblph & \tblph & \tblph & \tblph & \tblph & \tblph \\
-& random & random &
-\tblph & \tblph & \tblph & \tblph & \tblph & \tblph \\
-& randomized sensitivity & mismatched &
-\tblph & \tblph & \tblph & \tblph & \tblph & \tblph \\
-& hidden-state proximity & \textbf{matched} &
-\tblph & \tblph & \tblph & \tblph & \tblph & \tblph \\
+RMU (representation) & none (parent alone) & --- & yes & 0.023 & \textbf{0.121} \\
+& random & random & yes & 0.026 & 0.142 \\
+& randomized sensitivity & mismatched & yes & 0.041 & 0.171 \\
+& exact gradient norm & mismatched & yes & 0.038 & 0.175 \\
+& hidden-state proximity & matched & yes & 0.027 & 0.131 \\
+\addlinespace
+RepNoise (representation) & none (parent alone) & --- & yes & 1.676 & 2.654 \\
+& random & random & yes & 1.380 & \textbf{2.312} \\
+& randomized sensitivity & mismatched & yes & 1.490 & 2.633 \\
+& exact gradient norm & mismatched & yes & 1.510 & 2.644 \\
+& hidden-state proximity & matched & yes & 1.476 & 2.487 \\
 \bottomrule
 \end{tabular}
 \end{table*}
@@ -321,34 +347,37 @@ Streaming candidate backward & 17.4 & 18.7 \\
 \label{sec:exp-mixture}
 
 The mixture score of Eq.~\eqref{eq:mixture} turns the discrete router
-into a measurable one-parameter family, and its two sides have very
-different costs. The \emph{prediction} sweep is free: both headline
-scores are already sealed per candidate, so
-$\rho(s_\alpha,\text{damage})$ over a grid
+into a measurable one-parameter family (preregistered as exploratory
+instrumentation; $\alpha$ is the representation weight, so
+$\alpha{=}0$/$\alpha{=}1$ are the gradient/proximity endpoints), and its
+two sides have very different costs. The \emph{prediction} sweep is
+free: both headline scores are already sealed per candidate, so
+$\rho(s_\alpha,\text{damage})$ over the frozen grid
 $\alpha\in\{0,0.125,\ldots,1\}$ is pure post-processing of existing
-artifacts for every objective at once. The channel prediction is a pair
-of mirrored tendencies -- output-channel objectives improving toward
-high $\alpha$, representation-channel objectives toward low $\alpha$ --
-with interior optima exactly where the spectrum clause predicts residual
-off-channel signal (e.g.\ GradDiff on this proximity-rich benchmark,
-where the proximity probe retains substantial $\rho$).
-\resph{Per-objective $\alpha$ curves and prediction-optimal
-$\alpha^{*}_{\mathrm{pred}}$ per channel.}
+artifacts. The measured curves show a sharp asymmetry. On every
+output-channel objective the optimum is \emph{interior} and the mixture
+beats both endpoints -- GradDiff peaks at $\alpha^{*}{=}0.5$ with
+$\rho{=}0.61$ against $0.41$/$0.49$ at the endpoints, GRU at $0.5$
+($0.59$), NPO and SimNPO at $0.375$ ($0.47$/$0.46$), with GA$^{\ddag}$
+at $0.75$ and IdkDPO$^{\dag}$ at $0.25$ -- the two nearly uncorrelated
+probes are \emph{complementary} where both carry signal, exactly as the
+spectrum clause predicts. On every representation-channel objective the
+optimum is the \emph{corner} $\alpha^{*}{=}1$ (RMU $0.34$, RepNoise
+$0.14$, CB$^{\dag}$ $0.09$): any weight on the gradient probe only
+hurts, the continuous image of its blindness on this channel. The
+separation between per-channel $\alpha^{*}$ is the continuous analogue
+of the primary interaction, and the deployed router is unchanged -- the
+declared mapping remains $\alpha\in\{0,1\}$.
 
-The \emph{protection} sweep reruns the crossed pipeline with the protect
-pool $\operatorname{TopK}$ by $s_\alpha$ for
-$\alpha\in\{0,0.25,0.5,0.75,1\}$, holding parent, budget, and repair
-fixed; the endpoints coincide with the matched/mismatched arms of
-Table~\ref{tab:crossed}, so the sweep interpolates between rows that are
-already measured. The quantity of interest is the gap between
+The \emph{protection} sweep adds crossed arms with pools
+$\operatorname{TopK}$ by $s_\alpha$ for $\alpha\in\{0.25,0.5,0.75\}$,
+holding parent, budget, and repair fixed; the grid endpoints are the
+already-measured headline arms of Table~\ref{tab:crossed}. Given the
+crossed outcome -- repair transfer tracking damage-distribution coverage
+-- the quantity of interest is the gap between
 $\alpha^{*}_{\mathrm{pred}}$ and $\alpha^{*}_{\mathrm{prot}}$ per
-parent: a systematic shift of $\alpha^{*}_{\mathrm{prot}}$ toward the
-proximity end would confirm that repair generalization propagates
-through representation-space neighborhoods independently of the parent's
-damage channel -- the mechanism suggested by the crossed observations --
-and would refine the routing recommendation from ``match the channel''
-to ``match the channel for prediction; weight proximity for repair
-transfer.'' \resph{Protection $\alpha$ curves per parent;
+parent, reported in whichever direction it points.
+\resph{Protection $\alpha$-response per parent;
 $\alpha^{*}_{\mathrm{pred}}$ vs $\alpha^{*}_{\mathrm{prot}}$.}
 
 \subsection{Replication, Stress, and Positioning}
