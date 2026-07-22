@@ -57,6 +57,31 @@ def test_pools_respect_discovery_folds():
         assert folds[group_of[cid]] == "discovery", cid
 
 
+def test_audit_scores_cannot_change_discovery_partition():
+    """Regression: the near-zero threshold used to include audit scores."""
+    req = _request()
+    folds = _folds(req)
+    group_of = {e.example_id: e.group for e in req.universe.examples}
+    discovery = sorted(
+        cid for cid in group_of if folds[group_of[cid]] == "discovery"
+    )
+    audit = sorted(set(group_of) - set(discovery))
+    base = {cid: (index + 1) / len(discovery) for index, cid in enumerate(discovery)}
+    scores_small = {**base, **{cid: 1e-12 for cid in audit}}
+    scores_large = {**base, **{cid: 1e12 for cid in audit}}
+    spec = ProbeSpec(block=BlockSpec("unused"), eta=1e-4)
+    part_small = build_partition(
+        ScoreProfile(req.request_id, "fd", scores_small, spec, CostRecord()),
+        req, folds, PARAMS,
+    )
+    part_large = build_partition(
+        ScoreProfile(req.request_id, "fd", scores_large, spec, CostRecord()),
+        req, folds, PARAMS,
+    )
+    assert part_small.protect == part_large.protect
+    assert part_small.remote_stream == part_large.remote_stream
+
+
 def test_protect_is_top_positive_eligible():
     req = _request()
     folds = _folds(req)

@@ -10,6 +10,10 @@ set -Eeuo pipefail
 #   bash experiments/channel_matrix/h100_campaign.sh select-freeze
 #   GPU=0 MODEL_ID=qwen25_7b bash experiments/channel_matrix/h100_campaign.sh audit
 #   bash experiments/channel_matrix/h100_campaign.sh aggregate
+#   GPU=0 MODEL_ID=qwen25_7b bash experiments/channel_matrix/h100_campaign.sh alpha-development
+#   bash experiments/channel_matrix/h100_campaign.sh select-alpha-freeze
+#   GPU=0 MODEL_ID=qwen25_7b bash experiments/channel_matrix/h100_campaign.sh alpha-audit
+#   bash experiments/channel_matrix/h100_campaign.sh alpha-aggregate
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 VENV="${VENV:-/group-volume/jieuns.shin/venvs/exp}"
@@ -19,7 +23,7 @@ GPU="${GPU:-0}"
 ACTION="${1:-}"
 
 if [[ -z "${ACTION}" ]]; then
-  echo "usage: GPU=<index> MODEL_ID=<alias|all> $0 {preflight|prefetch|dry-calibration|fidelity|calibration|select-freeze|audit|aggregate}" >&2
+  echo "usage: GPU=<index> MODEL_ID=<alias|all> $0 {preflight|prefetch|dry-calibration|fidelity|calibration|select-freeze|audit|aggregate|dry-alpha-development|alpha-development|select-alpha-freeze|dry-alpha-audit|alpha-audit|alpha-aggregate}" >&2
   exit 2
 fi
 
@@ -101,6 +105,15 @@ run_phase() {
     "${model_args[@]}"
 }
 
+run_alpha_phase() {
+  local phase="$1"
+  CUDA_VISIBLE_DEVICES="${GPU}" python -u experiments/channel_matrix/alpha_protection.py \
+    --config "${CONFIG}" \
+    --phase "${phase}" \
+    --resume \
+    "${model_args[@]}"
+}
+
 case "${ACTION}" in
   preflight)
     preflight
@@ -149,6 +162,47 @@ case "${ACTION}" in
       --summary runs/channel_matrix_7b/aggregate/pooled_channel_report.json \
       --out docs/tables/table1_channel_matrix_7b.tex \
       --stress-out docs/tables/table1_stress_7b.tex
+    ;;
+  dry-alpha-development)
+    CUDA_VISIBLE_DEVICES="${GPU}" python experiments/channel_matrix/alpha_protection.py \
+      --config "${CONFIG}" \
+      --phase development \
+      --dry-run \
+      "${model_args[@]}"
+    ;;
+  alpha-development)
+    preflight
+    run_alpha_phase development
+    ;;
+  select-alpha-freeze)
+    python experiments/channel_matrix/select_alpha_freeze.py \
+      --config "${CONFIG}" \
+      --root runs/channel_matrix_7b/alpha_protection/development \
+      --out runs/channel_matrix_7b/alpha_protection_freeze.recommended.yaml
+    echo "STOP: review and commit configs/channel_matrix/alpha_protection_freeze.yaml before alpha audit."
+    ;;
+  dry-alpha-audit)
+    CUDA_VISIBLE_DEVICES="${GPU}" python experiments/channel_matrix/alpha_protection.py \
+      --config "${CONFIG}" \
+      --phase audit \
+      --dry-run \
+      "${model_args[@]}"
+    ;;
+  alpha-audit)
+    if [[ -n "$(git status --porcelain --untracked-files=all)" ]]; then
+      echo "refusing alpha audit: git worktree is dirty" >&2
+      git status --short >&2
+      exit 1
+    fi
+    preflight
+    run_alpha_phase audit
+    ;;
+  alpha-aggregate)
+    python experiments/channel_matrix/aggregate_alpha_protection.py \
+      --config "${CONFIG}" \
+      --root runs/channel_matrix_7b/alpha_protection/audit \
+      --out runs/channel_matrix_7b/alpha_protection/aggregate \
+      --n-boot 2000
     ;;
   *)
     echo "unknown action: ${ACTION}" >&2

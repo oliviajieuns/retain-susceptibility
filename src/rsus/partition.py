@@ -124,8 +124,11 @@ def build_partition(
 
     # R0: template-matched seeded sample from the near-zero band, count-matched
     # to the protect pool.
-    all_s = torch.tensor([scores[c] for c in sorted(scores)], dtype=torch.float64)
-    tau_rem = torch.quantile(all_s.abs(), params.tau_rem_abs_quantile).item()
+    # The remote-band threshold is itself part of allocation.  Compute it on
+    # discovery scores only: using audit-side score quantiles (even without
+    # audit outcomes) would contradict the discovery-only protection contract.
+    eligible_s = torch.tensor([scores[c] for c in sorted(eligible)], dtype=torch.float64)
+    tau_rem = torch.quantile(eligible_s.abs(), params.tau_rem_abs_quantile).item()
     band = sorted(
         c for c in eligible if abs(scores[c]) <= tau_rem and c not in set(protect)
     )

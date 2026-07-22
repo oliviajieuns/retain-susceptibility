@@ -151,3 +151,82 @@ dataset-by-dataset interaction panel for WMDP-bio (representation-native),
 MUSE-News (real-corpus/output-native), and RWKU.  This directly tests whether
 the interaction survives base-rate changes without turning the table into a
 dataset leaderboard.
+
+## Adaptive channel-mixture protection (prospective 7B extension)
+
+The protection extension uses
+
+```text
+s_alpha(x) = (1-alpha) rank01_discovery(fd_norm(x))
+             + alpha rank01_discovery(knn_feature(x)).
+```
+
+Thus `alpha=0` is the output/gradient endpoint and `alpha=1` is the hidden-
+representation endpoint. Both rank transforms, the Top-30 protect pool, and
+the matched remote pool are computed only inside the discovery fold. Audit
+scores and audit damage cannot affect allocation.
+
+This extension starts only after `objective_freeze.yaml` is frozen. It runs
+the five-point alpha grid for GradDiff, NPO, RMU, and RepNoise on development
+authors 198/199. For each model and parent, the selector minimizes worst-run
+development CVaR subject to every run reaching forget recall at most 0.10 and
+ordinary utility retention at least 0.90. Ties prefer mean CVaR, then the
+declared channel prior. No feasible alpha means unresolved; there is no audit
+fallback.
+
+The utility probe is fixed to the first four QA of authors 150--179 (`n=120`),
+which is disjoint from every deletion request and damage-candidate pool. A
+parent trajectory is executed once per cell and its reached trainable block is
+reused for all repair selectors, so every selector starts from bit-identical
+parent weights without rerunning parent optimization.
+
+After objective calibration and its committed freeze:
+
+```bash
+GPU=0 MODEL_ID=qwen25_7b \
+  bash experiments/channel_matrix/h100_campaign.sh dry-alpha-development
+
+GPU=0 MODEL_ID=qwen25_7b nohup \
+  bash experiments/channel_matrix/h100_campaign.sh alpha-development \
+  > "runs/logs/channel7b_alpha_dev_$(hostname).out" 2>&1 &
+```
+
+Create a development-only recommendation:
+
+```bash
+bash experiments/channel_matrix/h100_campaign.sh select-alpha-freeze
+```
+
+Review `runs/channel_matrix_7b/alpha_protection_freeze.recommended.yaml`.
+Copy the selected values and diagnostics into
+`configs/channel_matrix/alpha_protection_freeze.yaml`, assign a dated ID and
+UTC timestamp, set `status: frozen` and
+`frozen_before_alpha_audit: true`, clear `unresolved`, commit and push, then
+pull that exact clean commit on the H100 host. The selector rejects audit
+artifacts even if they are accidentally placed below its input root.
+
+Only after that commit:
+
+```bash
+GPU=0 MODEL_ID=qwen25_7b \
+  bash experiments/channel_matrix/h100_campaign.sh dry-alpha-audit
+
+GPU=0 MODEL_ID=qwen25_7b nohup \
+  bash experiments/channel_matrix/h100_campaign.sh alpha-audit \
+  > "runs/logs/channel7b_alpha_audit_$(hostname).out" 2>&1 &
+
+bash experiments/channel_matrix/h100_campaign.sh alpha-aggregate
+```
+
+The audit runs the already frozen alpha as the deployable method. The other
+grid points are retained as a descriptive response curve, never an audit
+oracle. Comparators are no protection, random allocation, both mixture
+endpoints, the declared channel prior, and the candidate-backward exact-
+gradient ceiling. Aggregate contrasts use only paired cells where both arms
+meet forgetting and utility, while retaining explicit reach/eligibility
+counts.
+
+Implementation note: this extension also fixes the remote-band quantile to use
+discovery scores only. Earlier `xprot` artifacts were produced before this
+fix and must not be silently pooled with the new campaign; if they remain in a
+paper table, label their implementation version or rerun them.

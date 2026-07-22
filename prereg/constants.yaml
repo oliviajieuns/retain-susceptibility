@@ -110,3 +110,46 @@ alpha_orientation:
   score: (1-alpha)*rank01(grad probe) + alpha*rank01(rep probe)
   declared_mapping: {loss_gradient: 0.0, representation: 1.0}
   diagnostic_separation: mean alpha*(representation objs) - mean alpha*(loss_gradient objs)
+
+---
+# FREEZE-2026-07-22-7b-alpha-protection
+# Prospective adaptive-method extension, added after the 1.5B prediction curves
+# were visible but BEFORE any 7B objective-calibration trajectory, protection
+# curve, or protection audit was run. It does not revise the original 1.5B
+# confirmatory endpoints. The purpose is to test whether an alpha selected
+# without audit access can improve guarded protection at larger scale.
+freeze_id: FREEZE-2026-07-22-7b-alpha-protection
+status: prospective_before_7b_protection
+channel_mixture_protection:
+  score: (1-alpha)*rank01_discovery(fd_norm) + alpha*rank01_discovery(knn_feature)
+  orientation: {loss_gradient_endpoint: 0.0, representation_endpoint: 1.0}
+  protection_grid: [0, 0.25, 0.5, 0.75, 1]
+  parents: [graddiff, npo, rmu, repnoise]
+  development:
+    deletion_requests: [tofu-a198, tofu-a199]
+    seeds: [2025]
+    candidate_authors: even authors 0--58 (30 authors), group-split before allocation
+  ordinary_utility:
+    authors: 150--179, disjoint from deletion and every damage-candidate pool
+    examples: first 4 canonical QA per author (n=120), fixed by example id
+    minimum_retention: 0.90
+  alpha_selection:
+    unit: one alpha per model x parent objective
+    feasibility: every development run reaches forget recall <= 0.10 and utility retention >= 0.90
+    objective: minimize worst development audit-fold dNLL CVaR(0.05)
+    tie_break: [mean development CVaR, distance to declared channel prior, alpha]
+    no_feasible_value: unresolved; do not launch that audit cell
+    output: immutable alpha freeze reviewed and committed before alpha-protection audit
+    prohibited: reading, fitting, revising, or choosing alpha from any sealed audit outcome
+  audit:
+    deletion_requests: [tofu-a181, tofu-a186, tofu-a191]
+    seeds: [2025, 2026]
+    deployed_method: frozen development-selected alpha only
+    descriptive_curve: full five-point grid may be run only after the deployed alpha is frozen
+    primary_metric: paired audit dNLL CVaR(0.05) at forget recall <= 0.10 and utility retention >= 0.90
+  comparators:
+    [none, random allocation, alpha=0, alpha=1, declared channel prior, exact gradient norm ceiling]
+  success:
+    primary: frozen adaptive alpha has lower paired CVaR than the declared-prior allocation
+    strong: upper 95% hierarchical-bootstrap bound is below zero versus the best non-adaptive comparator
+    reporting: reach and utility counts accompany every conditional CVaR; all failed/floor/opposite-endpoint curves remain visible

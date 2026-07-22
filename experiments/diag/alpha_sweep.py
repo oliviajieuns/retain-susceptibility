@@ -21,15 +21,9 @@ sys.path.insert(0, str(ROOT / "src"))
 sys.path.insert(0, str(ROOT / "experiments" / "diag"))
 
 from rsus.analysis.channels import DECLARED_CHANNEL, HEADLINE_PROBE  # noqa: E402
+from rsus.analysis.mixture import channel_mixture_scores  # noqa: E402
 from rsus.analysis.prediction import spearman  # noqa: E402
 from probe_agreement import load_damage, load_seals  # noqa: E402
-
-
-def rank01(scores: dict[str, float]) -> dict[str, float]:
-    """Rank-normalize to [0,1] (ties broken by candidate id for determinism)."""
-    order = sorted(scores, key=lambda c: (scores[c], c))
-    n = len(order)
-    return {c: (i / (n - 1) if n > 1 else 0.5) for i, c in enumerate(order)}
 
 
 def main() -> None:
@@ -48,8 +42,6 @@ def main() -> None:
         if probe not in scores:
             raise SystemExit(f"probe {probe!r} not in seals ({sorted(scores)})")
     common = sorted(set(scores[a.grad_probe]) & set(scores[a.rep_probe]))
-    rg = rank01({c: scores[a.grad_probe][c] for c in common})
-    rp = rank01({c: scores[a.rep_probe][c] for c in common})
     dmg = load_damage(run_dir, set(common))
     rank = {"loss_gradient": 0, "representation": 1}
     objs = sorted(dmg, key=lambda o: (rank.get(DECLARED_CHANNEL.get(o, "?"), 2), o))
@@ -61,7 +53,10 @@ def main() -> None:
     rows = []
     curves: dict[str, list[float]] = {o: [] for o in objs}
     for al in alphas:
-        s = [(1 - al) * rg[c] + al * rp[c] for c in common]
+        mixed = channel_mixture_scores(
+            scores[a.grad_probe], scores[a.rep_probe], al, candidate_ids=common
+        )
+        s = [mixed[c] for c in common]
         line = f"{al:<8.3f}"
         for o in objs:
             r = spearman(s, [dmg[o][c] for c in common])

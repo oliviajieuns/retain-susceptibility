@@ -114,3 +114,56 @@ audit:
   fidelity_certificates:
     qwen25_7b: runs/channel_matrix_7b/fidelity/qwen25_7b.json
     llama31_8b: runs/channel_matrix_7b/fidelity/llama31_8b.json
+
+# Prospective adaptive protection extension.  This is a separate endpoint
+# from the original 1.5B crossed experiment: objective settings are frozen
+# first, alpha is selected only from the development requests below, and the
+# selected alpha is committed before any alpha-protection audit is run.
+alpha_protection:
+  campaign_id: kdd27-channel-mixture-protection-7b-v1
+  objective_freeze: objective_freeze.yaml
+  alpha_freeze: alpha_protection_freeze.yaml
+  parents: [graddiff, npo, rmu, repnoise]
+  probes: {gradient: fd_norm, proximity: knn_feature}
+  normalization: rank01_discovery_only
+  orientation: (1-alpha)*gradient + alpha*proximity
+  alpha_grid: [0, 0.25, 0.5, 0.75, 1]
+  declared_prior: {loss_gradient: 0.0, representation: 1.0, hybrid: 0.5}
+  development:
+    authors: [198, 199]
+    seeds: [2025]
+  audit:
+    authors: [181, 186, 191]
+    seeds: [2025, 2026]
+    # The complete frozen curve is descriptive after alpha_hat has already
+    # been committed. Only the frozen alpha_hat is the deployable method.
+    run_descriptive_grid: true
+  # Ordinary retained utility is independent of every damage-candidate pool.
+  # Four fixed QA per author gives n=120 without making every repair snapshot
+  # evaluate all 600 examples.
+  utility_authors: "150-179"
+  utility_examples_per_author: 4
+  partition:
+    pool_size: 30
+    min_pool_size: 8
+    tau_rem_abs_quantile: 0.50
+  parent:
+    recall_max: 0.10
+    checkpoint_every: 10
+  selection:
+    metric: cvar05_dnll
+    aggregation: minimax_across_development_requests_and_seeds
+    require_every_development_run: true
+    utility_retention_min: 0.90
+    tie_break: [mean_cvar05_dnll, distance_to_declared_prior, alpha]
+    prohibited: audit_selection
+  stage2:
+    eta2: 3.0e-5
+    max_steps: 120
+    snapshots: 4
+    refresh_k: 4
+    delta_seq_sq: 1.0e-2
+    delta_tok_sq: 1.0e-1
+    mu_v: 0.7
+    rho_g: 10.0
+    shrink: 0.5

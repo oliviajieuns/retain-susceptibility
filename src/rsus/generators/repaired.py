@@ -52,14 +52,57 @@ def run_engine_repaired(
     extra_eval=None,
     log=None,
 ) -> TrajectoryRecord:
-    rec = TrajectoryRecord(f"{engine}_repaired", request.request_id, {})
-
     # Phase 1: the engine forgets, stopping at its first criterion-reaching
     # checkpoint so the repair starts from exactly the evaluated state.
     eng = run_trajectory(model, engine, request, retain, cfg.engine_cfg,
                          extra_eval=extra_eval, stop_at_recall=cfg.recall_max)
-    rec.nll0 = eng.nll0
-    rec.snapshots.extend(eng.snapshots)
+    return run_repair_from_reached(
+        model,
+        block,
+        request,
+        protect,
+        remote,
+        floor_m,
+        engine,
+        cfg,
+        eng,
+        extra_eval=extra_eval,
+        log=log,
+    )
+
+
+def run_repair_from_reached(
+    model: torch.nn.Module,
+    block: BlockSpec,
+    request: Request,
+    protect: list[Example],
+    remote: list[Example],
+    floor_m: float,
+    engine: str,
+    cfg: RepairedConfig,
+    engine_record: TrajectoryRecord,
+    extra_eval=None,
+    log=None,
+) -> TrajectoryRecord:
+    """Run only guarded repair from an already reached parent checkpoint.
+
+    ``model`` must contain the terminal weights of ``engine_record``.  This
+    split lets a selector sweep execute a parent once, save only its small
+    trainable block, and replay identical repair starts for many protect pools.
+    It changes no optimization step relative to :func:`run_engine_repaired`.
+    """
+    if engine_record.request_id != request.request_id:
+        raise ValueError(
+            f"engine record request {engine_record.request_id!r} does not match "
+            f"{request.request_id!r}"
+        )
+    rec = TrajectoryRecord(
+        f"{engine}_repaired",
+        request.request_id,
+        dict(engine_record.nll0),
+        list(engine_record.snapshots),
+    )
+    eng = engine_record
     reached = bool(eng.snapshots) and eng.snapshots[-1].forget_recall <= cfg.recall_max
     if log is not None and eng.snapshots:
         s = eng.snapshots[-1]
