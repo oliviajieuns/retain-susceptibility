@@ -230,10 +230,11 @@ diffuse: no probe predicts it well (best $\rho{=}0.14$), and a diverse
 pool covers a diffuse distribution better than any concentrated one. On
 RMU, damage is negligible ($0.12$ CVaR unprotected) and no intervention
 helps -- a floor regime rather than a test. Two regularities do survive
-across parents: randomized sensitivity matches the exact-norm ceiling
-wherever the gradient family is deployed ($4.94$ vs.\ $4.93$; $2.63$
-vs.\ $2.64$), so the backward-free discount carries over to protection;
-and the guard holds forgetting at criterion in every arm. The coherent
+across parents: randomized sensitivity tracks the exact-norm ceiling
+wherever the gradient family is deployed (RepNoise $2.63$ vs.\ $2.64$;
+GradDiff $5.21$ vs.\ $4.93$, both far from the winning pool), so the
+backward-free discount carries over to protection; and the guard holds
+forgetting at criterion in every arm. The coherent
 reading is that \emph{repair transfer is governed by how well the
 protect pool covers the realized damage distribution}: proximal damage
 rewards proximity pools, diffuse damage rewards coverage, negligible
@@ -270,7 +271,7 @@ Mean $\Delta$NLL $\downarrow$ & CVaR$_{.95}$ $\downarrow$ \\
 GradDiff (output) & none (parent alone) & --- & yes & 1.943 & 5.346 \\
 & random & random & yes & 1.801 & 5.099 \\
 & hidden-state proximity & mismatched & yes & 1.314 & \textbf{2.965} \\
-& randomized sensitivity (ours) & matched & yes & \tblph & \tblph \\
+& randomized sensitivity (ours) & matched & yes & 1.898 & 5.212 \\
 & exact gradient norm & matched (ceiling) & yes & 1.769 & 4.925 \\
 \addlinespace
 RMU (representation) & none (parent alone) & --- & yes & 0.023 & \textbf{0.121} \\
@@ -365,9 +366,12 @@ spectrum clause predicts. On every representation-channel objective the
 optimum is the \emph{corner} $\alpha^{*}{=}1$ (RMU $0.34$, RepNoise
 $0.14$, CB$^{\dag}$ $0.09$): any weight on the gradient probe only
 hurts, the continuous image of its blindness on this channel. The
-separation between per-channel $\alpha^{*}$ is the continuous analogue
-of the primary interaction, and the deployed router is unchanged -- the
-declared mapping remains $\alpha\in\{0,1\}$.
+structure replicates under an independent seed -- every output-channel
+optimum interior ($\alpha^{*}\in[0.25,0.75]$), every
+representation-channel optimum at the corner. The separation between
+per-channel $\alpha^{*}$ is the continuous analogue of the primary
+interaction, and the deployed router is unchanged -- the declared
+mapping remains $\alpha\in\{0,1\}$.
 
 The \emph{protection} sweep adds crossed arms with pools
 $\operatorname{TopK}$ by $s_\alpha$ for $\alpha\in\{0.25,0.5,0.75\}$,
