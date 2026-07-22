@@ -195,6 +195,25 @@ class AlphaCampaignFreezeTest(unittest.TestCase):
             )
             self.assertTrue(all("--worker" in command for _, command in audit))
 
+            selected = {cfg["alpha_protection"]["development"]["authors"][0]}
+            shard = alpha_campaign.worker_commands(
+                config_path,
+                cfg,
+                "development",
+                models,
+                selected_authors=selected,
+            )
+            self.assertEqual(
+                len(shard), len(cfg["alpha_protection"]["development"]["seeds"])
+            )
+            self.assertTrue(all(
+                f"tofu-a{next(iter(selected))}" in str(out) for out, _ in shard
+            ))
+
+    def test_alpha_author_shard_rejects_out_of_roster_request(self):
+        with self.assertRaisesRegex(ValueError, "outside"):
+            alpha_campaign._filter_authors([198, 199], {181}, "development")
+
     def test_development_results_to_draft_freeze_end_to_end(self):
         cfg = copy.deepcopy(self.base)
         with tempfile.TemporaryDirectory() as directory:

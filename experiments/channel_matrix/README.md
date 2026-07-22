@@ -93,6 +93,32 @@ GPU=0 MODEL_ID=qwen25_7b nohup \
   > "runs/logs/channel7b_calibration_$(hostname).out" 2>&1 &
 ```
 
+On a two-H100 node, shard by deletion request. `AUTHORS` is an execution-only
+filter that must be a subset of the frozen phase roster; it does not change
+candidate pools, seeds, objectives, or any seal. The two shards below have
+different output directories and different request-level SFT caches:
+
+```bash
+mkdir -p runs/logs
+GPU=0 AUTHORS=198 MODEL_ID=qwen25_7b nohup \
+  bash experiments/channel_matrix/h100_campaign.sh calibration \
+  > "runs/logs/channel7b_cal_a198_gpu0_$(hostname).out" 2>&1 &
+
+GPU=1 AUTHORS=199 MODEL_ID=qwen25_7b nohup \
+  bash experiments/channel_matrix/h100_campaign.sh calibration \
+  > "runs/logs/channel7b_cal_a199_gpu1_$(hostname).out" 2>&1 &
+```
+
+Never run an unsharded copy of the same phase concurrently with these jobs.
+The launcher rejects authors outside the phase roster. Monitor without opening
+or modifying any result artifact:
+
+```bash
+jobs -l
+tail -f runs/logs/channel7b_cal_a198_gpu0_"$(hostname)".out
+watch -n 5 nvidia-smi
+```
+
 Calibration reuses one validated fp32 SFT snapshot per
 `(model, deletion request, seed)`. Objective grids never share optimizer state;
 only the identical pre-unlearning starting weights are cached.
@@ -119,6 +145,11 @@ GPU=0 MODEL_ID=qwen25_7b nohup \
   bash experiments/channel_matrix/h100_campaign.sh audit \
   > "runs/logs/channel7b_audit_$(hostname).out" 2>&1 &
 ```
+
+The audit can use the same request sharding after both freezes are committed.
+For the three-author roster, a deterministic two-GPU allocation is
+`GPU=0 AUTHORS=181,191` and `GPU=1 AUTHORS=186`. This only schedules sealed
+cells; it never changes the roster or permits alpha selection from audit data.
 
 Aggregate with model/request/seed/candidate hierarchical bootstrap, then render
 the proposed main table:
@@ -189,6 +220,18 @@ GPU=0 MODEL_ID=qwen25_7b \
 GPU=0 MODEL_ID=qwen25_7b nohup \
   bash experiments/channel_matrix/h100_campaign.sh alpha-development \
   > "runs/logs/channel7b_alpha_dev_$(hostname).out" 2>&1 &
+```
+
+The corresponding two-GPU development launch is:
+
+```bash
+GPU=0 AUTHORS=198 MODEL_ID=qwen25_7b nohup \
+  bash experiments/channel_matrix/h100_campaign.sh alpha-development \
+  > "runs/logs/channel7b_alpha_dev_a198_gpu0_$(hostname).out" 2>&1 &
+
+GPU=1 AUTHORS=199 MODEL_ID=qwen25_7b nohup \
+  bash experiments/channel_matrix/h100_campaign.sh alpha-development \
+  > "runs/logs/channel7b_alpha_dev_a199_gpu1_$(hostname).out" 2>&1 &
 ```
 
 Create a development-only recommendation:

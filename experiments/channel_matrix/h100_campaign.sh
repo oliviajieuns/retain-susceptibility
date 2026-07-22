@@ -14,12 +14,16 @@ set -Eeuo pipefail
 #   bash experiments/channel_matrix/h100_campaign.sh select-alpha-freeze
 #   GPU=0 MODEL_ID=qwen25_7b bash experiments/channel_matrix/h100_campaign.sh alpha-audit
 #   bash experiments/channel_matrix/h100_campaign.sh alpha-aggregate
+# Two-GPU request sharding (use disjoint AUTHORS values):
+#   GPU=0 AUTHORS=198 MODEL_ID=qwen25_7b bash experiments/channel_matrix/h100_campaign.sh calibration
+#   GPU=1 AUTHORS=199 MODEL_ID=qwen25_7b bash experiments/channel_matrix/h100_campaign.sh calibration
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 VENV="${VENV:-/group-volume/jieuns.shin/venvs/exp}"
 CONFIG="${CONFIG:-configs/channel_matrix/7b_tofu.yaml}"
 MODEL_ID="${MODEL_ID:-qwen25_7b}"
 GPU="${GPU:-0}"
+AUTHORS="${AUTHORS:-}"
 ACTION="${1:-}"
 
 if [[ -z "${ACTION}" ]]; then
@@ -44,11 +48,17 @@ if [[ "${MODEL_ID}" != "all" ]]; then
   model_args=(--model-id "${MODEL_ID}")
 fi
 
+author_args=()
+if [[ -n "${AUTHORS}" ]]; then
+  author_args=(--only-authors "${AUTHORS}")
+fi
+
 preflight() {
   echo "branch=$(git branch --show-current)"
   echo "commit=$(git rev-parse HEAD)"
   echo "HF_HOME=${HF_HOME}"
   echo "CUDA_VISIBLE_DEVICES=${GPU}"
+  echo "AUTHORS=${AUTHORS:-all-phase-authors}"
   git status --short
   nvidia-smi
   CUDA_VISIBLE_DEVICES="${GPU}" python - "${CONFIG}" "${MODEL_ID}" <<'PY'
@@ -98,10 +108,18 @@ PY
 
 run_phase() {
   local phase="$1"
+  local phase_author_args=()
+  if [[ "${phase}" != "fidelity" ]]; then
+    phase_author_args=("${author_args[@]}")
+  elif [[ -n "${AUTHORS}" ]]; then
+    echo "AUTHORS is not applicable to the single frozen fidelity cell" >&2
+    return 2
+  fi
   CUDA_VISIBLE_DEVICES="${GPU}" python -u experiments/channel_matrix/run_campaign.py \
     --config "${CONFIG}" \
     --phase "${phase}" \
     --resume \
+    "${phase_author_args[@]}" \
     "${model_args[@]}"
 }
 
@@ -111,6 +129,7 @@ run_alpha_phase() {
     --config "${CONFIG}" \
     --phase "${phase}" \
     --resume \
+    "${author_args[@]}" \
     "${model_args[@]}"
 }
 
@@ -126,6 +145,7 @@ case "${ACTION}" in
       --config "${CONFIG}" \
       --phase calibration \
       --dry-run \
+      "${author_args[@]}" \
       "${model_args[@]}"
     ;;
   fidelity)
@@ -168,6 +188,7 @@ case "${ACTION}" in
       --config "${CONFIG}" \
       --phase development \
       --dry-run \
+      "${author_args[@]}" \
       "${model_args[@]}"
     ;;
   alpha-development)
@@ -186,6 +207,7 @@ case "${ACTION}" in
       --config "${CONFIG}" \
       --phase audit \
       --dry-run \
+      "${author_args[@]}" \
       "${model_args[@]}"
     ;;
   alpha-audit)

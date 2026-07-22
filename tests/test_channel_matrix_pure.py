@@ -81,6 +81,28 @@ class ChannelCampaignContractTest(unittest.TestCase):
             caches.setdefault(author_seed, set()).add(cache)
         self.assertTrue(all(len(paths) == 1 for paths in caches.values()))
 
+        selected = {self.config["calibration"]["authors"][0]}
+        shard = list(campaign.calibration_commands(
+            self.config,
+            self.models,
+            ROOT / "runs/channel_matrix_7b",
+            selected_authors=selected,
+        ))
+        self.assertEqual(len(shard), expected // len(self.config["calibration"]["authors"]))
+        self.assertTrue(all(
+            f"tofu-a{next(iter(selected))}" in str(out) for out, _ in shard
+        ))
+
+    def test_author_shard_must_be_a_nonempty_roster_subset(self):
+        self.assertEqual(
+            campaign._filter_authors([198, 199], {199}, "calibration"),
+            [199],
+        )
+        with self.assertRaisesRegex(ValueError, "outside"):
+            campaign._filter_authors([198, 199], {181}, "calibration")
+        with self.assertRaisesRegex(ValueError, "empty"):
+            campaign._filter_authors([198, 199], set(), "calibration")
+
     def test_fidelity_uses_only_frozen_development_cell(self):
         commands = list(campaign.fidelity_commands(
             self.config, self.models, ROOT / "runs/channel_matrix_7b"
@@ -153,6 +175,19 @@ class ChannelCampaignContractTest(unittest.TestCase):
             self.assertIn("--require-all-predictors", command)
             self.assertEqual(metadata["core_objectives"], cfg["audit"]["objectives"])
             self.assertEqual(metadata["stress_objectives"], cfg["audit"]["stress_objectives"])
+
+            selected = {cfg["audit"]["authors"][1]}
+            shard = list(campaign.audit_commands(
+                config_path,
+                cfg,
+                self.models,
+                ROOT / "runs/test-audit",
+                selected_authors=selected,
+            ))
+            self.assertEqual(len(shard), len(cfg["audit"]["seeds"]))
+            self.assertTrue(all(
+                f"tofu-a{next(iter(selected))}" in str(out) for out, _, _ in shard
+            ))
 
     def test_table_marks_adaptation_failure_and_collapse(self):
         summary = {

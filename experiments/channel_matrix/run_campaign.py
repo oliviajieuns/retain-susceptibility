@@ -209,10 +209,34 @@ def _enabled_models(cfg: dict, selected: set[str]) -> list[dict]:
     return models
 
 
-def calibration_commands(cfg: dict, models: list[dict], output_root: Path):
+def _filter_authors(
+    roster: list[int], selected: set[int] | None, phase: str
+) -> list[int]:
+    """Apply an execution-only request shard without changing the frozen roster."""
+    authors = [int(author) for author in roster]
+    if selected is None:
+        return authors
+    unknown = selected - set(authors)
+    if unknown:
+        raise ValueError(
+            f"--only-authors contains author(s) outside the {phase} roster: "
+            f"{sorted(unknown)}; allowed={authors}"
+        )
+    if not selected:
+        raise ValueError("--only-authors resolved to an empty shard")
+    return [author for author in authors if author in selected]
+
+
+def calibration_commands(
+    cfg: dict,
+    models: list[dict],
+    output_root: Path,
+    selected_authors: set[int] | None = None,
+):
     phase = cfg["calibration"]
+    authors = _filter_authors(phase["authors"], selected_authors, "calibration")
     for model, author, seed, objective in itertools.product(
-        models, phase["authors"], phase["seeds"], phase["objective_grid"]
+        models, authors, phase["seeds"], phase["objective_grid"]
     ):
         for index, setting in enumerate(phase["objective_grid"][objective]):
             setting_id = setting.get("id", f"g{index:02d}")
@@ -375,15 +399,22 @@ def _load_fidelity_certificates(config_path: Path, cfg: dict, models: list[dict]
     return certificates
 
 
-def audit_commands(config_path: Path, cfg: dict, models: list[dict], output_root: Path):
+def audit_commands(
+    config_path: Path,
+    cfg: dict,
+    models: list[dict],
+    output_root: Path,
+    selected_authors: set[int] | None = None,
+):
     freeze_path, freeze = _load_freeze(config_path, cfg, models)
     fidelity = _load_fidelity_certificates(config_path, cfg, models)
     phase = cfg["audit"]
+    authors = _filter_authors(phase["authors"], selected_authors, "audit")
     core_objectives = phase["objectives"]
     stress_objectives = phase.get("stress_objectives", [])
     objectives = core_objectives + stress_objectives
     predictors = phase["predictors"]
-    for model, author, seed in itertools.product(models, phase["authors"], phase["seeds"]):
+    for model, author, seed in itertools.product(models, authors, phase["seeds"]):
         settings = (freeze["models"][model["id"]]
                     if "models" in freeze else freeze["objectives"])
         out = output_root / "audit" / model["id"] / f"tofu-a{author}" / f"seed-{seed}"
@@ -449,6 +480,14 @@ def main() -> None:
     p.add_argument("--config", required=True)
     p.add_argument("--phase", required=True, choices=["fidelity", "calibration", "audit"])
     p.add_argument("--model-id", action="append", default=[], help="run only this model alias")
+    p.add_argument(
+        "--only-authors",
+        default="",
+        help=(
+            "execution-only deletion-request shard (comma list/ranges); must be an "
+            "exact subset of the phase's frozen author roster"
+        ),
+    )
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--resume", action="store_true", help="skip complete run directories")
     p.add_argument("--limit", type=int, default=0, help="execute/print at most N runs (0=all)")
@@ -458,6 +497,11 @@ def main() -> None:
     cfg = _load_yaml(config_path)
     _validate_campaign(cfg)
     models = _enabled_models(cfg, set(a.model_id))
+    if a.phase == "fidelity" and a.only_authors:
+        p.error("--only-authors does not apply to the single frozen fidelity cell")
+    selected_authors = (
+        _expand_int_ranges(a.only_authors) if a.only_authors else None
+    )
     output_root = Path(cfg["output_root"])
     if not output_root.is_absolute():
         output_root = (ROOT / output_root).resolve()
@@ -501,7 +545,9 @@ def main() -> None:
             if a.limit and n >= a.limit:
                 break
     elif a.phase == "calibration":
-        for out, cmd in calibration_commands(cfg, models, output_root):
+        for out, cmd in calibration_commands(
+            cfg, models, output_root, selected_authors=selected_authors
+        ):
             objective = cmd[cmd.index("--generators") + 1]
             if a.resume and _complete(out, [objective], audit=False):
                 print(f"SKIP complete: {out}")
@@ -524,7 +570,10 @@ def main() -> None:
             if a.limit and n >= a.limit:
                 break
     else:
-        for out, cmd, metadata in audit_commands(config_path, cfg, models, output_root):
+        for out, cmd, metadata in audit_commands(
+            config_path, cfg, models, output_root,
+            selected_authors=selected_authors,
+        ):
             objectives = cfg["audit"]["objectives"] + cfg["audit"].get("stress_objectives", [])
             if a.resume and _complete(out, objectives, audit=True):
                 print(f"SKIP complete: {out}")

@@ -91,6 +91,24 @@ def _enabled_models(cfg: dict, selected: set[str]) -> list[dict]:
     return models
 
 
+def _filter_authors(
+    roster: list[int], selected: set[int] | None, phase: str
+) -> list[int]:
+    """Apply an execution-only request shard without changing the protocol."""
+    authors = [int(author) for author in roster]
+    if selected is None:
+        return authors
+    unknown = selected - set(authors)
+    if unknown:
+        raise ValueError(
+            f"--only-authors contains author(s) outside alpha {phase}: "
+            f"{sorted(unknown)}; allowed={authors}"
+        )
+    if not selected:
+        raise ValueError("--only-authors resolved to an empty shard")
+    return [author for author in authors if author in selected]
+
+
 def _objective_freeze(config_path: Path, cfg: dict, models: list[dict]) -> tuple[Path, dict]:
     phase = cfg["alpha_protection"]
     path = _resolve_config_path(config_path, phase["objective_freeze"])
@@ -266,14 +284,16 @@ def worker_commands(
     cfg: dict,
     phase: str,
     models: list[dict],
+    selected_authors: set[int] | None = None,
 ) -> list[tuple[Path, list[str]]]:
     _validate_contract(cfg)
     _objective_freeze(config_path, cfg, models)
     if phase == "audit":
         _alpha_freeze(config_path, cfg, models)
     roster = cfg["alpha_protection"][phase]
+    authors = _filter_authors(roster["authors"], selected_authors, phase)
     commands = []
-    for model, author, seed in itertools.product(models, roster["authors"], roster["seeds"]):
+    for model, author, seed in itertools.product(models, authors, roster["seeds"]):
         out = _output_dir(cfg, phase, model["id"], int(author), int(seed))
         commands.append((out, [
             sys.executable,
@@ -906,6 +926,14 @@ def main() -> None:
     parser.add_argument("--config", default="configs/channel_matrix/7b_tofu.yaml")
     parser.add_argument("--phase", required=True, choices=["development", "audit"])
     parser.add_argument("--model-id", action="append", default=[])
+    parser.add_argument(
+        "--only-authors",
+        default="",
+        help=(
+            "execution-only deletion-request shard (comma list/ranges); must be an "
+            "exact subset of the phase's frozen author roster"
+        ),
+    )
     parser.add_argument("--author", type=int)
     parser.add_argument("--seed", type=int)
     parser.add_argument("--worker", action="store_true")
@@ -919,6 +947,8 @@ def main() -> None:
     _validate_contract(cfg)
     models = _enabled_models(cfg, set(args.model_id))
     if args.worker:
+        if args.only_authors:
+            parser.error("--only-authors is an orchestrator option, not a worker option")
         if len(models) != 1 or args.author is None or args.seed is None:
             parser.error("worker mode needs exactly one --model-id, --author, and --seed")
         _run_worker(
@@ -931,7 +961,13 @@ def main() -> None:
         raise RuntimeError(
             f"refusing alpha {args.phase} from a dirty worktree; commit the protocol first"
         )
-    commands = worker_commands(config_path, cfg, args.phase, models)
+    selected_authors = (
+        set(_expand_int_ranges(args.only_authors)) if args.only_authors else None
+    )
+    commands = worker_commands(
+        config_path, cfg, args.phase, models,
+        selected_authors=selected_authors,
+    )
     env = os.environ.copy()
     env.setdefault("PYTHONHASHSEED", "0")
     if args.phase == "audit":
