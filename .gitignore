@@ -7,3 +7,9 @@ results/
 seals/*.parquet
 *.egg-info/
 .pytest_cache/
+
+# Legacy cluster launchers wrote host-specific logs beside the repository.
+# Keep them in place without making the sealed-audit worktree appear dirty.
+/*.out
+/*.pid
+/*.meta
