@@ -205,12 +205,10 @@ class AlphaCampaignFreezeTest(unittest.TestCase):
 
     def test_contract_has_disjoint_ordinary_utility_pool(self):
         alpha_campaign._validate_contract(self.base)
+        # 2026-07-23 roster reduction: only objectives that jointly satisfied
+        # reach and the utility bounds in development remain alpha parents.
         self.assertEqual(
-            self.base["alpha_protection"]["parents"],
-            [
-                "graddiff", "npo", "simnpo", "gru", "rmu", "repnoise",
-                "circuit_breakers",
-            ],
+            self.base["alpha_protection"]["parents"], ["graddiff", "rmu"]
         )
 
     def test_exact_energy_replaces_only_qg_at_same_alpha(self):

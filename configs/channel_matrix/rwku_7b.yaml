@@ -146,8 +146,12 @@ audit:
   offline: true
   authors: [30, 34, 38]
   seeds: [2025, 2026]
-  objectives: [graddiff, npo, simnpo, gru, rmu, repnoise, circuit_breakers]
-  stress_objectives: [ga]
+  # Core roster reduced 2026-07-23 after 3-4 development rounds: only the
+  # objectives that jointly satisfy reach and the utility bounds carry core
+  # claims; the demoted objectives keep best-effort stress settings so the
+  # audit still measures every column (reported as notreached boundaries).
+  objectives: [repnoise]
+  stress_objectives: [ga, graddiff, npo, simnpo, gru, rmu, circuit_breakers]
   predictors: [grad_norm, fd_norm, knn_feature, knn_embed, knn_lexical, fd, random_rank]
   objective_freeze: objective_freeze_rwku7b.yaml
   fidelity_certificates:

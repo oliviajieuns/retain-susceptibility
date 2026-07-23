@@ -124,10 +124,14 @@ audit:
   # Systematic, outcome-independent spacing within TOFU forget10.
   authors: [181, 186, 191]
   seeds: [2025, 2026]
-  objectives: [graddiff, npo, simnpo, gru, rmu, repnoise, circuit_breakers]
+  # Core roster reduced 2026-07-23 after 3-4 development rounds: only the
+  # objectives that jointly satisfy reach and the utility bounds carry core
+  # claims; the demoted objectives keep best-effort stress settings so the
+  # audit still measures every column (reported as notreached boundaries).
+  objectives: [graddiff, gru]
   # These run before any score is opened but are excluded from the core
   # interaction and main seven objective columns.
-  stress_objectives: [ga, idkdpo]
+  stress_objectives: [ga, idkdpo, npo, simnpo, rmu, repnoise, circuit_breakers]
   predictors: [grad_norm, fd_norm, knn_feature, knn_embed, knn_lexical, fd, random_rank]
   objective_freeze: objective_freeze_14b.yaml
   fidelity_certificates:
@@ -141,7 +145,7 @@ alpha_protection:
   campaign_id: kdd27-channel-mixture-protection-14b-v1
   objective_freeze: objective_freeze_14b.yaml
   alpha_freeze: alpha_protection_freeze_14b.yaml
-  parents: [graddiff, npo, simnpo, gru, rmu, repnoise, circuit_breakers]
+  parents: [graddiff, gru]
   probes: {gradient: fd_norm, proximity: knn_feature}
   normalization: empirical_midrank_discovery_only
   orientation: (1-alpha)*gradient + alpha*proximity
