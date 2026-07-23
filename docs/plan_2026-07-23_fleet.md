@@ -61,8 +61,34 @@ alpha, audit 시드 추가)는 금지 — 남는 GPU는 아래 §3의 독립 트
   `/group-volume/models/Llama-3.1-8B-Instruct` 다운로드 → config `enabled: true`
   커밋 → 7B와 동일한 W1→W4 체인을 별도 큐(`wave1_llama` 등)로. fidelity
   certificate 경로는 config에 이미 예약돼 있음.
-- **T2 — 1.5B 시드 복제 (Table 1 CI 강화)**: chanbal2 재현 `--seed 2026, 2027, 2028...`
-  새 run-tag로 GPU당 1런 (fp32 1.5B ≈ 58GB). 시드당 유닛 1개 — 노드 하나로 8시드.
+- **T2 — 1.5B 시드 복제 (Table 1 CI 강화)**: chanbal2 재현. **손으로 명령 재구성 금지** —
+  원본 run의 `run_manifest.json`에서 정확한 CLI를 복원해 시드/run-tag만 바꾸는
+  전용 도구 사용 (gate.py 기본값이 그 사이 바뀌어도 드리프트를 hard error로 잡음):
+  ```bash
+  python experiments/cluster/make_replicate_units.py \
+    --source-run runs/gate_Qwen2.5-1.5B-Instruct_chanbal2 \
+    --seeds 2026-2033 --enqueue --queue runs/cluster_queue/t2_gate15b
+  bash experiments/cluster/launch_node.sh runs/cluster_queue/t2_gate15b
+  ```
+  (source-run 디렉토리명은 `ls runs/ | grep -i chanbal`로 실제 이름 확인 후.)
+  fp32 1.5B ≈ 58GB → GPU당 1런, 시드 8개 = 노드 하나. `max_attempts=1` 자동
+  (run-tag append-only라 재시도 무의미).
+- **T6 — Qwen2.5-14B 제3 스케일 캠페인** (2026-07-23 결정: T1보다 우선 실행):
+  config는 `configs/channel_matrix/14b_tofu.yaml` + freeze 드래프트 2개로 준비 완료
+  (campaign_id kdd27-channel-matrix-14b-v1, output_root runs/channel_matrix_14b,
+  7B와 동일 로스터/그리드 — 스케일 축만 다름). 실행 절차:
+  ```bash
+  # (1) 모델 프로비저닝 — 1회, 아무 노드 (HF Hub 접속 가능)
+  huggingface-cli download Qwen/Qwen2.5-14B-Instruct \
+    --local-dir /group-volume/models/Qwen2.5-14B-Instruct
+  # (2) enqueue + 카나리아 1장 → 정상 확인 후 노드 전체 투입
+  python experiments/cluster/make_units.py --config configs/channel_matrix/14b_tofu.yaml \
+    --phase fidelity --phase calibration --enqueue --queue runs/cluster_queue/wave1_14b
+  bash experiments/cluster/launch_node.sh runs/cluster_queue/wave1_14b 1
+  ```
+  **⚠ 메모리 리스크**: fp32 14B 가중치만 ~59GB. probe_block 한정 학습이라 80GB에
+  들어갈 가능성이 높지만 실측 전엔 미확정 — 카나리아 OOM 시 이 캠페인은 즉시
+  중단하고 결과를 이 문서에 기록 (batch_size 축소는 7B와의 계약 불일치라 금지).
 - **T3 — 7B bf16 게이트 실패 아티팩트**: §5 주장("bf16은 게이트 실패") 뒷받침용
   `fd_fidelity.py` 7B bf16 1회. GPU 1장, 짧음.
 - **T4 — xprot 기존 arm 재실행**: remote-quantile 버그 수정된 새 코드로

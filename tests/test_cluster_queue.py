@@ -201,6 +201,61 @@ def test_make_units_rejects_disabled_model():
         make_units._enabled_models(cfg, {"llama31_8b"})
 
 
+def test_replicate_units_rebuild_exact_cli_with_seed_override():
+    import make_replicate_units as mru
+
+    gate_source = (ROOT / "experiments/gate_1p5b/gate.py").read_text(encoding="utf-8")
+    flags = mru.parse_gate_flags(gate_source)
+    # spot-check the parser map against known gate.py flags
+    assert flags["seed"]["flag"] == "--seed" and not flags["seed"]["store_true"]
+    assert flags["require_sft_target"]["store_true"]
+    assert flags["probe_dirs"]["flag"] == "--probe-dirs"
+
+    manifest = {
+        "model_id": "qwen25_1p5b",
+        "objectives": ["npo"],
+        "cli": {
+            "model": "/group-volume/models/Qwen2.5-1.5B-Instruct",
+            "seed": 2025,
+            "probe_dirs": 64,
+            "gen_lr": 2e-06,
+            "require_sft_target": True,
+            "smoke": False,
+            "run_tag": "chanbal2",
+            "out_dir": "",
+            "extra_predictors": "fd_norm",
+        },
+    }
+    units = mru.build_units(manifest, [2026, 2027], "chanbal2", "python", gate_source)
+    assert [u.unit_id for u in units] == ["gate__chanbal2-s2026", "gate__chanbal2-s2027"]
+    for unit, seed in zip(units, [2026, 2027]):
+        cmd = unit.cmd
+        assert unit.max_attempts == 1  # gate run tags are append-only
+        assert cmd[cmd.index("--seed") + 1] == str(seed)
+        assert cmd[cmd.index("--run-tag") + 1] == f"chanbal2-s{seed}"
+        assert "--out-dir" not in cmd and "--smoke" not in cmd
+        assert "--require-sft-target" in cmd
+        assert cmd[cmd.index("--extra-predictors") + 1] == "fd_norm"
+        assert cmd[cmd.index("--gen-lr") + 1] == "2e-06"
+
+    # replicating the source seed itself is an error
+    with pytest.raises(ValueError):
+        mru.build_units(manifest, [2025], "chanbal2", "python", gate_source)
+
+    # CLI drift (manifest key unknown to today's gate.py) must be a hard error
+    drifted = {"model_id": "m", "objectives": [], "cli": {"seed": 2025, "removed_flag": 1}}
+    with pytest.raises(ValueError, match="drifted"):
+        mru.build_units(drifted, [2026], "t", "python", gate_source)
+
+
+def test_replicate_seed_expansion():
+    import make_replicate_units as mru
+
+    assert mru.expand_seeds("2026-2029,2040") == [2026, 2027, 2028, 2029, 2040]
+    with pytest.raises(ValueError):
+        mru.expand_seeds("2026,2026")
+
+
 def test_queue_cli_roundtrip(tmp_path):
     units_file = tmp_path / "units.jsonl"
     units_file.write_text(
