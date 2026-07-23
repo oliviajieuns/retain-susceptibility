@@ -63,7 +63,11 @@ calibration:
   selection:
     forget_recall_max: 0.10
     mean_dnll_max: 2.0
-    cvar05_dnll_max: 8.0
+    # 8.0 -> 16.0 per prereg/AMENDMENT-2026-07-23-cvar-bound.md: the
+    # measured 7B-scale graddiff frontier at reach floors at CVaR ~12,
+    # above the bound transplanted from the 1.5B substrate. Adopted
+    # before any audit or probe outcome existed for this campaign.
+    cvar05_dnll_max: 16.0
     require_every_development_run: true
     tie_break: [mean_dnll, cvar05_dnll, steps, lr]
     stress_rule: >-
