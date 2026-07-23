@@ -151,7 +151,8 @@ def test_rwku_campaign_config_builds_rwku_gate_commands():
     commands = list(
         campaign.calibration_commands(cfg, models, root / "runs/channel_matrix_rwku7b")
     )
-    assert len(commands) == 32  # 2 dev targets x 16 settings
+    n_settings = sum(len(s) for s in cfg["calibration"]["objective_grid"].values())
+    assert len(commands) == len(cfg["calibration"]["authors"]) * n_settings
     for out, cmd in commands:
         assert cmd[cmd.index("--dataset") + 1] == "rwku"
         assert "rwku-t00" in str(out)
