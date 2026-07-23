@@ -1,39 +1,28 @@
 \begin{abstract}
-An LLM asked to forget specific information should not lose unrelated
-knowledge or capabilities that users still rely on. Yet approximate
-unlearning can cause such collateral damage, while aggregate retention
-metrics may obscure it when failures concentrate in a small, coherent
-subset of retained behaviors. We identify update-conditioned gradient
-interference as a mechanism underlying this failure: a retained behavior
-is damaged in proportion to the coupling between its local sensitivity
-and the realized parameter update. We further characterize when each
-pre-unlearning signal transfers across unlearning methods, and find the
-answer is structural: transfer is conditional on the \emph{damage
-channel} induced by the unlearning objective, declared in advance by
-where its loss reads the model. Objectives whose loss reads model outputs
-(GA, GradDiff, NPO, SimNPO, and preference variants) damage candidates
-with large loss-gradient magnitude, whereas objectives whose loss reads
-internal representations (RMU, RepNoise, Circuit Breakers) damage
-candidates whose hidden states lie close to the forget set; which probe
-family predicts best flips with the declared channel.
-
-Guided by this mechanism, we construct candidate-level susceptibility
-profiles without candidate-side backpropagation. For the output channel,
-randomized symmetric perturbations -- two batched forward sweeps per
-shared random direction -- estimate every candidate's gradient magnitude
-at once and recover most of the exact gradient norm's predictive power;
-for the representation channel, forward-only hidden-state proximity
-suffices. Across balanced objective rosters, the channel-matched profile
-predicts per-example damage along independently configured trajectories,
-and the relative advantage of the two probe families reverses with the
-declared channel. We then use the matched profile to allocate a fixed
-protection budget to high-risk retained behaviors, and test, in a
-preregistered crossed design over both channels, whether channel-matched
-protection reduces mean and worst-tail collateral damage on held-out
-native audits at matched forgetting, relative to mismatched, random, and
-no-protection allocation. Together, the mechanism, the backward-free
-probes, and the crossed protocol constitute a probe-to-protection
-framework that shifts LLM unlearning from post-hoc damage assessment
-toward mechanism-informed pre-unlearning risk prediction and targeted
-preservation.
+An LLM asked to forget specific information should not lose knowledge or
+capabilities that appear unrelated on the surface. Yet approximate
+unlearning can cause such collateral damage. A single average score can
+hide this damage when failures concentrate in a small but coherent subset
+of retained behaviors. We therefore study whether susceptible retained
+behaviors can be identified before unlearning and protected under a fixed
+intervention budget. We model susceptibility using two complementary
+signals: direction-agnostic local loss sensitivity and hidden-state
+proximity to the forget set. For the gradient component, we define
+\emph{loss-shake energy} as a pool-shared finite-difference estimator of
+classical block-local gradient energy. Unlike
+forget-update alignment, loss-shake energy is independent of the direction
+ultimately taken by an unlearning trajectory. Paired perturbations estimate
+it for an entire candidate pool using batched forward evaluations without
+candidate-side backpropagation, while the representation component uses
+forward-only hidden-state neighbors. We seal their joint profile before an
+unchanged parent unlearner runs, admit only checkpoints passing an external
+forgetting gate, and test two independent uses: held-out damage prediction and
+fixed-budget repair allocation. Across multiple model families, objectives,
+and benchmarks, the evaluation separately requires estimator fidelity,
+positive prediction beyond both components and simple controls, lower mean
+and worst-tail damage than four allocation controls, and non-inferior native
+retained behavior under common forgetting and utility constraints. This
+probe-to-protection framework links pre-unlearning risk interpretation to
+targeted preservation without changing the parent objective or using realized
+damage to select a checkpoint or repair pool.
 \end{abstract}

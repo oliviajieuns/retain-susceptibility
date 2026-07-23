@@ -146,3 +146,44 @@ audit(모델×저자 3)과 alpha-audit(모델×저자×시드 6) + 복수 모델
   나므로 `max_attempts: 1`로 넣는 게 안전하다 (위 예시처럼).
 - 큐 디렉토리는 `runs/` 아래라 git이 추적하지 않는다. 캠페인 산출물 회수는
   기존 방식(채팅 전달 → 세션 커밋) 유지.
+
+## 부록: enqueue_table12.sh — Table 1/2 잔여 웨이브 원샷 적재
+
+`experiments/cluster/enqueue_table12.sh`는 레포 루트에서 실행하는 운영자용
+래퍼다. 워커를 띄우지 않고, `git pull`도 하지 않으며, 큐 상태는
+`make_units.py --enqueue` 외에는 건드리지 않는다. 재실행 안전: 같은 unit id는
+append-only 큐가 거부하고 스크립트는 "already enqueued"로 알려준다.
+
+```bash
+bash experiments/cluster/enqueue_table12.sh              # status (기본)
+bash experiments/cluster/enqueue_table12.sh audit-7b     # 7B audit + alpha → wave2
+bash experiments/cluster/enqueue_table12.sh audit-14b    # 14B audit + alpha → wave1_14b
+bash experiments/cluster/enqueue_table12.sh wmdp         # WMDP fidelity+calibration → wave_wmdp
+bash experiments/cluster/enqueue_table12.sh llama        # Llama-8B fidelity+calibration → wave_llama
+bash experiments/cluster/enqueue_table12.sh rwku-audit   # RWKU audit → wave_rwku
+```
+
+- `status`: wave2 / wave1_14b / wave_wmdp / wave_llama / wave3_alpha /
+  wave4_alpha 큐별 `workqueue.py status --brief` 요약 + `fleet_status.py` 안내.
+- `audit-*`: enqueue 전에 (1) 해당 config의 objective_freeze가
+  `status: frozen`인지 grep으로 확인(run_campaign.py의 게이트와 동일 기준),
+  (2) worktree가 clean한지 확인(audit 러너가 dirty tree를 거부). alpha freeze가
+  frozen이면 alpha-audit, 아직 draft면 alpha-development를 같은 큐에 적재.
+- `llama`: 모델 경로(`/group-volume/models/Llama-3.1-8B-Instruct`) 부재 시
+  `provision_llama.sh` 안내 후 중단. `rwku-audit`: fidelity 인증서 JSON이
+  `runs/channel_matrix_rwku7b/fidelity/`에 없으면
+  `experiments/diag/fd_fidelity.py --dataset rwku` 안내 후 중단.
+- 적재 후 노드 투입은 언제나 수동:
+  `bash experiments/cluster/launch_node.sh <큐>` (노드당 워커 8개, GPU 0-7).
+  make_units가 만든 unit의 `max_attempts`는 그대로 둘 것.
+
+웨이브 → 큐 → 논문 테이블 매핑:
+
+| 테이블 | 큐 | 내용 |
+|---|---|---|
+| Table 1 | `wave2` | 7B TOFU audit (+ alpha-development) |
+| Table 1 | `wave4_alpha` | 7B alpha-audit (alpha freeze 커밋 후) |
+| Table 2 (14B 행) | `wave1_14b` | 14B TOFU audit |
+| Table 2 (RWKU 행) | `wave_rwku` | RWKU 7B audit |
+| Table 2 (WMDP 행) | `wave_wmdp` | WMDP 7B fidelity+calibration |
+| Table 2 (Llama 행) | `wave_llama` | Llama-3.1-8B fidelity+calibration |

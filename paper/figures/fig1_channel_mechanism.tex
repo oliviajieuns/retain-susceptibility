@@ -1,6 +1,4 @@
-% Figure 1: objective-conditioned damage -> sealed profiles -> crossed test.
-% Candidate intensities are deliberately schematic.  The palette is
-% grayscale plus one muted blue-gray accent so the logic survives printing.
+% Figure 1: objective-dependent damage composition and unified profile.
 \definecolor{accent}{HTML}{5E7180}
 \definecolor{ink}{HTML}{333333}
 
@@ -10,167 +8,91 @@
   >={Latex[length=1.65mm,width=1.05mm]},
   paneltitle/.style={font=\sffamily\scriptsize\bfseries,text=ink,anchor=west},
   panelsub/.style={font=\sffamily\scriptsize,text=gray!78!black,anchor=west},
-  objective/.style={draw=gray!54,rounded corners=.65mm,fill=white,
-                    minimum width=1.58cm,minimum height=1.02cm,line width=.52pt},
-  profile/.style={draw=gray!54,rounded corners=.65mm,fill=white,
-                  minimum width=1.42cm,minimum height=.98cm,line width=.52pt,
-                  align=center},
+  box/.style={draw=gray!54,rounded corners=.65mm,fill=white,
+             minimum height=.78cm,line width=.52pt,align=center},
+  score/.style={draw=accent,rounded corners=.65mm,fill=accent!5,
+               minimum width=1.35cm,minimum height=.78cm,line width=.58pt,
+               align=center,text=ink},
   candidate/.style={draw=gray!48,rounded corners=.35mm,fill=white,
-                    minimum width=.44cm,minimum height=.60cm,inner sep=0pt,
+                    minimum width=.42cm,minimum height=.56cm,inner sep=0pt,
                     line width=.42pt,font=\sffamily\tiny,text=ink},
-  seal/.style={draw=accent,rounded corners=.35mm,fill=accent!5,
-               inner xsep=.65mm,inner ysep=.45mm,line width=.52pt,
-               font=\sffamily\tiny\bfseries,text=accent},
   flow/.style={->,draw=gray!70!black,line width=.62pt},
-  trajectory/.style={->,draw=ink!82,line width=.64pt},
-  cell/.style={draw=gray!48,fill=gray!3,minimum width=1.00cm,
-               minimum height=.63cm,inner sep=0pt,line width=.48pt}
+  accentflow/.style={->,draw=accent,line width=.72pt}
 ]
 
 \path[use as bounding box] (0,.16) rectangle (17.35,4.72);
-
-% Quiet panel separators.
 \draw[gray!25,line width=.4pt] (5.55,.34) -- (5.55,4.58);
 \draw[gray!25,line width=.4pt] (11.15,.34) -- (11.15,4.58);
 
 % -------------------------------------------------------------------------
-% (a) The same candidates can face different objective-conditioned damage.
-\node[paneltitle] at (.16,4.50) {(a)\quad OBJECTIVE-CONDITIONED DAMAGE};
+% (a) Objective readouts inform composition, not routing.
+\node[paneltitle] at (.16,4.50) {(a)\quad OBJECTIVE-DEPENDENT COMPOSITION};
 \node[panelsub] at (.16,4.10)
-  {same $\theta_0$ and $\mathcal C$; different damage futures};
+  {readout labels are priors, not hard probe choices};
 
-% Output-reading objective.
-\node[objective] (uout) at (.98,3.14) {};
-\node[font=\sffamily\tiny\bfseries,text=ink] at (.98,3.48)
-  {$\mathcal U_{\mathrm{out}}$};
-\foreach \x/\h in {.55/.12,.70/.22,.85/.31,1.00/.18}
-  \draw[accent,line width=1.15pt] (\x,2.78) -- (\x,{2.78+\h});
-\draw[gray!44,line width=.35pt] (.48,2.78) -- (1.07,2.78);
-\node[anchor=west,align=left,font=\sffamily\tiny,text=ink] at (1.12,2.97)
-  {loss reads\\[-.35mm]\textbf{outputs}};
+\node[box,minimum width=1.50cm] (uout) at (1.10,3.10)
+  {$\mathcal U_{\mathrm{out}}$\\[-.3mm]{\tiny output loss}};
+\node[box,minimum width=1.50cm] (urep) at (1.10,1.62)
+  {$\mathcal U_{\mathrm{rep}}$\\[-.3mm]{\tiny hidden-state loss}};
+\node[box,minimum width=1.72cm,minimum height=1.05cm] (latent) at (3.05,2.36)
+  {latent damage\\composition\\[-.2mm]{\tiny $\alpha$ varies by objective}};
+\draw[flow] (uout.east) -- (latent.west |- uout.east);
+\draw[flow] (urep.east) -- (latent.west |- urep.east);
 
-% Representation-reading objective.
-\node[objective] (urep) at (.98,1.54) {};
-\node[font=\sffamily\tiny\bfseries,text=ink] at (.98,1.88)
-  {$\mathcal U_{\mathrm{rep}}$};
-\foreach \x in {.51,.68,.85}
-  \draw[draw=accent,fill=white,rounded corners=.12mm,line width=.4pt]
-    (\x,1.18) rectangle ++(.11,.39);
-\foreach \y in {1.25,1.37,1.49}
-  \fill[accent] (1.02,\y) circle (.75pt);
-\node[anchor=west,align=left,font=\sffamily\tiny,text=ink] at (1.13,1.37)
-  {loss reads\\[-.35mm]\textbf{hidden states}};
-
-\draw[flow] (uout.east) -- (2.05,3.14);
-\draw[flow] (urep.east) -- (2.05,1.54);
-
-% Identical candidate locations; mini-bar height changes the qualitative
-% ordering.  The bars carry no numeric experimental value.
-\foreach \x/\lab/\height in {2.30/1/.20,2.86/2/.06,3.42/3/.15,3.98/4/.04,4.54/5/.10}{
-  \node[candidate] at (\x,3.14) {$x_{\lab}$};
-  \fill[gray!68] ({\x-.065},2.85) rectangle ({\x+.065},{2.85+\height});
-}
-\foreach \x/\lab/\height in {2.30/1/.06,2.86/2/.20,3.42/3/.04,3.98/4/.15,4.54/5/.10}{
-  \node[candidate] at (\x,1.54) {$x_{\lab}$};
-  \fill[gray!68] ({\x-.065},1.25) rectangle ({\x+.065},{1.25+\height});
-}
-\node[font=\sffamily\tiny\bfseries,text=ink] at (3.36,.66)
-  {same candidates, different damage orderings};
+\node[score] (gsrc) at (4.60,3.10) {parameter\\sensitivity};
+\node[score] (hsrc) at (4.60,1.62) {representation\\proximity};
+\draw[accentflow] (latent.east) -- (gsrc.west);
+\draw[accentflow] (latent.east) -- (hsrc.west);
+\node[font=\sffamily\tiny\bfseries,text=ink] at (2.82,.66)
+  {both mechanisms may contribute to one trajectory};
 
 % -------------------------------------------------------------------------
-% (b) Both profiles are prospective and use the same candidate universe.
-\node[paneltitle] at (5.78,4.50) {(b)\quad PROFILES BEFORE UNLEARNING};
+% (b) Components are computed, normalized, and mixed before unlearning.
+\node[paneltitle] at (5.78,4.50) {(b)\quad UNIFIED PRE-UNLEARNING PROFILE};
 \node[panelsub] at (5.78,4.10)
-  {same $\mathcal C$; computed at $\theta_0$ and sealed};
+  {same candidates; both components computed at $\theta_0$};
 
-\node[profile] (qg) at (6.55,3.14) {};
-\node[font=\sffamily\tiny\bfseries,text=ink] at (6.55,3.48)
-  {$\widehat q_G$};
-\node[font=\sffamily\tiny,text=ink] at (6.55,3.15)
-  {$\ell^-\!\leftarrow\!\theta_0\!\rightarrow\!\ell^+$};
-\node[font=\sffamily\tiny,text=ink] at (6.55,2.84)
-  {shake energy};
+\node[score] (qg) at (6.60,3.10)
+  {$\widehat q_G$\\[-.2mm]{\tiny loss-shake energy}};
+\node[score] (qh) at (6.60,1.62)
+  {$\widehat q_H$\\[-.2mm]{\tiny hidden neighbors}};
+\node[box,minimum width=1.32cm] (rg) at (8.12,3.10)
+  {$\widetilde q_G$\\[-.2mm]{\tiny rank scale}};
+\node[box,minimum width=1.32cm] (rh) at (8.12,1.62)
+  {$\widetilde q_H$\\[-.2mm]{\tiny rank scale}};
+\draw[flow] (qg) -- (rg);
+\draw[flow] (qh) -- (rh);
 
-\node[profile] (qh) at (6.55,1.54) {};
-\node[font=\sffamily\tiny\bfseries,text=ink] at (6.55,1.88)
-  {$\widehat q_H$};
-\node[circle,draw=accent,fill=white,minimum size=3.0mm,inner sep=0pt,
-      line width=.42pt,font=\sffamily\tiny,text=ink] at (6.55,1.56) {$x$};
-\foreach \x/\y in {6.27/1.66,6.82/1.68,6.79/1.39}
-  \node[rectangle,draw=accent,fill=accent,minimum size=2.6pt,inner sep=0pt]
-    at (\x,\y) {};
-\node[font=\sffamily\tiny,text=ink] at (6.55,1.22)
-  {hidden neighbors};
-
-\node[font=\sffamily\scriptsize,text=gray!78!black] at (8.82,3.72)
-  {shared $\pm$ loss shakes; no candidate backward};
-\node[font=\sffamily\scriptsize,text=gray!78!black] at (8.82,2.12)
-  {nearest forget-state neighbors};
-\draw[flow] (qg.east) -- (7.35,3.14);
-\draw[flow] (qh.east) -- (7.35,1.54);
-
-% Accent mini-bars denote prospective exposure, not observed damage.
-\foreach \x/\lab/\height in {7.58/1/.18,8.11/2/.07,8.64/3/.15,9.17/4/.05,9.70/5/.10}{
-  \node[candidate] at (\x,3.14) {$x_{\lab}$};
-  \fill[accent!82] ({\x-.065},2.85) rectangle ({\x+.065},{2.85+\height});
-}
-\foreach \x/\lab/\height in {7.58/1/.07,8.11/2/.18,8.64/3/.05,9.17/4/.15,9.70/5/.09}{
-  \node[candidate] at (\x,1.54) {$x_{\lab}$};
-  \fill[accent!82] ({\x-.065},1.25) rectangle ({\x+.065},{1.25+\height});
-}
-\node[seal] at (10.48,3.14) {SEALED};
-\node[seal] at (10.48,1.54) {SEALED};
-\node[font=\sffamily\tiny\bfseries,text=ink] at (8.48,.66)
-  {two prospective hypotheses, no outcome access};
+\node[score,minimum width=1.82cm,minimum height=1.05cm] (mix) at (9.95,2.36)
+  {$S_\alpha(x)$\\[-.2mm]{\tiny $(1-\alpha)\widetilde q_G+\alpha\widetilde q_H$}};
+\draw[accentflow] (rg.east) -- (mix.west |- rg.east);
+\draw[accentflow] (rh.east) -- (mix.west |- rh.east);
+\node[font=\sffamily\tiny\bfseries,text=ink] at (8.38,.66)
+  {$\alpha$ is heuristic and frozen before sealed outcomes};
 
 % -------------------------------------------------------------------------
-% (c) Independent trajectories populate a crossed, preregistered endpoint.
-\node[paneltitle] at (11.38,4.50) {(c)\quad PREREGISTERED CROSSED TEST};
+% (c) The same sealed score supports prediction and protection.
+\node[paneltitle] at (11.38,4.50) {(c)\quad PREDICT AND PROTECT};
 \node[panelsub] at (11.38,4.10)
-  {test, not result: does the relative winner flip?};
+  {one sealed profile; independent damage and audit outcomes};
 
-% The target trajectories never consume the prospective profiles.
-\node[draw=gray!58,rounded corners=.45mm,fill=white,minimum width=.62cm,
-      minimum height=.48cm,line width=.5pt,font=\sffamily\tiny\bfseries]
-      (theta) at (11.82,2.37) {$\theta_0$};
-\node[font=\sffamily\scriptsize,text=gray!78!black] at (12.65,3.72)
-  {independent runs};
-\node[draw=gray!55,rounded corners=.4mm,fill=white,minimum width=.62cm,
-      minimum height=.46cm,line width=.48pt,font=\sffamily\tiny]
-      (co) at (12.62,3.12) {$\mathcal U_{\mathrm{out}}$};
-\node[draw=gray!55,rounded corners=.4mm,fill=white,minimum width=.62cm,
-      minimum height=.46cm,line width=.48pt,font=\sffamily\tiny]
-      (cr) at (12.62,1.62) {$\mathcal U_{\mathrm{rep}}$};
-\node[draw=gray!55,rounded corners=.4mm,fill=gray!4,minimum width=.58cm,
-      minimum height=.46cm,line width=.48pt,font=\sffamily\tiny]
-      (do) at (13.57,3.12) {$d_{\mathrm{out}}$};
-\node[draw=gray!55,rounded corners=.4mm,fill=gray!4,minimum width=.58cm,
-      minimum height=.46cm,line width=.48pt,font=\sffamily\tiny]
-      (dr) at (13.57,1.62) {$d_{\mathrm{rep}}$};
-\draw[trajectory] (theta.east) -- (12.14,2.37) |- (co.west);
-\draw[trajectory] (theta.east) -- (12.14,2.37) |- (cr.west);
-\draw[trajectory] (co) -- (do);
-\draw[trajectory] (cr) -- (dr);
+\node[score,minimum width=1.35cm] (sealed) at (12.05,2.85)
+  {$S_\alpha$\\[-.2mm]{\tiny SEALED}};
+\node[box,minimum width=1.55cm] (traj) at (13.92,3.25)
+  {independent\\unlearning run};
+\node[box,minimum width=1.55cm] (pool) at (13.92,1.70)
+  {Top-$K_p$\\protect pool};
+\draw[flow] (sealed.east) -- (traj.west);
+\draw[flow] (sealed.east) -- (pool.west);
 
-% Correlation matrix.  All four cells remain visually neutral because the
-% preregistered interaction is a question, not an observed result.
-\node[font=\sffamily\scriptsize,text=gray!78!black,align=center] at (15.23,3.57)
-  {output\\damage};
-\node[font=\sffamily\scriptsize,text=gray!78!black,align=center] at (16.39,3.57)
-  {representation\\damage};
-\node[font=\sffamily\tiny\bfseries,text=ink,align=right] at (14.42,2.82)
-  {$\widehat q_G$};
-\node[font=\sffamily\tiny\bfseries,text=ink,align=right] at (14.42,2.02)
-  {$\widehat q_H$};
-\node[cell]        at (15.23,2.82) {$\rho_{G,\mathrm{out}}$};
-\node[cell]        at (16.39,2.82) {$\rho_{G,\mathrm{rep}}$};
-\node[cell]        at (15.23,2.02) {$\rho_{H,\mathrm{out}}$};
-\node[cell]        at (16.39,2.02) {$\rho_{H,\mathrm{rep}}$};
+\node[box,minimum width=1.62cm] (damage) at (15.90,3.25)
+  {realized damage\\$d_{\mathcal U}(x)$};
+\node[box,minimum width=1.62cm] (audit) at (15.90,1.70)
+  {sealed audit\\mean + CVaR};
+\draw[accentflow] (traj) -- (damage);
+\draw[accentflow] (pool) -- (audit);
 
-\node[font=\sffamily\scriptsize,text=ink] at (15.17,.79)
-  {$\displaystyle
-    \Delta=
-    (\rho_{G,\mathrm{out}}-\rho_{H,\mathrm{out}})
-    -(\rho_{G,\mathrm{rep}}-\rho_{H,\mathrm{rep}})>0\;?$};
+\node[font=\sffamily\tiny,text=ink] at (14.88,.75)
+  {compare mixture with $S_0$, $S_1$, random, and none};
 
 \end{tikzpicture}

@@ -1,0 +1,203 @@
+campaign_id: kdd27-channel-matrix-llama8b-v1
+output_root: runs/channel_matrix_llama8b
+
+# Second architecture family for the Table 2 model-family row.  The launcher
+# intentionally refuses a missing enabled path instead of downloading a model
+# during a sealed campaign — provision the weights first with
+# experiments/cluster/provision_llama.sh (meta-llama is a gated repo; HF Hub
+# is blocked/unstable from the cluster since 2026-07-23, see that script).
+models:
+  - id: llama31_8b
+    path: /group-volume/models/Llama-3.1-8B-Instruct
+    enabled: true
+
+common:
+  device: cuda
+  dtype: float32
+  trainable_scope: probe_block
+  representation_retain_mode: stream_cached
+  block_last_n: 8
+  universe_authors: 30
+  # Outcome-independent retained-author pools. Development and every audit
+  # request are mutually disjoint. Each has 30 authors (600 QA); the group-wise
+  # 50/50 split therefore remains n=300 per audit run.
+  candidate_author_pools:
+    calibration: "0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34,36,38,40,42,44,46,48,50,52,54,56,58"
+    audit:
+      "181": "60,63,66,69,72,75,78,81,84,87,90,93,96,99,102,105,108,111,114,117,120,123,126,129,132,135,138,141,144,147"
+      "186": "61,64,67,70,73,76,79,82,85,88,91,94,97,100,103,106,109,112,115,118,121,124,127,130,133,136,139,142,145,148"
+      "191": "62,65,68,71,74,77,80,83,86,89,92,95,98,101,104,107,110,113,116,119,122,125,128,131,134,137,140,143,146,149"
+  batch_size: 4
+  sft_lr: 1.0e-5
+  # Scale-calibration lesson: the probe_block ABSOLUTE size drives memorization
+  # speed, not the model total — measured budgets were 1.5B=1200, 7B=400,
+  # 14B=800 steps.  Llama-3.1-8B trains the last 8 of 32 layers, i.e. a block
+  # between 7B (8/28) and 14B (8/48), so start at 600.  SFT reach is a
+  # precondition, not an outcome-dependent choice: the NLL<=0.8 gate below is
+  # required exactly as on the other scales.
+  sft_steps: 600
+  sft_target_loss: 0.8
+  sft_eval_every: 100
+  require_sft_target: true
+  probe_dirs: 64
+  probe_norm_eta: 3.0e-3
+  probe_seed: 0
+  # Pre-cache this exact encoder on the H100 host before audit; audit fails
+  # rather than silently dropping the sentence-embedding control row.
+  sentence_encoder: sentence-transformers/all-MiniLM-L6-v2
+
+# Numerical validation only; it uses the disjoint development candidate pool
+# and the already frozen R/eta. It is not allowed to inspect realized damage.
+fidelity:
+  author: 198
+  n_candidates: 128
+  candidate_seed: 314159
+  min_rho_ab: 0.70
+  min_rho_bc: 0.80
+  min_rho_ac: 0.80
+  min_eff_ratio: 0.90
+  min_frac_changed: 0.90
+
+# Development-only starting grid.  It is deliberately small enough to finish
+# before the deadline and must be selected by forget reach + ordinary utility,
+# never by predictor correlation.  Authors do not overlap the audit roster.
+calibration:
+  authors: [198, 199]
+  seeds: [2025]
+  selection:
+    forget_recall_max: 0.10
+    mean_dnll_max: 2.0
+    # 8.0 -> 16.0 per prereg/AMENDMENT-2026-07-23-cvar-bound.md: the
+    # measured 7B-scale graddiff frontier at reach floors at CVaR ~12,
+    # above the bound transplanted from the 1.5B substrate. Adopted
+    # before any audit or probe outcome existed for this campaign.
+    cvar05_dnll_max: 16.0
+    require_every_development_run: true
+    tie_break: [mean_dnll, cvar05_dnll, steps, lr]
+    stress_rule: >-
+      Prefer settings reaching the forget criterion on every development run;
+      otherwise minimize worst development recall, then mean damage, CVaR,
+      steps, and learning rate. Stress controls may remain failed or collapsed
+      in audit and are never part of the core interaction.
+  # Round-1 grid seeded from the Qwen2.5-7B round-1 experience (same settings,
+  # untouched).  Llama-specific escalation rounds are to be added from the
+  # development diagnostics of this campaign, never from audit outcomes.
+  objective_grid:
+    ga:
+      - {id: lr05_s60, lr: 5.0e-7, steps: 60}
+      - {id: lr1_s60, lr: 1.0e-6, steps: 60}
+    graddiff:
+      - {id: lr1_s120, lr: 1.0e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
+      - {id: lr2_s120, lr: 2.0e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
+    npo:
+      - {id: b01_lr2_s120, lr: 2.0e-6, steps: 120, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
+      - {id: b01_lr4_s120, lr: 4.0e-6, steps: 120, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
+    simnpo:
+      - {id: b45_lr2_s120, lr: 2.0e-6, steps: 120, beta: 4.5, forget_weight: 0.125, retain_weight: 1.0}
+      - {id: b45_lr4_s120, lr: 4.0e-6, steps: 120, beta: 4.5, forget_weight: 0.125, retain_weight: 1.0}
+    gru:
+      - {id: lr1_s120, lr: 1.0e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
+      - {id: lr2_s120, lr: 2.0e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
+    idkdpo:
+      - {id: b01_lr2_s120, lr: 2.0e-6, steps: 120, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
+      - {id: b01_lr4_s120, lr: 4.0e-6, steps: 120, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
+    rmu:
+      - {id: a10_c3_lr1_s120, lr: 1.0e-6, steps: 120, rmu_alpha: 10.0, rmu_c: 3.0}
+      - {id: a10_c3_lr2_s120, lr: 2.0e-6, steps: 120, rmu_alpha: 10.0, rmu_c: 3.0}
+    repnoise:
+      - {id: a1_c3_lr1_s120, lr: 1.0e-6, steps: 120, rmu_alpha: 1.0, rmu_c: 3.0}
+      - {id: a10_c3_lr1_s120, lr: 1.0e-6, steps: 120, rmu_alpha: 10.0, rmu_c: 3.0}
+    circuit_breakers:
+      - {id: a1_lr1_s240, lr: 1.0e-6, steps: 240, rmu_alpha: 1.0}
+      - {id: a10_lr1_s240, lr: 1.0e-6, steps: 240, rmu_alpha: 10.0}
+
+audit:
+  offline: true
+  # Systematic, outcome-independent spacing within TOFU forget10.
+  authors: [181, 186, 191]
+  seeds: [2025, 2026]
+  # Full seven-objective core roster at campaign start; calibration will
+  # reduce this later exactly as on the Qwen scales (only objectives that
+  # jointly satisfy reach and the utility bounds carry core claims — the
+  # demoted ones move to stress_objectives before the freeze is committed).
+  objectives: [graddiff, npo, simnpo, gru, rmu, repnoise, circuit_breakers]
+  # These run before any score is opened but are excluded from the core
+  # interaction and main seven objective columns.
+  stress_objectives: [ga, idkdpo]
+  predictors: [grad_norm, fd_norm, knn_feature, knn_embed, knn_lexical, fd, random_rank]
+  objective_freeze: objective_freeze_llama8b.yaml
+  fidelity_certificates:
+    llama31_8b: runs/channel_matrix_llama8b/fidelity/llama31_8b.json
+
+# Prospective adaptive protection extension.  This is a separate endpoint
+# from the original 1.5B crossed experiment: objective settings are frozen
+# first, alpha is selected only from the development requests below, and the
+# selected alpha is committed before any alpha-protection audit is run.
+alpha_protection:
+  campaign_id: kdd27-channel-mixture-protection-llama8b-v1
+  objective_freeze: objective_freeze_llama8b.yaml
+  alpha_freeze: alpha_protection_freeze_llama8b.yaml
+  # Placeholder transplanted from the 7B campaign; the actual parents follow
+  # the resolved Llama calibration cores (update together with the objective
+  # freeze commit, before any alpha phase is enqueued).
+  parents: [graddiff, rmu]
+  probes: {gradient: fd_norm, proximity: knn_feature}
+  normalization: empirical_midrank_discovery_only
+  orientation: (1-alpha)*gradient + alpha*proximity
+  alpha_grid: [0, 0.25, 0.5, 0.75, 1]
+  declared_prior: {loss_gradient: 0.0, representation: 1.0, hybrid: 0.5}
+  development:
+    authors: [198, 199]
+    seeds: [2025]
+  audit:
+    authors: [181, 186, 191]
+    seeds: [2025, 2026]
+    # The complete frozen curve is descriptive after alpha_hat has already
+    # been committed. Only the frozen alpha_hat is the deployable method.
+    run_descriptive_grid: true
+  # Ordinary retained utility is independent of every damage-candidate pool.
+  # Four fixed QA per author gives n=120 without making every repair snapshot
+  # evaluate all 600 examples.
+  utility_authors: "150-179"
+  utility_examples_per_author: 4
+  partition:
+    pool_size: 30
+    min_pool_size: 8
+    tau_rem_abs_quantile: 0.50
+  parent:
+    recall_max: 0.10
+    checkpoint_every: 10
+  selection:
+    metric: cvar05_dnll
+    aggregation: minimax_across_development_requests_and_seeds
+    require_every_development_run: true
+    utility_retention_min: 0.90
+    tie_break: [mean_cvar05_dnll, distance_to_midpoint_0p5, alpha]
+    prohibited: audit_selection
+  comparators:
+    repeated_random:
+      # Independent allocation pools; each draw ID and complete trajectory is
+      # persisted, then resampled within its request in the paired bootstrap.
+      B_rand: 5
+      seed_base: 271828
+  final_checkpoint:
+    # The reporter selects the last saved repair checkpoint satisfying every
+    # required item. Missing metrics fail closed and no parent checkpoint may
+    # masquerade as a successful repair output.
+    required: [direct_forgetting, paraphrase_forgetting, extraction_generation, utility]
+    direct_recall_max: 0.10
+    paraphrase_recall_max: 0.10
+    # Greedy autoregressive gold-token recall from the prompt alone; unlike
+    # direct recall this never teacher-forces answer tokens.
+    extraction_generation_max: 0.10
+    utility_retention_min: 0.90
+  stage2:
+    eta2: 3.0e-5
+    max_steps: 120
+    snapshots: 4
+    refresh_k: 4
+    delta_seq_sq: 1.0e-2
+    delta_tok_sq: 1.0e-1
+    mu_v: 0.7
+    rho_g: 10.0
+    shrink: 0.5

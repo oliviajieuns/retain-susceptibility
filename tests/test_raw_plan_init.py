@@ -35,7 +35,7 @@ def _contracts():
             "frozen_before_target": True,
         }
     )
-    primary = "tofu_qwen25_1p5b"
+    primary = "tofu_qwen25_7b"
     for parent in freeze["selections"][primary].values():
         parent["prediction"] = {"valid": True, "fallback": False, "alpha": 0.4}
         parent["protection"] = {"valid": True, "fallback": False, "alpha": 0.6}
@@ -48,7 +48,7 @@ def test_primary_plan_is_complete_and_fidelity_keys_match_cost_rows():
         evidence,
         campaign,
         freeze,
-        setting_ids={"tofu_qwen25_1p5b"},
+        setting_ids={"tofu_qwen25_7b"},
     )
     # 10 untouched requests x 2 seeds x 7 parents.
     assert len(plan["units"]) == 140
@@ -73,8 +73,8 @@ def test_primary_plan_is_complete_and_fidelity_keys_match_cost_rows():
         "R",
         "repeat",
     ]
-    # Two provisioned models x (exact + three R values) x three repeats.
-    assert len(fidelity["planned"]) == 24
+    # Three provisioned models x (exact + three R values) x three repeats.
+    assert len(fidelity["planned"]) == 36
     planned = next(
         row
         for row in fidelity["planned"]
@@ -122,7 +122,7 @@ def test_pending_freeze_and_unprovisioned_setting_fail_closed():
             evidence,
             campaign,
             pending,
-            setting_ids={"tofu_qwen25_1p5b"},
+            setting_ids={"tofu_qwen25_7b"},
         )
 
     # Filling a selection file cannot silently turn an unavailable model into
@@ -143,7 +143,7 @@ def test_execution_protocol_rejects_cost_runner_drift():
             evidence,
             campaign,
             freeze,
-            setting_ids={"tofu_qwen25_1p5b"},
+            setting_ids={"tofu_qwen25_7b"},
         )
 
     _, campaign, freeze = _contracts()
@@ -153,19 +153,19 @@ def test_execution_protocol_rejects_cost_runner_drift():
             evidence,
             campaign,
             freeze,
-            setting_ids={"tofu_qwen25_1p5b"},
+            setting_ids={"tofu_qwen25_7b"},
         )
 
 
 def test_fallback_selection_is_frozen_but_never_mislabelled_valid():
     evidence, campaign, freeze = _contracts()
-    parent = freeze["selections"]["tofu_qwen25_1p5b"]["npo"]
+    parent = freeze["selections"]["tofu_qwen25_7b"]["npo"]
     parent["prediction"] = {"valid": False, "fallback": True, "alpha": 0.5}
     plan = build_plan(
         evidence,
         campaign,
         freeze,
-        setting_ids={"tofu_qwen25_1p5b"},
+        setting_ids={"tofu_qwen25_7b"},
     )
     npo = [unit for unit in plan["units"] if unit["parent"] == "npo"]
     assert npo
@@ -188,7 +188,7 @@ def test_cli_entrypoint_writes_a_parseable_partial_plan(tmp_path):
             "--selection-freeze",
             str(freeze_path),
             "--setting",
-            "tofu_qwen25_1p5b",
+            "tofu_qwen25_7b",
             "--out",
             str(output),
         ],

@@ -1,157 +1,144 @@
-% Figure: anatomy of the experiment (conceptual opener for Sec. 5).
-% Two counterfactual lanes branch from one frozen start. Scores are sealed
-% once, before any objective is run; each lane then realizes its own damage
-% pattern, and the same sealed rankings enter prediction and protection.
+% Figure 1: chronological conditional pipeline from frozen profiling to
+% externally gated prediction and post-unlearning guarded repair.
 \resizebox{\textwidth}{!}{%
 \begin{tikzpicture}[
   x=1cm,y=1cm,
   font=\scriptsize,
   >=Latex,
-  box/.style={draw=gray!55,rounded corners=1.2mm,fill=white,
-              align=center,inner sep=1.6mm},
-  lane/.style={draw,rounded corners=1.5mm,fill=white,
-               align=center,inner sep=1.2mm},
-  chip/.style={draw=gray!60,rounded corners=0.7mm,fill=white,
-               align=center,inner xsep=0.8mm,inner ysep=0.55mm,font=\tiny},
-  hdr/.style={font=\footnotesize\bfseries,align=left},
-  stagebadge/.style={circle,draw=gray!65,fill=gray!8,minimum size=4.4mm,
-                    inner sep=0pt,font=\scriptsize\bfseries},
-  note/.style={align=center,text=gray!60!black,font=\tiny},
-  arr/.style={->,thick,gray!60!black,shorten >=0.5mm},
-  bus/.style={->,densely dashed,thick,gray!60!black,shorten >=0.5mm}
+  box/.style={draw=gray!52,rounded corners=1.0mm,fill=white,
+              align=center,inner sep=1.0mm},
+  probe/.style={draw=violet!68!black,rounded corners=1.0mm,
+                fill=violet!5,align=center,inner sep=1.0mm},
+  gate/.style={draw=teal!65!black,rounded corners=1.0mm,
+               fill=teal!5,align=center,inner sep=1.0mm,line width=.7pt},
+  outcome/.style={draw=orange!65!black,rounded corners=1.0mm,
+                  fill=orange!5,align=center,inner sep=1.0mm},
+  muted/.style={draw=gray!48,rounded corners=1.0mm,fill=gray!5,
+                align=center,inner sep=1.0mm,text=gray!78!black},
+  hdr/.style={font=\scriptsize\bfseries,anchor=west},
+  stage/.style={circle,draw=gray!60,fill=gray!7,minimum size=4.2mm,
+                inner sep=0pt,font=\scriptsize\bfseries},
+  rq/.style={rounded corners=.7mm,fill=black!78,text=white,
+             font=\tiny\bfseries,inner xsep=1.2mm,inner ysep=.55mm},
+  note/.style={align=center,text=gray!68!black,font=\tiny},
+  arr/.style={->,semithick,gray!68!black,shorten >=.5mm,
+              shorten <=.3mm},
+  profarr/.style={->,semithick,violet!70!black,shorten >=.5mm,
+                  shorten <=.3mm},
+  gatearr/.style={->,semithick,teal!68!black,shorten >=.5mm,
+                  shorten <=.3mm}
 ]
 
-% Fix the native aspect ratio near the ACM two-column text block.  The
-% resize is therefore slight and does not compensate for a very wide canvas.
-\path[use as bounding box] (-0.05,-0.60) rectangle (17.15,6.65);
+\path[use as bounding box] (-0.05,-0.30) rectangle (17.72,5.62);
 
-% ---------- stage headers: separate number nodes avoid fragile \textcircled ----------
-\node[stagebadge] at (0.28,6.28) {1};
-\node[hdr,anchor=west,text width=2.55cm] at (0.58,6.28)
-  {Score once\\and seal};
+% ---------------------------------------------------------------- headers
+\node[stage] at (0.22,5.32) {1};
+\node[hdr] at (0.52,5.32) {Profile + seal};
+\node[stage] at (7.72,5.32) {2};
+\node[hdr] at (8.02,5.32) {Unlearning};
+\node[stage] at (9.82,5.32) {3};
+\node[hdr] at (10.12,5.32) {External gate};
+\node[stage] at (12.17,5.32) {4};
+\node[hdr] at (12.47,5.32) {Experiment};
+\node[stage] at (16.17,5.32) {5};
+\node[hdr] at (16.47,5.32) {Outcome};
 
-\node[stagebadge] at (3.72,6.28) {2};
-\node[hdr,anchor=west,text width=4.20cm] at (4.02,6.28)
-  {Declare the channel;\\run its objectives};
+\draw[gray!18] (7.45,-0.12) -- (7.45,5.52);
+\draw[gray!18] (9.55,-0.12) -- (9.55,5.52);
+\draw[gray!18] (11.90,-0.12) -- (11.90,5.52);
+\draw[gray!18] (15.90,-0.12) -- (15.90,5.52);
 
-\node[stagebadge] at (8.92,6.28) {3};
-\node[hdr,anchor=west,text width=3.20cm] at (9.22,6.28)
-  {Realize lane-specific\\damage};
+% -------------------------------------------------------- stage 1: profile
+\node[box,text width=1.18cm,minimum height=2.48cm] (inputs) at (0.95,2.72)
+  {\textbf{Frozen}\\[.3mm]
+   model $\theta_0$\\[.35mm]
+   request $\mathcal D_f$\\[.35mm]
+   {\tiny discovery / audit}};
 
-\node[stagebadge] at (13.12,6.28) {4};
-\node[hdr,anchor=west,text width=3.45cm] at (13.42,6.28)
-  {Evaluate prediction\\and protection};
+\node[probe,text width=2.05cm,minimum height=1.04cm] (qg) at (3.35,3.68)
+  {\textbf{Loss-shake} $\widehat q_G$\\[-.1mm]
+   {\tiny local susceptibility $\mid$ $2R$ forwards}};
+\node[rq,anchor=south west] at (2.18,4.40) {RQ2: LOSS-SHAKE};
 
-% ---------- (1) frozen start and sealed scores ----------
-\node[box,text width=2.62cm,minimum height=1.72cm] (start) at (1.68,4.42)
-  {\textbf{One frozen start}\\
-   SFT'd model $\theta_0$\\
-   forget set $\mathcal D_f$\\
-   candidates $x_1{:}x_n$};
+\node[box,text width=2.05cm,minimum height=1.00cm] (qh) at (3.35,1.70)
+  {\textbf{Proximity} $\widehat q_H$\\[-.1mm]
+   {\tiny request exposure}};
 
-\node[box,text width=2.62cm,minimum height=2.02cm,draw=black,thick]
-  (scores) at (1.68,1.77)
-  {\textbf{Sealed pre-scores}\\[0.35mm]
-   {\color{orange!75!black}gradient-energy rank}\\
-   {\color{teal!60!black}proximity rank}\\
-   {\color{gray}baselines}\\[0.35mm]
-   {\tiny computed once; never revised}};
+\node[probe,text width=1.22cm,minimum height=2.05cm,line width=.75pt]
+  (sealed) at (6.25,2.70)
+  {\textbf{SEALED}\\[.35mm]
+   $S_{\widehat\alpha_{\rm pred}}$\\{\tiny audit rank}\\[.50mm]
+   $S_{\widehat\alpha_{\rm prot}}$\\{\tiny Top-$K_p$ pool}};
 
-\draw[arr] (start.south) -- (scores.north);
+\draw[arr] (inputs.east |- qg.west) -- (qg.west);
+\draw[arr] (inputs.east |- qh.west) -- (qh.west);
+\draw[profarr] (qg.east) -- (sealed.west |- qg.east);
+\draw[profarr] (qh.east) -- (sealed.west |- qh.east);
 
-% ---------- (2) channel lanes ----------
-\node[lane,draw=orange!70!black,fill=orange!5,text width=4.18cm,
-      minimum height=2.18cm] (laneO) at (6.15,4.42) {};
-\node[font=\scriptsize\bfseries] at ([yshift=7.6mm]laneO.center)
-  {Output-channel lane};
-\node[note,text width=4.02cm] at ([yshift=3.1mm]laneO.center)
-  {loss reads token likelihoods $\Rightarrow$ high-gradient victims};
-\node[chip] at ([xshift=-1.53cm,yshift=-3.0mm]laneO.center) {GradDiff};
-\node[chip] at ([xshift=-0.52cm,yshift=-3.0mm]laneO.center) {NPO};
-\node[chip] at ([xshift= 0.48cm,yshift=-3.0mm]laneO.center) {SimNPO};
-\node[chip] at ([xshift= 1.46cm,yshift=-3.0mm]laneO.center) {GRU};
-\node[note] at ([yshift=-8.2mm]laneO.center)
-  {one objective per world; the same $\theta_0$};
+% --------------------------------------------------------- stage 2: parent
+\node[muted,text width=1.42cm,minimum height=1.45cm] (parent) at (8.50,2.72)
+  {\textbf{Unchanged parent}\\
+   NPO / RMU / $\cdots$\\[-.1mm]
+   optimizes $\mathcal J_u$};
+\node[note,text width=1.55cm] at (8.50,1.48)
+  {starts from $\theta_0$; profile and pool unseen};
 
-\node[lane,draw=teal!60!black,fill=teal!6,text width=4.18cm,
-      minimum height=2.18cm] (laneR) at (6.15,1.77) {};
-\node[font=\scriptsize\bfseries] at ([yshift=7.6mm]laneR.center)
-  {Representation-channel lane};
-\node[note,text width=4.02cm] at ([yshift=3.1mm]laneR.center)
-  {loss reads hidden states $\Rightarrow$ forget-adjacent victims};
-\node[chip] at ([xshift=-1.47cm,yshift=-3.0mm]laneR.center) {RMU};
-\node[chip] at ([xshift=-0.14cm,yshift=-3.0mm]laneR.center)
-  {RepNoise$^{\mathrm a}$};
-\node[chip] at ([xshift= 1.43cm,yshift=-3.0mm]laneR.center)
-  {RR/CB$^{\mathrm a}$};
-\node[note] at ([yshift=-8.2mm]laneR.center)
-  {$^{\mathrm a}$adapted implementations (Appendix)};
+% ----------------------------------------------------------- stage 3: gate
+\node[gate,text width=1.36cm,minimum height=1.58cm] (forgetgate) at (10.72,2.72)
+  {\textbf{Forgetting gate}\\[.25mm]
+   external metrics pass\\[.25mm]
+   {\tiny first saved $\theta_{t^\dagger}$}};
+\draw[gatearr] (parent.east) -- (forgetgate.west);
+\node[note,text width=1.48cm] at (10.72,1.46)
+  {$\mathcal J_u\!\downarrow$ is not the gate};
 
-% A short fork uses the otherwise empty gutter; no arrow crosses a box.
-\coordinate (fork) at ([xshift=3.3mm]start.east);
-\draw[arr] (start.east) -- (fork) -- (laneO.west);
-\draw[arr] (fork) |- (laneR.west);
-\fill[gray!60!black] (fork) circle (0.55pt);
+% ----------------------------------------------------- stage 4: experiments
+\node[box,text width=1.82cm,minimum height=1.18cm] (predict) at (13.95,3.75)
+  {\textbf{Evaluate prediction}\\[-.1mm]
+   open audit damage now\\
+   compare with frozen rank};
+\node[rq,anchor=south west] at (12.88,4.48) {RQ1: PREDICTION};
 
-\node[note,text width=4.20cm] at (6.15,0.38)
-  {GA and IdkDPO are appendix stress controls, not lane members};
+\node[probe,text width=1.82cm,minimum height=1.24cm] (repair) at (13.95,1.55)
+  {\textbf{Guarded repair}\\[-.1mm]
+   sealed Top-$K_p$ at $\theta_{t^\dagger}$\\
+   fixed operator and budget};
+\node[rq,anchor=south west] at (12.88,2.34) {RQ3: PROTECTION};
 
-% ---------- (3) lane-specific realized damage ----------
-\node[box,text width=3.10cm,minimum height=1.74cm] (dO) at (10.92,4.42) {};
-\node[align=center] at ([yshift=4.0mm]dO.center)
-  {\textbf{Output damage}\\$d^{\mathcal U_{\mathrm{out}}}(x)$};
+% Gate and sealed profile meet at explicit junctions before each experiment.
+\coordinate (gatefork) at (11.67,2.72);
+\coordinate (predjoin) at (12.62,3.75);
+\coordinate (protjoin) at (12.62,1.55);
+\draw[gatearr] (forgetgate.east) -- (gatefork);
+\draw[gatearr] (gatefork) |- (predjoin);
+\draw[gatearr] (gatefork) |- (protjoin);
 
-\node[box,text width=3.10cm,minimum height=1.74cm] (dR) at (10.92,1.77) {};
-\node[align=center] at ([yshift=4.0mm]dR.center)
-  {\textbf{Representation damage}\\$d^{\mathcal U_{\mathrm{rep}}}(x)$};
+% Frozen information follows separate routes; target damage never feeds repair.
+\draw[profarr] (sealed.north) -- (6.25,4.78) -- (12.62,4.78)
+  -- (predjoin);
+\draw[profarr] (sealed.south) -- (6.25,0.42) -- (12.62,0.42)
+  -- (protjoin);
+\fill[gray!65!black] (predjoin) circle (.55pt);
+\fill[gray!65!black] (protjoin) circle (.55pt);
+\draw[arr] (predjoin) -- (predict.west);
+\draw[arr] (protjoin) -- (repair.west);
+\node[note,fill=white,inner sep=.4mm] at (9.15,4.78)
+  {frozen $S_{\widehat\alpha_{\rm pred}}$};
+\node[note,fill=white,inner sep=.4mm] at (9.15,0.42)
+  {preselected discovery Top-$K_p$};
 
-% Six fixed candidate slots; filled positions are lane-specific victims.
-\newcommand{\victimstrip}[9]{%
-  \foreach [count=\i] \flag in {#3,#4,#5,#6,#7,#8}{%
-    \ifnum\flag=1
-      \fill[#9] ({#1+(\i-1)*0.34},{#2})
-        rectangle ({#1+(\i-1)*0.34+0.28},{#2+0.30});
-    \else
-      \draw[gray!45] ({#1+(\i-1)*0.34},{#2})
-        rectangle ({#1+(\i-1)*0.34+0.28},{#2+0.30});
-    \fi}}
-\victimstrip{9.94}{3.83}{1}{1}{0}{0}{1}{0}{orange!75!black}
-\victimstrip{9.94}{1.18}{0}{0}{1}{1}{0}{1}{teal!60!black}
+% ---------------------------------------------------------- stage 5: outcomes
+\node[outcome,text width=1.38cm,minimum height=1.12cm] (predout) at (16.81,3.75)
+  {\textbf{Prediction}\\[-.1mm]
+   {\tiny rank correlation}\\{\tiny tail recall}};
+\node[outcome,text width=1.38cm,minimum height=1.22cm] (protout) at (16.81,1.55)
+  {\textbf{Protection}\\[-.1mm]
+   {\tiny forget/utility pass}\\{\tiny mean/CVaR damage}};
+\draw[arr] (predict.east) -- (predout.west);
+\draw[arr] (repair.east) -- (protout.west);
 
-\draw[arr] (laneO.east) -- (dO.west);
-\draw[arr] (laneR.east) -- (dR.west);
-
-\node[note,text width=3.35cm] at (10.92,0.38)
-  {same candidates, different victims; the ideal list is empty};
-
-% ---------- (4) one roomy evaluation panel with two internal tests ----------
-\node[box,text width=3.20cm,minimum height=4.80cm] (eval) at (15.18,3.10) {};
-
-\node[align=center,text width=2.88cm] (pred) at ([yshift=12.5mm]eval.center)
-  {\textbf{Prediction}\\
-   {\tiny Tab.~\ref{tab:channel-matrix}}\\[0.35mm]
-   $\rho(\text{sealed score},d^{\mathcal U})$\\
-   {\tiny per objective in both lanes}\\[0.35mm]
-   {\tiny channel interaction $\Delta$}};
-
-\draw[gray!35] ([xshift=2.0mm]eval.west) -- ([xshift=-2.0mm]eval.east);
-
-\node[align=center,text width=2.88cm] (protect) at ([yshift=-12.0mm]eval.center)
-  {\textbf{Protection}\\
-   {\tiny Tab.~\ref{tab:crossed}}\\[0.35mm]
-   Top-$K_p$ by one sealed score;\\
-   repair, then re-measure\\
-   audit CVaR\\[0.35mm]
-   {\tiny matched forgetting within each world}};
-
-% Separate input ports keep both arrows horizontal and readable.
-\draw[arr] (dO.east) -- (eval.west |- dO.east);
-\draw[arr] (dR.east) -- (eval.west |- dR.east);
-
-% The sealed-score path gets its own bottom rail instead of a long curve.
-\draw[bus] (scores.south) -- ++(0,-0.63) -| (eval.south);
-\node[note,fill=white,inner sep=0.6mm] at (8.45,-0.18)
-  {the same sealed rankings enter every comparison and every protect pool};
+\node[note,text width=1.52cm] at (16.81,0.38)
+  {damage outcomes choose neither weight nor pool};
 
 \end{tikzpicture}%
 }

@@ -125,8 +125,8 @@ def test_ready_setting_reports_exact_rosters_dtype_and_seven_parents(tmp_path):
     assert set(report["required_parents"]) <= set(
         report["implemented_parent_objectives"]
     )
-    assert report["summary"]["settings_ready"] == 8
-    assert report["summary"]["stages_ready"] == 32
+    assert report["summary"]["settings_ready"] == 9
+    assert report["summary"]["stages_ready"] == 36
     assert report["summary"]["unready_executors"] == []
     assert report["summary"]["selection_freeze_ready"]
 
@@ -159,13 +159,15 @@ def test_tbd_missing_adapter_and_unprovisioned_model_are_explicit(tmp_path):
     )
     assert result.returncode == 2
     report = json.loads(output.read_text(encoding="utf-8"))
-    assert "WMDP-bio/MMLU" in report["summary"]["missing_adapter_datasets"]
     assert "MUSE-News" in report["summary"]["missing_adapter_datasets"]
     assert "MUSE-Books" in report["summary"]["missing_adapter_datasets"]
     assert "PISTOL" in report["summary"]["missing_adapter_datasets"]
     # RWKU graduated from this list on 2026-07-23: the adapter is registered
     # and its rosters are concrete, pairwise-disjoint request ids.
     assert "RWKU" not in report["summary"]["missing_adapter_datasets"]
+    # WMDP-bio/MMLU also has a registered adapter now; only its campaign
+    # rosters remain unresolved (asserted below).
+    assert "WMDP-bio/MMLU" not in report["summary"]["missing_adapter_datasets"]
     assert report["datasets"]["RWKU"]["pairwise_disjoint"]
     for roster in report["datasets"]["RWKU"]["rosters"].values():
         assert "reasons" not in roster or not any(

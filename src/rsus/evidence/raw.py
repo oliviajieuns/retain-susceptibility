@@ -138,6 +138,7 @@ class RawPlan:
     top_q: float
     cvar_q: float
     artifact_contracts: Mapping[str, Mapping[str, Any]]
+    native_margins: Mapping[str, float] = None  # per-setting frozen NI margin
     source_sha256: str | None = None
 
     @property
@@ -162,6 +163,7 @@ def load_raw_plan(path: str | Path) -> RawPlan:
         top_q=plan.top_q,
         cvar_q=plan.cvar_q,
         artifact_contracts=plan.artifact_contracts,
+        native_margins=plan.native_margins,
         source_sha256=hashlib.sha256(payload).hexdigest(),
     )
 
@@ -240,6 +242,15 @@ def raw_plan_from_mapping(raw: object) -> RawPlan:
                 f"planned row {row_key!r} changes frozen protection selection"
             )
 
+    raw_native_margins = raw.get("native_margins", {}) or {}
+    if not isinstance(raw_native_margins, Mapping):
+        raise EvidenceValidationError("raw plan native_margins must be a mapping")
+    native_margins: dict[str, float] = {}
+    for setting_id, margin in raw_native_margins.items():
+        native_margins[str(setting_id)] = _number(
+            {"margin": margin}, "margin", where=f"native_margins.{setting_id}"
+        )
+
     raw_contracts = raw.get("artifact_contracts", {}) or {}
     if not isinstance(raw_contracts, Mapping):
         raise EvidenceValidationError("raw plan artifact_contracts must be a mapping")
@@ -283,6 +294,7 @@ def raw_plan_from_mapping(raw: object) -> RawPlan:
         top_q=top_q,
         cvar_q=cvar_q,
         artifact_contracts=artifact_contracts,
+        native_margins=native_margins,
     )
 
 
@@ -329,6 +341,7 @@ class PredictionCandidate:
     s1: float
     joint: float
     damage: float
+    control: float | None = None
 
 
 @dataclass(frozen=True)
@@ -355,6 +368,9 @@ class ProtectionRecord:
     draw_complete: bool
     parent_checkpoint_id: str
     parent_checkpoint_first_reaching: bool
+    native_metric: float | None = None
+    updates_accepted: float | None = None
+    updates_rolled_back: float | None = None
 
     @property
     def forget_margin(self) -> float:
@@ -377,6 +393,16 @@ class ProtectionUnitData:
     common: bool
     min_forget_margin: float | None
     min_utility_margin: float | None
+    native: Mapping[str, float] = None  # per non-random claim arm, favorably oriented
+    random_draw_native: Mapping[str, float] = None  # per frozen random draw
+    updates: Mapping[str, float] = None  # joint-arm accepted/rolled_back counts
+
+    def has_native(self) -> bool:
+        return (
+            bool(self.native)
+            and all(arm in self.native for arm in NON_RANDOM_ARMS)
+            and bool(self.random_draw_native)
+        )
 
 
 def _validate_frozen_selection(
@@ -426,6 +452,9 @@ def _parse_prediction_records(
         if key in status and status[key] != observed_status:
             raise EvidenceValidationError(f"{where} has inconsistent unit status")
         status[key] = observed_status
+        control = (
+            _number(raw, "control", where=where) if raw.get("control") is not None else None
+        )
         grouped[key].append(
             PredictionCandidate(
                 candidate_id=candidate_id,
@@ -434,8 +463,18 @@ def _parse_prediction_records(
                 s1=_number(raw, "s1", where=where),
                 joint=_number(raw, "joint", where=where),
                 damage=_number(raw, "damage", where=where),
+                control=control,
             )
         )
+    # The frozen simple control is a per-unit ranking: either every candidate
+    # in a unit carries it or none does.  A partial column would silently
+    # shrink the g_ctl comparison support, so it fails closed here.
+    for key, values in grouped.items():
+        with_control = sum(candidate.control is not None for candidate in values)
+        if with_control not in (0, len(values)):
+            raise EvidenceValidationError(
+                f"prediction unit {key!r} has a partial simple-control column"
+            )
     return {
         key: PredictionUnitData(
             key=key,
@@ -540,6 +579,21 @@ def _parse_protection_records(
                 draw_complete=draw_complete,
                 parent_checkpoint_id=checkpoint_id,
                 parent_checkpoint_first_reaching=first_reaching,
+                native_metric=(
+                    _number(raw, "native_metric", where=where)
+                    if raw.get("native_metric") is not None
+                    else None
+                ),
+                updates_accepted=(
+                    _number(raw, "updates_accepted", where=where)
+                    if raw.get("updates_accepted") is not None
+                    else None
+                ),
+                updates_rolled_back=(
+                    _number(raw, "updates_rolled_back", where=where)
+                    if raw.get("updates_rolled_back") is not None
+                    else None
+                ),
             )
         )
 
@@ -631,6 +685,69 @@ def _normalize_protection_unit(
             for draw in unit.repeated_random_draws
         }
 
+    # The native retained-behavior metric is an arm-level outcome: every
+    # candidate row of one (arm, draw) must agree on it, and it is usable only
+    # when every claim arm reports it.
+    native: dict[str, float] = {}
+    random_draw_native: dict[str, float] = {}
+    if common:
+        for arm in NON_RANDOM_ARMS:
+            values = {
+                record.native_metric
+                for record in arm_draws[arm][None].values()
+            }
+            if len(values) != 1:
+                raise EvidenceValidationError(
+                    f"protection unit {unit.key!r} arm {arm!r} has an "
+                    "inconsistent native metric"
+                )
+            value = values.pop()
+            if value is not None:
+                native[arm] = value
+        for draw in unit.repeated_random_draws:
+            values = {
+                record.native_metric
+                for record in arm_draws["repeated_random"][draw].values()
+            }
+            if len(values) != 1:
+                raise EvidenceValidationError(
+                    f"protection unit {unit.key!r} random draw {draw!r} has an "
+                    "inconsistent native metric"
+                )
+            value = values.pop()
+            if value is not None:
+                random_draw_native[draw] = value
+        if native or random_draw_native:
+            complete_native = (
+                len(native) == len(NON_RANDOM_ARMS)
+                and len(random_draw_native) == len(unit.repeated_random_draws)
+            )
+            if not complete_native:
+                raise EvidenceValidationError(
+                    f"protection unit {unit.key!r} reports a partial native "
+                    "metric roster; every claim arm and frozen draw needs one"
+                )
+
+    updates: dict[str, float] = {}
+    if common:
+        joint_records = list(arm_draws["joint"][None].values())
+        accepted = {record.updates_accepted for record in joint_records}
+        rolled = {record.updates_rolled_back for record in joint_records}
+        if len(accepted) != 1 or len(rolled) != 1:
+            raise EvidenceValidationError(
+                f"protection unit {unit.key!r} has inconsistent joint-arm "
+                "update diagnostics"
+            )
+        accepted_value = accepted.pop()
+        rolled_value = rolled.pop()
+        if (accepted_value is None) != (rolled_value is None):
+            raise EvidenceValidationError(
+                f"protection unit {unit.key!r} must report accepted and "
+                "rolled-back updates together"
+            )
+        if accepted_value is not None:
+            updates = {"accepted": accepted_value, "rolled_back": rolled_value}
+
     margins = all_records_expected if present and draw_complete else []
     return ProtectionUnitData(
         key=unit.key,
@@ -642,6 +759,9 @@ def _normalize_protection_unit(
         common=common,
         min_forget_margin=min((record.forget_margin for record in margins), default=None),
         min_utility_margin=min((record.utility_margin for record in margins), default=None),
+        native=native,
+        random_draw_native=random_draw_native,
+        updates=updates,
     )
 
 
@@ -702,7 +822,10 @@ def _top_q_recall(
 
 
 def _prediction_metrics(
-    candidates: Sequence[PredictionCandidate], *, top_q: float
+    candidates: Sequence[PredictionCandidate],
+    *,
+    top_q: float,
+    include_control: bool = False,
 ) -> dict[str, float] | None:
     if len(candidates) < 2:
         return None
@@ -720,12 +843,51 @@ def _prediction_metrics(
         return None
     assert rho_joint is not None and rho_s0 is not None and rho_s1 is not None
     assert recall is not None
-    return {
+    metrics = {
         "joint_rho": rho_joint,
         "top_q_recall": recall,
         "gain_s0": rho_joint - rho_s0,
         "gain_s1": rho_joint - rho_s1,
     }
+    if include_control:
+        if any(candidate.control is None for candidate in candidates):
+            return None
+        control = [candidate.control for candidate in candidates]
+        rho_control = _spearman(control, damage)  # type: ignore[arg-type]
+        if rho_control is None:
+            return None
+        metrics["gain_ctl"] = rho_joint - rho_control
+    return metrics
+
+
+def _tail_eligible(
+    candidates: Sequence[PredictionCandidate], *, top_q: float
+) -> bool:
+    """A tail cell needs at least m = ceil(q*n) positive-damage candidates."""
+    if len(candidates) < 2:
+        return False
+    count = max(1, math.ceil(top_q * len(candidates)))
+    positive = sum(candidate.damage > 0.0 for candidate in candidates)
+    return positive >= count
+
+
+def _tail_lift_metrics(
+    candidates: Sequence[PredictionCandidate], *, top_q: float
+) -> dict[str, float] | None:
+    """Above-chance tail recall lift, defined only on tail-eligible cells."""
+    if not _tail_eligible(candidates, top_q=top_q):
+        return None
+    recall = _top_q_recall(
+        [candidate.joint for candidate in candidates],
+        [candidate.damage for candidate in candidates],
+        [candidate.candidate_id for candidate in candidates],
+        top_q,
+    )
+    if recall is None:
+        return None
+    count = max(1, math.ceil(top_q * len(candidates)))
+    effective_q = count / len(candidates)
+    return {"tail_lift": recall / effective_q - 1.0}
 
 
 def _tail_mean(values: Sequence[float], *, cvar_q: float) -> float:
@@ -739,8 +901,12 @@ def _protection_metrics(
     *,
     cvar_q: float,
     rng: random.Random | None = None,
+    include_native: bool = False,
+    native_margin: float = 0.0,
 ) -> dict[str, float] | None:
     if not candidate_ids or not unit.common:
+        return None
+    if include_native and not unit.has_native():
         return None
     result: dict[str, float] = {}
     joint = [unit.damages["joint"][candidate] for candidate in candidate_ids]
@@ -748,10 +914,14 @@ def _protection_metrics(
         "mean": sum(joint) / len(joint),
         "cvar95": _tail_mean(joint, cvar_q=cvar_q),
     }
+    result["abs.joint.mean"] = joint_outcomes["mean"]
+    result["abs.joint.cvar95"] = joint_outcomes["cvar95"]
+    sampled_draws: list[str] | None = None
+    if rng is not None:
+        draws = sorted(unit.random_draw_damages)
+        sampled_draws = [rng.choice(draws) for _ in draws]
     for comparator in PROTECTION_COMPARATORS:
-        if comparator == "repeated_random" and rng is not None:
-            draws = sorted(unit.random_draw_damages)
-            sampled_draws = [rng.choice(draws) for _ in draws]
+        if comparator == "repeated_random" and sampled_draws is not None:
             values = [
                 sum(
                     unit.random_draw_damages[draw][candidate]
@@ -766,9 +936,31 @@ def _protection_metrics(
             "mean": sum(values) / len(values),
             "cvar95": _tail_mean(values, cvar_q=cvar_q),
         }
+        if comparator == "no_repair":
+            result["abs.no_repair.mean"] = outcomes["mean"]
+            result["abs.no_repair.cvar95"] = outcomes["cvar95"]
         for outcome in METRIC_OUTCOMES:
             result[f"{comparator}.{outcome}"] = (
                 joint_outcomes[outcome] - outcomes[outcome]
+            )
+        if include_native:
+            # h_a = M_profile - M_a + delta_nat with the favorably oriented
+            # native retained-behavior metric; the repeated-random draw
+            # resampling reuses the damage draw sample so both outcomes move
+            # together inside one bootstrap replicate.
+            if comparator == "repeated_random":
+                if sampled_draws is not None:
+                    comparator_native = sum(
+                        unit.random_draw_native[draw] for draw in sampled_draws
+                    ) / len(sampled_draws)
+                else:
+                    comparator_native = sum(
+                        unit.random_draw_native.values()
+                    ) / len(unit.random_draw_native)
+            else:
+                comparator_native = unit.native[comparator]
+            result[f"native.{comparator}"] = (
+                unit.native["joint"] - comparator_native + native_margin
             )
     return result
 
@@ -878,8 +1070,13 @@ def _empty_prediction() -> dict[str, object]:
         "paired": False,
         "joint_rho": None,
         "top_q_recall": None,
+        "joint": {},
         "vs_s0": {},
         "vs_s1": {},
+        "vs_control": {},
+        "tail_lift": {},
+        "tail_eligible_n": None,
+        "tail_total_n": None,
     }
 
 
@@ -888,6 +1085,9 @@ def _empty_protection() -> dict[str, object]:
         "paired": False,
         "comparisons": {},
         "exact_norm": {},
+        "absolute": {},
+        "native": {},
+        "update_diagnostics": {},
         "min_forget_margin": None,
         "min_utility_margin": None,
     }
@@ -936,16 +1136,47 @@ def aggregate_raw_evidence(
         }
         reached_valid = reached_units & valid_profiles
 
+        eligible_prediction_units = [
+            prediction[unit.key]
+            for unit in row_units
+            if unit.key in prediction and unit.key in reached_valid
+        ]
+        # The frozen simple control participates only when the whole row
+        # carries it; a per-unit mixture would compare different controls.
+        row_has_control = bool(eligible_prediction_units) and all(
+            all(candidate.control is not None for candidate in data.candidates)
+            for data in eligible_prediction_units
+        )
+
         prediction_common_data: list[PredictionUnitData] = []
         prediction_points: list[tuple[str, str, Mapping[str, float]]] = []
         for unit in row_units:
             data = prediction.get(unit.key)
             if data is None or unit.key not in reached_valid:
                 continue
-            metrics = _prediction_metrics(data.candidates, top_q=plan.top_q)
+            metrics = _prediction_metrics(
+                data.candidates, top_q=plan.top_q, include_control=row_has_control
+            )
             if metrics is not None:
                 prediction_common_data.append(data)
                 prediction_points.append((unit.request, unit.seed, metrics))
+
+        eligible_protection_units = [
+            protection[unit.key]
+            for unit in row_units
+            if unit.key in protection
+            and unit.key in reached_valid
+            and protection[unit.key].feasible
+        ]
+        row_has_native = bool(eligible_protection_units) and all(
+            data.has_native() for data in eligible_protection_units
+        )
+        # The non-inferiority margin is frozen per setting before target
+        # outcomes; a missing entry degrades to the strict zero margin, which
+        # can only make the claim harder to pass.
+        row_native_margin = float(
+            (plan.native_margins or {}).get(row_key[0], 0.0)
+        )
 
         protection_feasible: list[ProtectionUnitData] = []
         protection_common_data: list[ProtectionUnitData] = []
@@ -957,7 +1188,11 @@ def aggregate_raw_evidence(
             if data.feasible:
                 protection_feasible.append(data)
                 metrics = _protection_metrics(
-                    data, data.candidates, cvar_q=plan.cvar_q
+                    data,
+                    data.candidates,
+                    cvar_q=plan.cvar_q,
+                    include_native=row_has_native,
+                    native_margin=row_native_margin,
                 )
                 if metrics is not None:
                     protection_common_data.append(data)
@@ -973,13 +1208,21 @@ def aggregate_raw_evidence(
                 request_of=lambda data: data.key[2],
                 seed_of=lambda data: data.key[3],
                 resampled_metrics=lambda data, rng: _prediction_metrics(
-                    _resample_groups_prediction(data.candidates, rng), top_q=plan.top_q
+                    _resample_groups_prediction(data.candidates, rng),
+                    top_q=plan.top_q,
+                    include_control=row_has_control,
                 ),
             )
             prediction_evidence = {
                 "paired": True,
                 "joint_rho": point["joint_rho"],
                 "top_q_recall": point["top_q_recall"],
+                "joint": summarize_bootstrap_effect(
+                    point["joint_rho"],
+                    [draw["joint_rho"] for draw in bootstrap],
+                    beneficial="positive",
+                    alpha=plan.alpha,
+                ),
                 "vs_s0": summarize_bootstrap_effect(
                     point["gain_s0"],
                     [draw["gain_s0"] for draw in bootstrap],
@@ -992,7 +1235,54 @@ def aggregate_raw_evidence(
                     beneficial="positive",
                     alpha=plan.alpha,
                 ),
+                "vs_control": (
+                    summarize_bootstrap_effect(
+                        point["gain_ctl"],
+                        [draw["gain_ctl"] for draw in bootstrap],
+                        beneficial="positive",
+                        alpha=plan.alpha,
+                    )
+                    if row_has_control
+                    else {}
+                ),
+                "tail_lift": {},
+                "tail_eligible_n": None,
+                "tail_total_n": None,
             }
+            # The tail claim is defined only on tail-eligible cells; ineligible
+            # cells stay in the correlation denominator above and are reported
+            # through the coverage counts, never silently dropped.
+            tail_data = [
+                data
+                for data in prediction_common_data
+                if _tail_eligible(data.candidates, top_q=plan.top_q)
+            ]
+            tail_points = []
+            for data in tail_data:
+                metrics = _tail_lift_metrics(data.candidates, top_q=plan.top_q)
+                if metrics is not None:
+                    tail_points.append((data.key[2], data.key[3], metrics))
+            prediction_evidence["tail_eligible_n"] = len(tail_points)
+            prediction_evidence["tail_total_n"] = len(prediction_common_data)
+            if tail_points and len(tail_points) == len(tail_data):
+                tail_point = _equal_request_average(tail_points)
+                tail_bootstrap = _hierarchical_bootstrap(
+                    tail_data,
+                    replicates=plan.bootstrap_replicates,
+                    seed=plan.bootstrap_seed + 1_000_003 + row_index,
+                    request_of=lambda data: data.key[2],
+                    seed_of=lambda data: data.key[3],
+                    resampled_metrics=lambda data, rng: _tail_lift_metrics(
+                        _resample_groups_prediction(data.candidates, rng),
+                        top_q=plan.top_q,
+                    ),
+                )
+                prediction_evidence["tail_lift"] = summarize_bootstrap_effect(
+                    tail_point["tail_lift"],
+                    [draw["tail_lift"] for draw in tail_bootstrap],
+                    beneficial="positive",
+                    alpha=plan.alpha,
+                )
 
         protection_evidence = _empty_protection()
         if protection_points:
@@ -1008,6 +1298,8 @@ def aggregate_raw_evidence(
                     _resample_groups_protection(data, rng),
                     cvar_q=plan.cvar_q,
                     rng=rng,
+                    include_native=row_has_native,
+                    native_margin=row_native_margin,
                 ),
             )
             comparisons: dict[str, dict[str, dict[str, float]]] = {}
@@ -1021,10 +1313,37 @@ def aggregate_raw_evidence(
                         beneficial="negative",
                         alpha=plan.alpha,
                     )
+            native_effects: dict[str, dict[str, float]] = {}
+            if row_has_native:
+                for comparator in PROTECTION_COMPARATORS:
+                    metric = f"native.{comparator}"
+                    native_effects[comparator] = summarize_bootstrap_effect(
+                        point[metric],
+                        [draw[metric] for draw in bootstrap],
+                        beneficial="positive",
+                        alpha=plan.alpha,
+                    )
             protection_evidence = {
                 "paired": True,
                 "comparisons": comparisons,
                 "exact_norm": {},
+                "absolute": {
+                    arm: {
+                        outcome: point[f"abs.{arm}.{outcome}"]
+                        for outcome in METRIC_OUTCOMES
+                    }
+                    for arm in ("joint", "no_repair")
+                },
+                "native": native_effects,
+                "update_diagnostics": (
+                    {
+                        key: sum(data.updates[key] for data in protection_common_data)
+                        / len(protection_common_data)
+                        for key in ("accepted", "rolled_back")
+                    }
+                    if all(data.updates for data in protection_common_data)
+                    else {}
+                ),
                 "min_forget_margin": min(
                     data.min_forget_margin
                     for data in protection_common_data

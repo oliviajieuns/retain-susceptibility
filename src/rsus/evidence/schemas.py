@@ -176,13 +176,24 @@ class Funnel:
             )
 
 
+def _optional_count(value: object, *, field_name: str) -> int | None:
+    if value is None:
+        return None
+    return _as_count(value, field_name=field_name)
+
+
 @dataclass(frozen=True)
 class PredictionEvidence:
     paired: bool = False
     joint_rho: float | None = None
     top_q_recall: float | None = None
+    joint: Effect = field(default_factory=Effect)
     vs_s0: Effect = field(default_factory=Effect)
     vs_s1: Effect = field(default_factory=Effect)
+    vs_control: Effect = field(default_factory=Effect)
+    tail_lift: Effect = field(default_factory=Effect)
+    tail_eligible_n: int | None = None
+    tail_total_n: int | None = None
 
     @classmethod
     def from_mapping(
@@ -201,18 +212,104 @@ class PredictionEvidence:
             top_q_recall=_optional_number(
                 data.get("top_q_recall"), field_name=f"{name}.top_q_recall"
             ),
+            joint=Effect.from_mapping(data.get("joint"), name=f"{name}.joint"),
             vs_s0=Effect.from_mapping(data.get("vs_s0"), name=f"{name}.vs_s0"),
             vs_s1=Effect.from_mapping(data.get("vs_s1"), name=f"{name}.vs_s1"),
+            vs_control=Effect.from_mapping(
+                data.get("vs_control"), name=f"{name}.vs_control"
+            ),
+            tail_lift=Effect.from_mapping(
+                data.get("tail_lift"), name=f"{name}.tail_lift"
+            ),
+            tail_eligible_n=_optional_count(
+                data.get("tail_eligible_n"), field_name=f"{name}.tail_eligible_n"
+            ),
+            tail_total_n=_optional_count(
+                data.get("tail_total_n"), field_name=f"{name}.tail_total_n"
+            ),
         )
         if evidence.joint_rho is not None and not -1.0 <= evidence.joint_rho <= 1.0:
             raise EvidenceValidationError(f"{name}.joint_rho must be in [-1, 1]")
         if evidence.top_q_recall is not None and not 0.0 <= evidence.top_q_recall <= 1.0:
             raise EvidenceValidationError(f"{name}.top_q_recall must be in [0, 1]")
+        if (
+            evidence.tail_eligible_n is not None
+            and evidence.tail_total_n is not None
+            and evidence.tail_eligible_n > evidence.tail_total_n
+        ):
+            raise EvidenceValidationError(
+                f"{name}.tail_eligible_n exceeds tail_total_n"
+            )
+        if (evidence.tail_eligible_n is None) != (evidence.tail_total_n is None):
+            raise EvidenceValidationError(
+                f"{name} tail counts must be reported together"
+            )
         return evidence
+
+    def tail_coverage(self) -> float | None:
+        if not self.tail_total_n:
+            return None
+        assert self.tail_eligible_n is not None
+        return self.tail_eligible_n / self.tail_total_n
 
 
 PROTECTION_COMPARATORS = ("no_repair", "repeated_random", "s0", "s1")
 PROTECTION_OUTCOMES = ("mean", "cvar95")
+PROTECTION_ABSOLUTE_ARMS = ("joint", "no_repair")
+
+
+def _absolute_outcomes(
+    raw: object, *, name: str
+) -> dict[str, dict[str, float]]:
+    data = raw or {}
+    if not isinstance(data, Mapping):
+        raise EvidenceValidationError(f"{name} must be a mapping")
+    unknown = set(data) - set(PROTECTION_ABSOLUTE_ARMS)
+    if unknown:
+        raise EvidenceValidationError(
+            f"{name} has unknown arms {sorted(unknown)}"
+        )
+    result: dict[str, dict[str, float]] = {}
+    for arm, raw_outcomes in data.items():
+        if not isinstance(raw_outcomes, Mapping):
+            raise EvidenceValidationError(f"{name}.{arm} must be a mapping")
+        unknown_outcomes = set(raw_outcomes) - set(PROTECTION_OUTCOMES)
+        if unknown_outcomes:
+            raise EvidenceValidationError(
+                f"{name}.{arm} has unknown outcomes {sorted(unknown_outcomes)}"
+            )
+        result[str(arm)] = {}
+        for outcome, value in raw_outcomes.items():
+            number = _optional_number(
+                value, field_name=f"{name}.{arm}.{outcome}"
+            )
+            if number is None:
+                raise EvidenceValidationError(
+                    f"{name}.{arm}.{outcome} must be numeric"
+                )
+            result[str(arm)][str(outcome)] = number
+    return result
+
+
+UPDATE_DIAGNOSTIC_KEYS = ("accepted", "rolled_back")
+
+
+def _update_diagnostics(raw: object, *, name: str) -> dict[str, float]:
+    data = raw or {}
+    if not isinstance(data, Mapping):
+        raise EvidenceValidationError(f"{name} must be a mapping")
+    unknown = set(data) - set(UPDATE_DIAGNOSTIC_KEYS)
+    if unknown:
+        raise EvidenceValidationError(f"{name} has unknown keys {sorted(unknown)}")
+    result: dict[str, float] = {}
+    for key, value in data.items():
+        number = _optional_number(value, field_name=f"{name}.{key}")
+        if number is None or number < 0.0:
+            raise EvidenceValidationError(
+                f"{name}.{key} must be a non-negative number"
+            )
+        result[str(key)] = number
+    return result
 
 
 @dataclass(frozen=True)
@@ -220,6 +317,9 @@ class ProtectionEvidence:
     paired: bool = False
     comparisons: Mapping[str, Mapping[str, Effect]] = field(default_factory=dict)
     exact_norm: Mapping[str, Effect] = field(default_factory=dict)
+    absolute: Mapping[str, Mapping[str, float]] = field(default_factory=dict)
+    native: Mapping[str, Effect] = field(default_factory=dict)
+    update_diagnostics: Mapping[str, float] = field(default_factory=dict)
     min_forget_margin: float | None = None
     min_utility_margin: float | None = None
 
@@ -270,12 +370,33 @@ class ProtectionEvidence:
             for outcome in PROTECTION_OUTCOMES
             if outcome in raw_exact
         }
+        raw_native = data.get("native", {}) or {}
+        if not isinstance(raw_native, Mapping):
+            raise EvidenceValidationError(f"{name}.native must be a mapping")
+        unknown_native = set(raw_native) - set(PROTECTION_COMPARATORS)
+        if unknown_native:
+            raise EvidenceValidationError(
+                f"{name}.native has unknown comparators {sorted(unknown_native)}"
+            )
+        native = {
+            str(comparator): Effect.from_mapping(
+                value, name=f"{name}.native.{comparator}"
+            )
+            for comparator, value in raw_native.items()
+        }
         return cls(
             paired=_as_bool(
                 data.get("paired", False), field_name=f"{name}.paired"
             ),
             comparisons=comparisons,
             exact_norm=exact,
+            absolute=_absolute_outcomes(
+                data.get("absolute"), name=f"{name}.absolute"
+            ),
+            native=native,
+            update_diagnostics=_update_diagnostics(
+                data.get("update_diagnostics"), name=f"{name}.update_diagnostics"
+            ),
             min_forget_margin=_optional_number(
                 data.get("min_forget_margin"),
                 field_name=f"{name}.min_forget_margin",

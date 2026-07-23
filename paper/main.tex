@@ -34,6 +34,7 @@
 \usepackage{booktabs}
 \usepackage{amsmath}
 \usepackage{xcolor}
+\usepackage{placeins}
 \usepackage[ruled,linesnumbered]{algorithm2e}
 \usepackage{tikz}
 \usetikzlibrary{arrows.meta,calc,positioning,matrix,shapes}
@@ -48,6 +49,17 @@
 %% ---- result placeholders (Sec. 5 shell) -----------------------------------
 \newcommand{\tblph}{\textcolor{gray}{--}}      % empty table cell, result pending
 \newcommand{\resph}[1]{\textcolor{gray}{[#1]}} % inline result placeholder
+\providecommand{\TailHeadline}{\resph{Tail concentration, semantic coherence,
+and the largest observed boundary condition.}}
+\providecommand{\PredictionHeadline}{\resph{Prediction claim-pass count,
+least-favorable endpoint-gain bound, and principal failure mode.}}
+\providecommand{\FidelityHeadline}{\resph{Frozen loss-shake operating point,
+rank fidelity, top-$K_p$ overlap, time, memory, and integrity coverage.}}
+\providecommand{\ProtectionHeadline}{\resph{Protection claim-pass count,
+worst comparator bound, constraint slack, and principal failure mode.}}
+\providecommand{\TransferHeadline}{\resph{Predeclared setting coverage,
+least-favorable bounds, and settings that do not support the claim.}}
+\InputIfFileExists{sections/generated/results_macros.tex}{}{}
 
 \begin{document}
 
@@ -95,9 +107,9 @@
 \ccsdesc[500]{Computing methodologies~Machine learning}
 \ccsdesc[300]{Security and privacy~Privacy protections}
 
-\keywords{machine unlearning, large language models, collateral damage,
-damage channels, retain-set selection, randomized sensitivity,
-backward-free profiling, unlearning evaluation}
+\keywords{machine unlearning, large language models, trustworthy AI,
+collateral damage, retained-behavior susceptibility, loss-shake energy,
+pre-unlearning risk prediction}
 
 \maketitle
 

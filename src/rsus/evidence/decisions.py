@@ -15,6 +15,11 @@ from .schemas import (
 from .statistics import intersection_union_p
 
 
+# Frozen minimum fraction of prediction-common cells that must be
+# tail-eligible before the above-chance tail lift can carry the claim.
+TAIL_COVERAGE_MINIMUM = 0.80
+
+
 @dataclass(frozen=True)
 class ClaimDecision:
     data_complete: bool
@@ -30,12 +35,17 @@ def _prediction_decision(
 ) -> ClaimDecision:
     if row is None:
         return ClaimDecision(False, False, False, False, None, ("missing row",))
-    effects = (row.prediction.vs_s0, row.prediction.vs_s1)
+    effects = (row.prediction.joint, row.prediction.vs_s0, row.prediction.vs_s1)
+    tail_reported = (
+        row.prediction.tail_total_n is not None
+        and row.prediction.tail_eligible_n is not None
+    )
     data_complete = (
         row.prediction.paired
         and row.prediction.joint_rho is not None
         and row.prediction.top_q_recall is not None
         and all(effect.complete_for_gain() for effect in effects)
+        and tail_reported
     )
     reasons: list[str] = []
     if not row.attempted:
@@ -74,15 +84,36 @@ def _prediction_decision(
     p_iut = None
     statistical_pass = False
     if data_complete:
-        p_iut = intersection_union_p(
-            effect.p_one_sided for effect in effects if effect.p_one_sided is not None
+        # The paper's RQ1 intersection-union test: positive one-sided lower
+        # bounds for the absolute joint rank correlation and both endpoint
+        # gains, plus an above-chance tail lift with sufficient tail-eligible
+        # coverage.  Any missing member fails the whole conjunction.
+        tail = row.prediction.tail_lift
+        coverage = row.prediction.tail_coverage()
+        tail_ok = (
+            tail.complete_for_gain()
+            and tail.lower_bound is not None
+            and tail.lower_bound > 0.0
+            and coverage is not None
+            and coverage >= TAIL_COVERAGE_MINIMUM
         )
+        p_members = [
+            effect.p_one_sided for effect in effects if effect.p_one_sided is not None
+        ]
+        if tail.p_one_sided is not None:
+            p_members.append(tail.p_one_sided)
+        else:
+            p_members.append(1.0)
+        p_iut = intersection_union_p(p_members)
         statistical_pass = (
             all(effect.lower_bound is not None and effect.lower_bound > 0.0 for effect in effects)
+            and tail_ok
             and p_iut <= alpha
         )
         if not statistical_pass:
-            reasons.append("joint-vs-S0/S1 one-sided IUT failed")
+            if not tail_ok:
+                reasons.append("tail lift bound or eligible coverage failed")
+            reasons.append("joint/endpoint-gain one-sided IUT failed")
     return ClaimDecision(
         data_complete=data_complete,
         eligible=eligible,
@@ -102,10 +133,18 @@ def _protection_decision(
     for comparator in PROTECTION_COMPARATORS:
         outcomes = row.protection.comparisons.get(comparator, {})
         effects.extend(outcomes.get(outcome) for outcome in PROTECTION_OUTCOMES)
+    native_effects = [
+        row.protection.native.get(comparator)
+        for comparator in PROTECTION_COMPARATORS
+    ]
     data_complete = (
         row.protection.paired
         and len(effects) == len(PROTECTION_COMPARATORS) * len(PROTECTION_OUTCOMES)
         and all(effect is not None and effect.complete_for_reduction() for effect in effects)
+        and all(
+            effect is not None and effect.complete_for_gain()
+            for effect in native_effects
+        )
         and row.protection.min_forget_margin is not None
         and row.protection.min_utility_margin is not None
     )
@@ -115,7 +154,9 @@ def _protection_decision(
     if not row.completed:
         reasons.append("incomplete planned trajectories")
     if not data_complete:
-        reasons.append("four-comparator mean/CVaR effects incomplete")
+        reasons.append(
+            "four-comparator mean/CVaR or native non-inferiority effects incomplete"
+        )
     selection_ok = row.protection_selection.valid and not row.protection_selection.fallback
     if not selection_ok:
         reasons.append("protection weight unresolved or fallback")
@@ -162,20 +203,34 @@ def _protection_decision(
     statistical_pass = False
     if data_complete:
         complete_effects = [effect for effect in effects if effect is not None]
+        complete_native = [effect for effect in native_effects if effect is not None]
         p_iut = intersection_union_p(
-            effect.p_one_sided
-            for effect in complete_effects
-            if effect.p_one_sided is not None
+            [
+                effect.p_one_sided
+                for effect in complete_effects
+                if effect.p_one_sided is not None
+            ]
+            + [
+                effect.p_one_sided
+                for effect in complete_native
+                if effect.p_one_sided is not None
+            ]
         )
         statistical_pass = (
             all(
                 effect.upper_bound is not None and effect.upper_bound < 0.0
                 for effect in complete_effects
             )
+            and all(
+                effect.lower_bound is not None and effect.lower_bound > 0.0
+                for effect in complete_native
+            )
             and p_iut <= alpha
         )
         if not statistical_pass:
-            reasons.append("eight-way one-sided protection IUT failed")
+            reasons.append(
+                "eight-way damage plus four-way native non-inferiority IUT failed"
+            )
     # exact_norm is deliberately never consulted above: it is a same-estimand
     # reference outside the four-comparator confirmatory IUT.
     return ClaimDecision(

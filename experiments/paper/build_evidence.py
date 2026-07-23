@@ -26,11 +26,40 @@ from rsus.evidence.rendering import (  # noqa: E402
     write_readiness_json,
     write_tex_macros,
 )
+from rsus.evidence.tables import write_tex_tables  # noqa: E402
 from rsus.evidence.schemas import (  # noqa: E402
     EvidenceLedger,
     EvidenceValidationError,
     validate_artifact_files,
 )
+
+
+def _load_fidelity_inputs(contract) -> dict[str, dict]:
+    """Load per-setting fidelity summaries named by the frozen contract.
+
+    A missing or malformed file keeps its setting's fidelity cells as
+    placeholders rather than failing the whole render; the RQ2 composition in
+    the table module cannot pass without the bounds anyway.
+    """
+    import json
+
+    result: dict[str, dict] = {}
+    for setting_id, relative in contract.fidelity_inputs.items():
+        path = _resolve_repo_path(relative)
+        if not path.is_file():
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            raise EvidenceValidationError(
+                f"fidelity_inputs.{setting_id} is not valid JSON: {error}"
+            ) from error
+        if not isinstance(payload, dict):
+            raise EvidenceValidationError(
+                f"fidelity_inputs.{setting_id} root must be a mapping"
+            )
+        result[setting_id] = payload
+    return result
 
 
 def _resolve_repo_path(value: str | Path) -> Path:
@@ -88,10 +117,18 @@ def main(argv: list[str] | None = None) -> int:
         write_readiness_json(report, readiness_path)
         print(f"wrote readiness: {readiness_path}")
         if args.paper_root:
-            macro_path = write_tex_macros(
-                contract, ledger, report, _resolve_repo_path(args.paper_root)
-            )
+            paper_root = _resolve_repo_path(args.paper_root)
+            macro_path = write_tex_macros(contract, ledger, report, paper_root)
             print(f"wrote paper macros: {macro_path}")
+            table_paths = write_tex_tables(
+                contract,
+                ledger,
+                report,
+                paper_root,
+                fidelity=_load_fidelity_inputs(contract),
+            )
+            for table_path in table_paths:
+                print(f"wrote paper table: {table_path}")
         denominators = report["denominators"]
         print(
             "rows planned/attempted/completed: "

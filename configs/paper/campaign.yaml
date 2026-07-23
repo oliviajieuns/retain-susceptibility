@@ -13,6 +13,7 @@ paper_contract:
   setting_ids:
     - tofu_qwen25_1p5b
     - tofu_qwen25_7b
+    - tofu_qwen25_14b
     - tofu_llama31_8b
     - wmdp_bio_mmlu_qwen25_7b
     - muse_news_qwen25_7b
@@ -105,6 +106,20 @@ models:
     dtype: float32
     num_hidden_layers: 28
     provisioned: true
+    parents:
+      graddiff: true
+      npo: true
+      simnpo: true
+      gru: true
+      rmu: true
+      repnoise: true
+      circuit_breakers: true
+  Qwen2.5-14B:
+    source: /group-volume/models/Qwen2.5-14B-Instruct
+    source_kind: local_path
+    dtype: float32
+    num_hidden_layers: 48
+    provisioned: true  # downloaded 2026-07-23 for the third-scale campaign
     parents:
       graddiff: true
       npo: true

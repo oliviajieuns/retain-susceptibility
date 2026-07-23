@@ -7,6 +7,20 @@ ledger: results/paper/evidence_ledger.json
 outputs:
   readiness_json: results/paper/evidence_readiness.json
   tex_macros: sections/generated/results_macros.tex
+  tex_tables:
+    core: sections/generated/table_core_evidence.tex
+    robustness: sections/generated/table_robustness.tex
+
+# Optional per-setting loss-shake fidelity summaries consumed only by the
+# table renderer's f_rho/f_K cells and the derived RQ2 flags. Produced by
+# experiments/paper/export_channel_matrix_raw.py --fidelity-summary from the
+# frozen fd-fidelity certificates; a missing file keeps placeholders.
+fidelity_inputs:
+  tofu_qwen25_7b: results/paper/fidelity/tofu_qwen25_7b.json
+  tofu_qwen25_14b: results/paper/fidelity/tofu_qwen25_14b.json
+  tofu_llama31_8b: results/paper/fidelity/tofu_llama31_8b.json
+  rwku_qwen25_7b: results/paper/fidelity/rwku_qwen25_7b.json
+  wmdp_bio_mmlu_qwen25_7b: results/paper/fidelity/wmdp_bio_mmlu_qwen25_7b.json
 
 decision:
   alpha: 0.05
@@ -31,14 +45,25 @@ parents: &primary_parents
   - circuit_breakers
 
 settings:
+  # AMENDMENT-2026-07-23-primary-setting: the primary setting moved from
+  # Qwen2.5-1.5B to Qwen2.5-7B after three development-calibration rounds
+  # measured that no parent jointly reaches the forgetting criterion within
+  # the utility bounds at 1.5B (docs/data/calibration_2026-07-23/). The 1.5B
+  # row remains a predeclared scale-boundary denominator; the decision was
+  # taken before any sealed-audit outcome existed.
   - id: tofu_qwen25_1p5b
     dataset: TOFU
     model: Qwen2.5-1.5B
-    role: primary
+    role: scale_boundary
     parents: *primary_parents
   - id: tofu_qwen25_7b
     dataset: TOFU
     model: Qwen2.5-7B
+    role: primary
+    parents: *primary_parents
+  - id: tofu_qwen25_14b
+    dataset: TOFU
+    model: Qwen2.5-14B
     role: model_scale
     parents: *primary_parents
   - id: tofu_llama31_8b
@@ -77,11 +102,11 @@ settings:
 # All seven parent rows remain visible denominators. The paper-level statement
 # additionally requires primary, >=1/2 model, and >=2/3 dataset settings.
 multi_setting_rule:
-  id: primary_plus_model_and_dataset_replication_v1
-  primary_required: [tofu_qwen25_1p5b]
+  id: primary_plus_model_and_dataset_replication_v2
+  primary_required: [tofu_qwen25_7b]
   groups:
     - id: model_transfer
-      settings: [tofu_qwen25_7b, tofu_llama31_8b]
+      settings: [tofu_qwen25_14b, tofu_llama31_8b]
       minimum_pass: 1
     - id: dataset_replication
       settings:
@@ -115,7 +140,7 @@ tables:
   - id: main_core_evidence
     label: tab:core-evidence
     location: main
-    settings: [tofu_qwen25_1p5b]
+    settings: [tofu_qwen25_7b]
     claims: [prediction, protection]
     artifacts: []
     producer: experiments/paper/build_evidence.py
@@ -123,14 +148,15 @@ tables:
     label: tab:robustness
     location: main
     settings:
-      - tofu_qwen25_1p5b
       - tofu_qwen25_7b
-      - tofu_llama31_8b
       - wmdp_bio_mmlu_qwen25_7b
       - muse_news_qwen25_7b
       - rwku_qwen25_7b
       - muse_books_qwen25_7b
       - pistol_qwen25_7b
+      - tofu_qwen25_1p5b
+      - tofu_qwen25_14b
+      - tofu_llama31_8b
     claims: [prediction, protection]
     artifacts: []
     producer: experiments/paper/build_evidence.py
@@ -144,7 +170,7 @@ tables:
   - id: appendix_tail_prediction
     label: tab:tail-structure
     location: appendix
-    settings: [tofu_qwen25_1p5b]
+    settings: [tofu_qwen25_7b]
     claims: [prediction]
     artifacts: [tail_structure]
     producer: experiments/paper/build_evidence.py
@@ -158,7 +184,7 @@ tables:
   - id: appendix_protection_budget
     label: tab:budget-sweep
     location: appendix
-    settings: [tofu_qwen25_1p5b]
+    settings: [tofu_qwen25_7b]
     claims: [protection]
     artifacts: [protection_budget_sweep]
     producer: experiments/paper/build_evidence.py
@@ -166,8 +192,9 @@ tables:
     label: tab:specificity
     location: appendix
     settings:
-      - tofu_qwen25_1p5b
       - tofu_qwen25_7b
+      - tofu_qwen25_1p5b
+      - tofu_qwen25_14b
       - tofu_llama31_8b
       - wmdp_bio_mmlu_qwen25_7b
       - muse_news_qwen25_7b

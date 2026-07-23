@@ -1,78 +1,85 @@
 \section{Related Work}
 \label{sec:related}
 
-\paragraph{Output-channel unlearning: losses on model outputs.}
-One family of LLM unlearning objectives defines its loss on model
-\emph{outputs} -- token likelihoods or preferences over completions.
-Gradient ascent and gradient difference directly raise forget-answer NLL
-while optionally re-descending on retain data
-\cite{jang2023knowledge,yao2024large}. Negative preference optimization and
-its simplified variant reformulate forgetting as preference optimization
-against the forget answer \cite{zhang2024negative,fan2024simplicity};
-IdkDPO substitutes refusal targets \cite{maini2024tofu}; weighted and
-saturation-aware variants reshape the same likelihood pressure
-\cite{wang2025gradient,yang2025satimp}. Retention-aware members of this
-family operate on the same channel: GRU rectifies conflicts between forget
-and aggregate-retain \emph{loss gradients} \cite{wang2025gru}, and gradient
-surgery variants synthesize the update from the same output-loss geometry
-\cite{zhou2025implicit,lin2024gdr,patel2025learning,wu2025munba,
-xiao2026sago}. Whatever their differences, all of these methods move
-parameters along directions assembled from output-loss gradients.
+\paragraph{Evaluation granularity and localized damage.}
+LLM-unlearning benchmarks already evaluate multiple facets of the
+forget--retain trade-off, including utility, privacy leakage, and metric
+robustness
+\cite{maini2024tofu,shi2024muse,dorna2025openunlearning}. Yet methods and
+checkpoints are commonly compared through set-level aggregates, and metric
+aggregation or model selection can change which method appears strongest
+\cite{thaker2024position,dorna2025openunlearning}. Fine-grained studies show
+that damage concentrates in syntactically, semantically, or
+representationally adjacent retain regions and can include benign failures
+missed by static benchmarks
+\cite{chang2025retain,cheng2026entanglement,ko2025holes}. These findings
+establish that collateral damage is structured, but mainly localize it after
+unlearning or within predefined neighborhoods. We instead rank a declared
+universe of retain candidates before the target trajectory.
 
-\paragraph{Representation-channel unlearning: losses on hidden states.}
-A second family defines its loss on internal \emph{representations}. RMU
-steers forget-set hidden states toward a random control vector while
-pinning retain-set hidden states \cite{li2024wmdp}. RepNoise pushes
-harmful-content representations toward noise across layers
-\cite{rosati2024repnoise}, and Circuit Breakers reroute activations that
-enter harmful regions toward orthogonal directions \cite{zou2024circuit}.
-Localized-editing approaches that overwrite specific weight or neuron
-subspaces \cite{meng2022locating,fan2024salun,foster2024ssd,cai2025slug}
-share this character: the optimized quantity is internal structure, and
-output change is a consequence rather than the loss argument. Benchmarks --
-TOFU, MUSE, WMDP, RWKU, KnowUnDo, OpenUnlearning
-\cite{maini2024tofu,shi2024muse,li2024wmdp,jin2024rwku,tian2024forget,
-dorna2025openunlearning} -- evaluate members of both families, and
-robustness studies show that endpoint forget metrics need not certify
-removal \cite{lynch2024eight,patil2024can,hu2024jogging,
-lucki2024adversarial,deeb2024unlearning}.
+\paragraph{Objective families and damage geometry.}
+Approximate objectives place their primary suppression pressure on output
+likelihoods and preferences
+\cite{jang2023knowledge,yao2024large,zhang2024negative,
+fan2024simplicity} or directly on internal representations, as in RMU
+\cite{li2024wmdp}. Related representation-control interventions have also
+been adapted as unlearning baselines
+\cite{rosati2024repnoise,zou2024circuit}. This readout taxonomy
+does not partition causal mechanisms: output objectives also move hidden
+states, and representation objectives ultimately change outputs.
+Update-conditioned analyses further show that interference varies across
+objectives, examples, steps, and layers \cite{wang2025gradient}. We therefore
+use the readout only as a soft prior over complementary parameter-sensitivity
+and representation-proximity signals.
 
-\paragraph{The channel-matching gap.}
-Retain-side risk has so far been diagnosed \emph{within} one family's own
-geometry. G-effect analyzes output-loss gradient interactions across steps
-and layers \cite{wang2025gradient}; GUARD scores forget examples by
-alignment with a retain Jacobian \cite{niu2025guard}; HAMU tracks an
-aggregate forget--retain gradient dot product \cite{chen2026hamu};
-split-aware evaluation and constrained recovery protect a forget-adjacent
-retain slice identified by proximity \cite{cheng2026entanglement}. Each of
-these commits to a single signal family -- gradient geometry or similarity
--- independent of which objective will actually be run. To our knowledge,
-no prior work asks whether the \emph{right retain-side predictor depends on
-the objective's damage channel}, tests that dependence with balanced
-objective rosters on both channels, or routes protection through the
-matching signal. That interaction is precisely where single-score methods
-have been reported to behave inconsistently, and it is the gap this paper
-fills: a declared, loss-definition-level classification of objectives into
-channels, matched predictor families, and a crossed protection experiment
-that tests whether matching is operationally necessary.
+\paragraph{Prospective risk.}
+Adjacent methods estimate forget-side difficulty or set-level interactions
+\cite{niu2025guard,chen2026hamu,cheng2026cud}, while trajectory analyses
+quantify update-conditioned interference \cite{wang2025gradient}. They do
+not resolve future risk for individual retain candidates. Recent work moves
+closer to this target. One approach learns supervised
+regressors from labeled outcomes of executed runs to predict a normalized
+damage ratio for forget--evaluation-set pairs using cross-set features; its
+auditor does not take target-model gradients as inputs
+\cite{su2026preunlearn}. Concurrent work ranks non-target concepts using
+semantic, parameter-footprint, gradient, and Jacobian measures, primarily
+against NLL damage caused by gradient ascent; its prompt-disjoint and
+behavioral probes show weaker transfer
+\cite{anonymous2026neighbors}. Another proactive study predicts
+algorithm-dependent corruption from model weights and activations
+\cite{su2026corruption}.
 
-\paragraph{Attribution and randomized probing.}
-Influence functions, TracIn, TRAK, LESS, and DataInf estimate
-training-data influence but require per-example gradients or curvature
-machinery \cite{koh2017influence,pruthi2020tracin,park2023trak,
-xia2024less,kwon2024datainf}; Forward-INF and For-Value amortize the
-expensive side over candidates with forward passes
-\cite{ko2024mirrored,deng2026forvalue}, though their estimand is
-retrospective attribution rather than prospective unlearning risk. On the
-numerical side, SPSA, random gradient-free methods, MeZO, and randomized
-trace estimators establish that random symmetric perturbations recover
-gradient information from forward evaluations alone
-\cite{spall1992spsa,nesterov2017random,malladi2023mezo,
-hutchinson1989stochastic}. We repurpose this machinery, not for
-optimization, but to score every retained candidate's
-$\lVert g_x\rVert_2$ simultaneously from $2R$ shared forward sweeps --
-giving the output channel a predictor whose cost matches the forward-only
-proximity signal available to the representation channel. The estimator is
-classical; the contributions are its role as a prospective, channel-matched
-unlearning-risk profile, the fidelity gate that certifies it, and the
-demonstration that acting on it protects the audit tail.
+Our distinction is therefore not the existence of pre-unlearning ranking.
+Loss-shake energy measures a candidate's own direction-agnostic local loss
+response rather than alignment with a selected forget update or overlap
+between forget and candidate sensitivity supports. Unlike a footprint
+score, it does not require candidate-side Fisher or gradient computation.
+Its component score is computed directly at the target checkpoint without
+fitting a supervised auditor, combined with forget-conditioned hidden-state
+proximity across objective families, and evaluated at per-behavior
+resolution. For protection, any deployable mixture weight is frozen on
+separate development requests before the scored trajectory.
+
+\paragraph{Mitigation and protection.}
+Retention-aware methods mitigate damage by reweighting forget examples,
+using similarity-informed constraints on the forget--retain trade-off,
+curating forget-set coresets, or regularizing selected retain neighborhoods
+\cite{niu2025guard,chen2026hamu,patil2025upcore,chang2025retain,
+cheng2026entanglement}. These interventions change the unlearning data or
+optimization. Our protection test instead holds the deletion request and
+parent unlearner fixed, then uses the prospective profile only to allocate a
+fixed repair budget. This separates risk prediction from the effect of
+redesigning the unlearning objective.
+
+\paragraph{Randomized sensitivity estimation.}
+Influence and scalable data-attribution methods relate training examples to
+model behavior through gradients or curvature
+\cite{koh2017influence,park2023trak,kwon2024datainf}; forward-only variants
+reduce candidate-side differentiation but estimate training-data value, not
+future unlearning damage \cite{ko2024mirrored,deng2026forvalue}.
+Symmetric perturbations and squared random projections are likewise
+classical tools for recovering local gradient information from forward
+evaluations \cite{spall1992spsa,malladi2023mezo,
+hutchinson1989stochastic}. Our contribution is not this numerical machinery,
+but the shared pool-wide forward scorer, its composition with
+forget-conditioned proximity, and its use in a fixed-budget protection test.

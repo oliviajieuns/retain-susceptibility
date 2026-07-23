@@ -82,6 +82,9 @@ class EvidenceContract:
     ledger_path: str
     readiness_output: str
     tex_output: str
+    core_table_output: str
+    robustness_table_output: str
+    fidelity_inputs: Mapping[str, str]
     settings: Mapping[str, SettingSpec]
     artifacts: tuple[str, ...]
     tables: Mapping[str, TableSpec]
@@ -380,6 +383,38 @@ def load_contract(path: str | Path) -> EvidenceContract:
     outputs = raw.get("outputs", {})
     if not isinstance(outputs, Mapping):
         raise EvidenceValidationError("outputs must be a mapping")
+    raw_tex_tables = outputs.get("tex_tables", {}) or {}
+    if not isinstance(raw_tex_tables, Mapping):
+        raise EvidenceValidationError("outputs.tex_tables must be a mapping")
+    unknown_tables = set(raw_tex_tables) - {"core", "robustness"}
+    if unknown_tables:
+        raise EvidenceValidationError(
+            f"outputs.tex_tables has unknown keys {sorted(unknown_tables)}"
+        )
+    core_table_output = (
+        _nonempty_string(raw_tex_tables["core"], name="outputs.tex_tables.core")
+        if "core" in raw_tex_tables
+        else "sections/generated/table_core_evidence.tex"
+    )
+    robustness_table_output = (
+        _nonempty_string(
+            raw_tex_tables["robustness"], name="outputs.tex_tables.robustness"
+        )
+        if "robustness" in raw_tex_tables
+        else "sections/generated/table_robustness.tex"
+    )
+    raw_fidelity = raw.get("fidelity_inputs", {}) or {}
+    if not isinstance(raw_fidelity, Mapping):
+        raise EvidenceValidationError("fidelity_inputs must be a mapping")
+    fidelity_inputs: dict[str, str] = {}
+    for setting_id, path in raw_fidelity.items():
+        if str(setting_id) not in settings:
+            raise EvidenceValidationError(
+                f"fidelity_inputs references unknown setting {setting_id!r}"
+            )
+        fidelity_inputs[str(setting_id)] = _nonempty_string(
+            path, name=f"fidelity_inputs.{setting_id}"
+        )
     return EvidenceContract(
         schema_version=1,
         alpha=alpha,
@@ -391,6 +426,9 @@ def load_contract(path: str | Path) -> EvidenceContract:
         tex_output=_nonempty_string(
             outputs.get("tex_macros"), name="outputs.tex_macros"
         ),
+        core_table_output=core_table_output,
+        robustness_table_output=robustness_table_output,
+        fidelity_inputs=fidelity_inputs,
         settings=settings,
         artifacts=artifacts,
         tables=tables,

@@ -151,8 +151,13 @@ def _row(setting: str, *, feasible: bool = True, complete: bool = True) -> dict:
             "paired": True,
             "joint_rho": 0.5,
             "top_q_recall": 0.7,
+            "joint": _effect(gain=True),
             "vs_s0": _effect(gain=True),
             "vs_s1": _effect(gain=True),
+            "vs_control": _effect(gain=True),
+            "tail_lift": _effect(gain=True),
+            "tail_eligible_n": reached_n,
+            "tail_total_n": reached_n,
         },
         "protection": {
             "paired": True,
@@ -168,6 +173,15 @@ def _row(setting: str, *, feasible: bool = True, complete: bool = True) -> dict:
                 "mean": {"estimate": 1.0, "upper_bound": 2.0, "p_one_sided": 1.0},
                 "cvar95": {"estimate": 1.0, "upper_bound": 2.0, "p_one_sided": 1.0},
             },
+            "absolute": {
+                "joint": {"mean": 0.4, "cvar95": 1.5},
+                "no_repair": {"mean": 0.6, "cvar95": 2.4},
+            },
+            "native": {
+                comparator: _effect(gain=True)
+                for comparator in ("no_repair", "repeated_random", "s0", "s1")
+            },
+            "update_diagnostics": {"accepted": 90.0, "rolled_back": 6.0},
             "min_forget_margin": 0.1,
             "min_utility_margin": 0.1,
         },
@@ -372,7 +386,8 @@ def test_completed_artifact_hash_is_verified(tmp_path):
 
 def test_repository_registry_covers_two_main_and_five_appendix_tables():
     contract = load_contract(ROOT / "configs/paper/evidence.yaml")
-    assert len(contract.planned_keys) == 8 * 7
+    # AMENDMENT-2026-07-23-primary-setting added the predeclared 14B setting.
+    assert len(contract.planned_keys) == 9 * 7
     locations = [table.location for table in contract.tables.values()]
     assert locations.count("main") == 2
     assert locations.count("appendix") == 5
@@ -435,7 +450,7 @@ def test_cli_emits_fail_closed_readiness_and_macros(tmp_path):
     )
     assert result.returncode == 2
     report = json.loads(readiness.read_text(encoding="utf-8"))
-    assert report["denominators"]["planned_rows"] == 56
+    assert report["denominators"]["planned_rows"] == 63
     assert report["denominators"]["completed_rows"] == 0
     macros = (paper / "sections/generated/results_macros.tex").read_text(
         encoding="utf-8"

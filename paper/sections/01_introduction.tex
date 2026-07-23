@@ -1,139 +1,77 @@
 \section{Introduction}
 \label{sec:intro}
 
-A deployed language model may be asked to remove a person's private records,
-a copyrighted document, or a harmful capability long after training has
-finished. Retraining from scratch for every such request is usually
-impractical, so machine unlearning suppresses the designated influence
-through targeted post-training updates while preserving the model's
-remaining behavior \cite{cao2015towards,bourtoule2021machine,
-liu2024rethinking}. The selective requirement is what makes unlearning
-hard: forget enough to satisfy the request, but not so aggressively that
-useful knowledge is destroyed with it.
+A deployed LLM may be asked to remove private, copyrighted, or hazardous
+information long after training. Retraining for every request is usually
+impractical, motivating approximate machine unlearning
+\cite{cao2015towards,bourtoule2021machine,liu2024rethinking}. Its contract
+is selective: forget the requested information while preserving knowledge
+and capabilities outside the request.
 
-The resulting collateral damage is easy to miss because it concentrates.
-A model can preserve most retained examples while failing sharply on a
-small, coherent subset -- other authors when one author is deleted, benign
-science that shares terminology with a suppressed hazardous procedure.
-Split-aware evaluations expose this by reporting forget-adjacent retention
-separately \cite{cheng2026entanglement,chang2025retain}, but they are
-retrospective: the vulnerable behavior is identified only after unlearning
-has been run and paid for. Practitioners would rather know \emph{before}
-unlearning where damage will land, so that a limited protection or repair
-budget can be spent where it is needed.
+This contract is commonly judged with aggregate forgetting and retention
+scores. Even multi-axis evaluations summarize retained populations at the
+model or checkpoint level. Aggregation enables comparison but hides the
+distribution of damage: two models with similar retained utility may
+degrade mildly and broadly or fail sharply on a coherent tail. Fine-grained
+audits expose such localized failures, but mainly after unlearning or within
+predefined neighborhoods
+\cite{chang2025retain,cheng2026entanglement,ko2025holes}.
 
-Prior attempts at such prospective prediction share a hidden assumption:
-that susceptibility is a property of the model and data alone, so that some
-single score -- lexical or embedding similarity to the forget set, gradient
-alignment, gradient magnitude -- should rank vulnerable candidates
-regardless of which unlearning method is applied. Empirically these scores
-behave inconsistently across methods, and each new proposal appears to win
-on some objectives and lose on others. This paper explains that
-inconsistency and turns it into structure:
+The apparent strongest method also changes with the objective, benchmark,
+metric aggregation, and model-selection rule, while different objectives
+distribute interference differently
+\cite{thaker2024position,dorna2025openunlearning,wang2025gradient}. A
+deployer therefore needs a prospective answer: for a fixed model, deletion
+request, and unlearning regime, which retained behaviors are most likely to
+fail, and where should a limited audit or protection budget be spent?
 
-\noindent\emph{Retain-side susceptibility is not a model-intrinsic scalar.
-It is conditional on the damage channel induced by the unlearning objective
--- declared in advance by where its loss reads the model.}
+Existing prospective work already audits set pairs or ranks non-target
+concepts; our distinction is a checkpoint-derived, two-signal score for each
+retained behavior that is carried into a separate protection test
+\cite{su2026preunlearn,anonymous2026neighbors}.
 
-\begin{figure*}[t]
-\centering
-\input{figures/fig1_channel_mechanism}
-\caption{\textbf{Susceptibility is tested as an objective-conditioned
-interaction.} \textbf{(a)} For the objectives studied, the direct
-forget-suppression term reads either outputs or hidden states; the same
-$\theta_0$ and retained candidates may therefore yield different damage
-rankings. \textbf{(b)} The loss-shake gradient-energy and hidden-state-proximity
-hypotheses score the same candidates at $\theta_0$ and are sealed before any
-outcome is observed. \textbf{(c)} Independent unlearning trajectories that
-never access the scores produce the two damage columns; matrix entries are
-Spearman correlations. The preregistered endpoint asks whether the relative
-predictive advantage crosses over between channels, $\Delta>0$, not whether
-one probe is universally superior. Candidate intensities are schematic, not
-experimental results.}
-\Description{A three-panel schematic with no observed results. Panel (a)
-applies an output-reading and a hidden-state-reading unlearning objective to
-the same initial model and retained-candidate set; qualitative bands under
-the repeated candidate identifiers illustrate two possible damage orderings.
-Panel (b) applies loss-shake gradient-energy and hidden-state-proximity
-profiles to that same candidate set and marks both profiles as sealed before
-unlearning. Panel (c) shows two independent objective trajectories producing
-output-channel and representation-channel damage, followed by a two-by-two
-matrix of correlations between each sealed profile and each damage outcome.
-The difference-in-differences expression below the matrix asks whether the
-relative predictive winner crosses over between channels.}
-\label{fig:channel-mechanism}
-\end{figure*}
+We formulate this need as \emph{prospective retained-behavior
+susceptibility}: a per-behavior risk profile computed from the current
+checkpoint before the target trajectory. The profile is a layer around an
+existing unlearner, not another unlearning objective. Different readouts
+motivate two non-exclusive failure geometries: local sensitivity to parameter
+motion and proximity to the forget region in representation space. We measure
+both for every parent and select their relative weight on target-free
+development requests. Readout-wise patterns are interpreted descriptively;
+they do not route a component off or determine its weight.
 
-To first order, the damage to a retained candidate $x$ under a parameter
-update $\Delta\theta$ is $d(x)\approx g_x^{\top}\Delta\theta$, which makes
-$\lVert g_x\rVert$ a direction-free exposure envelope rather than a
-guarantee of realized damage. What
-$\Delta\theta$ looks like is determined by the objective's loss. Objectives
-whose loss is a function of model \emph{outputs} -- token likelihoods or
-preferences, as in GA, GradDiff, NPO, SimNPO, IdkDPO, and GRU
-\cite{yao2024large,zhang2024negative,fan2024simplicity,maini2024tofu,
-wang2025gru} -- motivate gradient-energy exposure. Objectives whose loss is a
-function of internal \emph{representations} -- hidden states, as in RMU,
-RepNoise, and Circuit Breakers
-\cite{li2024wmdp,rosati2024repnoise,zou2024circuit} -- displace activation
-geometry and motivate proximity to forget representations. The two
-channels therefore call for different predictor families. We test that
-claim at the family level with a frozen objective-by-probe interaction;
-individual objectives may show partial, mixed, or reversed signal.
+We define \emph{loss-shake energy} as a shared finite-difference estimate of
+classical block-local gradient energy. It averages squared symmetric loss
+responses to small random parameter shakes and is direction-agnostic. Reusing
+each shake scores a candidate pool with batched forwards, without reverse mode
+per candidate or stored per-example gradients. A forward-only hidden-state
+neighbor score supplies the representation component.
 
-Acting on this structure is only useful if the matching signal is cheap at
-candidate-pool scale. Exact per-candidate gradient norms require one
-backward pass per candidate. We instead estimate the entire pool's gradient
-magnitudes with a \emph{backward-free randomized-sensitivity probe}:
-symmetric forward evaluations at $\theta_0\pm\eta v_r$ along a few shared
-random directions $v_r$ turn squared central differences into an unbiased
-(up to $O(\eta^2)$) estimate of every candidate's gradient energy
-simultaneously, with Monte Carlo variance controlled by the number of
-shared directions. A
-fidelity gate separates the estimator's numerical validity from its
-predictive value. The representation channel uses a complementary
-forward-only hidden-state proximity profile.
+We freeze both component scores before each target trajectory and organize
+the evaluation around three separable questions. First, does the joint
+profile predict per-behavior and tail damage on repair-held-out behaviors
+better than either component alone? Second, is loss-shake faithful to exact gradient
+energy, and does it add predictive value beyond proximity? Third, does the
+frozen profile allocate a fixed protection budget better than predeclared
+controls under common forgetting and utility constraints? Objective-wise component patterns
+are explanatory; only paired improvement over both endpoints establishes
+two-signal complementarity. Likewise, predictive ranking is not assumed to
+guarantee effective repair.
 
-Prediction becomes protection through routing. Given a deletion request and
-a declared objective, the channel determines the probe; the probe ranks the
-discovery-fold candidates; the top-ranked pool receives a fixed repair
-budget under a guarded procedure that caps forgetting regression. Our
-success criterion is deliberately not a leaderboard: it is the
-\emph{interaction} in a preregistered crossed design. For an output-channel
-parent (GradDiff) and a representation-channel parent (RMU), we cross each
-with matched, mismatched, random, and no-protection selectors and test
-whether the channel-matched selector yields the lowest audit-tail damage at
-matched forgetting -- per parent. All arms and reach failures are reported;
-the channel claim is not declared successful unless both parent-wise tests
-pass.
+\paragraph{Empirical preview.}
+{\setlength{\emergencystretch}{3em}
+\TailHeadline\ \PredictionHeadline\ \FidelityHeadline\
+\ProtectionHeadline\ \TransferHeadline\par}
 
-Our contributions are threefold:
+Our contributions are:
 \begin{itemize}
-    \item \textbf{Channel-conditioned susceptibility.} We test whether the
-    predictive signal changes with the objective's channel, declared from
-    its loss definition. Evidence comes from a frozen family-level
-    interaction over a channel-stratified objective roster, not a
-    per-method anecdote.
-
-    \item \textbf{A backward-free probe for the gradient channel.} A
-    randomized symmetric-perturbation estimator profiles gradient
-    magnitude over the whole candidate pool using only $2R$ batched
-    forward sweeps, with a preregistered fidelity gate that certifies when
-    the estimate is trustworthy under a given radius and precision.
-
-    \item \textbf{A falsifiable protection test.} A crossed design routes
-    the same repair budget through matched, mismatched, random, and no-score
-    selectors, testing whether the pre-unlearning channel distinction is
-    operationally useful at matched forgetting.
+    \item \textbf{Candidate-level risk.} We evaluate
+    per-behavior and tail susceptibility before independently configured
+    target trajectories.
+    \item \textbf{Two-signal profile.} We combine
+    forget-set proximity with candidate-side reverse-mode-free loss-shake
+    scoring.
+    \item \textbf{Probe to protection.} We measure
+    parent-specific prediction behavior and probe fidelity and cost,
+    with a constraint-matched protection comparison.
 \end{itemize}
-
-We position this work as a prediction-and-protection \emph{layer} on top of
-existing unlearners, not as a competing unlearning objective. The remainder
-of the paper follows this structure. Section~\ref{sec:related} organizes
-prior unlearning methods by channel and identifies the channel-matching
-gap. Section~\ref{sec:setup} formalizes damage channels, the prediction
-and protection endpoints, and the preregistered interaction criterion
-(Figure~\ref{fig:channel-mechanism}). Section~\ref{sec:method} presents
-the probes, the fidelity gate, and the guarded channel-matched protection
-procedure. Section~\ref{sec:experiments} reports the channel matrix, the
-crossed protection experiment, cost, and cross-dataset replication.

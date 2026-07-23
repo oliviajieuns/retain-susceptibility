@@ -1,0 +1,40 @@
+\begin{figure*}[!t]
+\centering
+\begin{minipage}[t]{0.318\textwidth}
+\centering
+\fbox{\parbox{0.92\linewidth}{\centering\vspace{0.72cm}
+\textbf{A. Frozen prediction}\\[1mm]
+\resph{Positive joint-rank bound, gains over both components, and tail lift
+with explicit tail coverage.}
+\vspace{0.72cm}}}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.318\textwidth}
+\centering
+\fbox{\parbox{0.92\linewidth}{\centering\vspace{0.72cm}
+\textbf{B. Loss-shake fidelity + profile value}\\[1mm]
+\resph{Exact-energy rank and Top-$K_p$ fidelity floors, plus joint-profile
+gain over the frozen simple control.}
+\vspace{0.72cm}}}
+\end{minipage}\hfill
+\begin{minipage}[t]{0.318\textwidth}
+\centering
+\fbox{\parbox{0.92\linewidth}{\centering\vspace{0.72cm}
+\textbf{C. Fixed-budget protection}\\[1mm]
+\resph{Absolute mean and CVaR, paired superiority, native-metric
+non-inferiority, feasibility, and updates.}
+\vspace{0.72cm}}}
+\end{minipage}
+\caption{\textbf{Evidence chain for the sealed evaluation framework.}
+\textbf{A:} absolute and incremental prediction on repair-held-out behaviors.
+\textbf{B:} faithful loss-shake computation plus joint-profile value beyond
+the frozen simple control. \textbf{C:} constraint-matched fixed-budget
+allocation with damage, native retained behavior, and feasibility.}
+\Description{Three panels showing prospective prediction, loss-shake fidelity
+and added value, and constraint-matched fixed-budget protection.}
+\label{fig:channel-main}
+\end{figure*}
+
+% The two main claim tables are generated artifacts: build_evidence.py
+% overwrites these files; placeholders remain until evidence is complete.
+\input{sections/generated/table_core_evidence}
+\input{sections/generated/table_robustness}

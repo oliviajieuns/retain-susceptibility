@@ -1,1014 +1,422 @@
-% appendix.tex
-% When Does LLM Unlearning Fail?
-% Channel-Conditioned Prediction and Protection of Susceptible Retained Behavior
-%
-% Structure (mirrors the main text):
-%   A  Reproducibility: data, objectives, contract, inference
-%   B  Probe implementation and the fidelity gate
-%   C  Protection implementation (pools, repair, guard)
-%   D  Supplementary prediction results (incl. alignment post-mortem)
-%   E  Supplementary protection results (incl. strong-method context)
-%   F  Cost, replication, and stress details
-%   G  Additional limitations and reporting scope
-% (\appendix is issued once, in main.tex, before this file is input.)
+% The appendix contains reproducibility detail and secondary analyses only.
+% Claim decisions and their decisive bounds remain in the main paper.
 
-% ============================================================ A. Reproducibility
-
-\section{Reproducibility: Data, Objectives, and Evaluation Contract}
+\section{Reproducibility and Statistical Details}
 \label{app:evaluation-contract}
-
-This section records the experimental context required to reproduce the
-main results. It introduces no additional headline claim. Unless stated
-otherwise, every choice is frozen on development requests before
-test-request scores or outcomes are inspected, and the preregistered
-constants (channel table, probe settings, endpoints, dataset roster) are
-fixed before the confirmatory runs are unsealed.
-
-\subsection{Datasets, Models, and Frozen Splits}
 \label{app:datasets}
-
-Table~\ref{tab:datasets} lists every setting with its role in the channel
-claim. The primary mechanism setting uses single-author TOFU requests at
-full fp32 precision, where the fidelity gate certifies the randomized
-probe; the 7B setting provides profiling cost and scale transfer.
-Replication settings rerun the reduced crossed roster on datasets whose
-forget--retain proximity structure differs; stress settings target the
-declared honesty clauses.
-
-\begin{table*}[t]
-\caption{Dataset and model matrix. Requests within one trained target are
-nested and are not treated as independent model replicates. Discovery
-candidates may guide protection; native audits are sealed outcomes.
-Replication and stress tiers use the reduced crossed roster
-(\{GradDiff, NPO\}$\times$\{RMU, RepNoise\}) with the full selector set.}
-\label{tab:datasets}
-\centering
-\small
-\setlength{\tabcolsep}{4.5pt}
-\begin{tabular}{@{}lllll@{}}
-\toprule
-Setting & Target model & Units & Native audit & Role \\
-\midrule
-TOFU single-author
-    & Qwen2.5-1.5B (fp32)
-    & 20 requests/target
-    & predeclared author relations
-    & confirmatory (channel matrix + crossed) \\
-TOFU scale/cost
-    & Qwen2.5-7B (bf16)
-    & 6 requests
-    & predeclared author relations
-    & profiling cost, scale transfer \\
-WMDP-bio
-    & Qwen2.5-1.5B (fp32)
-    & bio forget corpus
-    & frozen MMLU subjects
-    & replication (representation habitat) \\
-MUSE-News
-    & Qwen2.5-1.5B (fp32)
-    & 5 requests
-    & held-out news
-    & replication (output habitat) \\
-RWKU
-    & Qwen2.5-1.5B (fp32)
-    & 10 requests
-    & neighbor probes
-    & replication (pretrained knowledge) \\
-MUSE-Books
-    & Qwen2.5-1.5B (fp32)
-    & 3 requests
-    & held-out chapters
-    & stress (verbatim memorization) \\
-PISTOL
-    & Qwen2.5-1.5B (fp32)
-    & 10 requests
-    & held-out relations
-    & stress (maximal entanglement) \\
-\bottomrule
-\end{tabular}
-\end{table*}
-
-For every request, we freeze the complete candidate universe $\mathcal C$,
-semantic-group discovery and audit folds, native audit, and uniform-random
-audit before computing scores or outcomes. Groups are defined at the author, entity, article, or
-dataset-specific semantic unit so that directly related examples do not
-cross the discovery--audit boundary; the relation rule, group IDs,
-candidate counts, and audit membership are persisted in the frozen data
-manifest. Only $\mathcal C_{\mathrm{disc}}$ is eligible for score-guided
-selection or repair. Scores on $\mathcal C_{\mathrm{audit}}$ are computed
-at $\theta_0$, sealed, and unavailable to hyperparameter selection,
-candidate eligibility, optimizer configuration, checkpoints, or stopping.
-Ranking ties are broken by a frozen candidate identifier.
-
-Exact scalar gradient norms are computed for the declared candidate pool.
-Full candidate gradient vectors, needed only for the diagnostic
-magnitude--cosine decomposition of Appendix~\ref{app:alignment-postmortem},
-are computed on a uniform subset
-$\mathcal C_{\mathrm{grad}}\subseteq\mathcal C_{\mathrm{disc}}$ of
-$\min(128,|\mathcal C_{\mathrm{disc}}|)$ candidates, sampled before
-outcomes are inspected; this subset can affect neither the deployed
-profile nor protection.
-
-\subsection{Objectives and Channel Assignments}
 \label{app:objectives}
 
-The preregistered channel table assigns each parent objective from its
-loss definition: output channel -- GA, GradDiff, NPO, SimNPO,
-IdkDPO, GRU; representation channel -- RMU, RepNoise, Circuit Breakers.
-Our NPO configuration includes a uniform retain term; it is written NPO
-throughout.
-Each parent's objective, trainable block, retain stream, learning rate,
-update budget, and saved-checkpoint grid are fixed on development requests
-without susceptibility scores. Representation parents receive longer step
-budgets because their losses move hidden states rather than likelihoods
-and reach the forget criterion more slowly; budgets are fixed per parent
-before scoring. Parents that fail to reach the criterion within budget are
-retained in the prediction matrix (their columns measure weak-signal
-regimes) but flagged, and are excluded from criterion-conditional
-protection contrasts. Our repair trajectory is excluded from confirmatory
-prediction.
-
-\subsection{Development and Resource Contract}
-\label{app:contract}
-
-Each method receives the same declared development budget, and the grid is
-not retuned per test request. Model selection may use forget behavior and
-discovery-fold retention but never sealed scores, native retention, or
-target-trajectory damage. Table~\ref{tab:resource-parity} reports
-optimization resources; profiling cost is reported separately in
-Table~\ref{tab:full-cost}.
+The released campaign manifest is the source of truth for every request,
+candidate, semantic group, checkpoint, seed, random pool, and configuration
+hash. Table~\ref{tab:datasets} is a readable digest, not a replacement for
+that manifest. The denominator is the predeclared matrix: planned rows remain
+visible when they are never attempted, terminate early, fail integrity, do not
+reach the common forgetting criterion, or lack complete all-arm support.
 
 \begin{table*}[t]
-\caption{Optimization information and resource contract. Selector arms of
-one parent share the same parent optimizer, processed retain tokens,
-updates, and repair budget. Profiling cost is excluded here
-(Table~\ref{tab:full-cost}). Extra reference or data access is disclosed
-rather than normalized away.}
-\label{tab:resource-parity}
+\caption{\textbf{Compact campaign and outcome contract.} Panel A records the
+predeclared scope. The three development folds are mutually disjoint and
+target-free. Panel B defines constraint-matched forgetting and the common
+utility floor; exact metrics and thresholds are frozen in the manifest before
+target outcomes.}
+\label{tab:datasets}
+\label{tab:objective-config}
+\label{tab:constraint-contract}
 \centering
 \scriptsize
-\setlength{\tabcolsep}{2.8pt}
+\setlength{\tabcolsep}{2.7pt}
 \resizebox{\textwidth}{!}{%
-\begin{tabular}{@{}lcccccccc@{}}
+\begin{tabular}{@{}llllcccc@{}}
 \toprule
-Method & Selector & Extra reference/data & Trainable block &
-Retain tokens & Unlearn updates & Repair updates &
-Optim.\ GPU-h & Optim.\ peak mem. \\
+\multicolumn{8}{@{}l}{\textbf{A. Predeclared setting scope}} \\
+Dataset / role & Model / precision & $\mathcal D_{\rm cal}/\mathcal D_{\rm pred}/\mathcal D_{\rm prot}$ &
+Target requests & Primary parents & Seeds & $|\mathcal C_{\rm disc}|/|\mathcal C_{\rm audit}|$ & Planned cells \\
 \midrule
-Initial target reference
-    & --- & full-data target & none & --- & --- & --- & --- & \tblph \\
-Retain-only retrain reference
-    & --- & retain training data & \tblph & \tblph & \tblph & ---
-    & \tblph & \tblph \\
-\midrule
-Output-channel parents (GA, GradDiff, NPO, SimNPO, IdkDPO, GRU)
-    & uniform retain / IDK & \tblph & \tblph & \tblph & \tblph & ---
-    & \tblph & \tblph \\
-Representation-channel parents (RMU, RepNoise, Circuit Breakers)
-    & uniform retain & \tblph & \tblph & \tblph & \tblph & ---
-    & \tblph & \tblph \\
-\midrule
-Crossed protection arms (per parent)
-    & \{none, random, matched, mismatched\} (+ exact ceiling, output parent only)
-    & \tblph & \tblph & \tblph & \tblph & \tblph
-    & \tblph & \tblph \\
+TOFU / primary & Qwen2.5-1.5B / fp32 & \tblph & \tblph & 7 & \tblph & \tblph & \tblph \\
+TOFU / scale & Qwen2.5-7B / fp32 & \tblph & \tblph & 7 & \tblph & \tblph & \tblph \\
+TOFU / family & Llama-3.1-8B / fp32 & \tblph & \tblph & 7 & \tblph & \tblph & \tblph \\
+WMDP-bio / MMLU & \tblph & \tblph & \tblph & 7 & \tblph & \tblph & \tblph \\
+MUSE-News & \tblph & \tblph & \tblph & 7 & \tblph & \tblph & \tblph \\
+RWKU & \tblph & \tblph & \tblph & 7 & \tblph & \tblph & \tblph \\
+MUSE-Books / stress & \tblph & \tblph & \tblph & 7 & \tblph & \tblph & \tblph \\
+PISTOL / stress & \tblph & \tblph & \tblph & 7 & \tblph & \tblph & \tblph \\
 \bottomrule
-\end{tabular}
-}
+\end{tabular}}
+
+\vspace{3pt}
+\resizebox{0.88\textwidth}{!}{%
+\begin{tabular}{@{}llllll@{}}
+\toprule
+\multicolumn{6}{@{}l}{\textbf{B. Shared final-checkpoint feasibility region}} \\
+Audit & Metric & Favorable direction & Frozen boundary & Stopping role & Reported slack \\
+\midrule
+Direct forgetting & \tblph & \tblph & \tblph & parent entry + final constraint & yes \\
+Paraphrase forgetting & \tblph & \tblph & \tblph & final constraint & yes \\
+Extraction / generation & greedy autoregressive gold-token recall & lower & \tblph & final constraint & yes \\
+General utility & \tblph & \tblph & \tblph & final floor & yes \\
+Native retain audit & mean/CVaR$_{.95}$ $\Delta$NLL + dataset-native metric & lower/higher & frozen NI margin & outcome only & n.a. \\
+\bottomrule
+\end{tabular}}
 \end{table*}
 
-\subsection{Outcomes, Checkpoint Rules, and Statistical Inference}
+The primary objective roster is GradDiff, NPO, SimNPO, GRU, RMU, RepNoise,
+and Circuit Breakers; GA and IdkDPO are stress controls. For each parent the
+artifact records the implementation identifier, source commit, trainable
+block, learning rate, update and processed-token budgets, saved-step grid,
+forget/reference coefficients, stopping rule, and hashes of all frozen
+inputs. Readout labels are descriptive and never select a mixture endpoint.
+
+The candidate manifest freezes $\mathcal C$, the discovery/audit split by
+semantic group, repair eligibility, and a score-independent random stream. Direct
+answer duplicates, forget-fact paraphrases, and template-derived restatements
+are ineligible for repair; entity overlap is retained as a disclosed stratum.
+Only $\mathcal C_{\rm disc}$ fits empirical midrank maps or supplies repair
+examples. Audit scores are computed at $\theta_0$ and sealed. Candidate IDs
+break ties only when selecting the last member of a top-$K_p$ pool.
+The neutral stream and differentiable guard sets are selector-independent.
+General-utility checkpoint selection uses a separate frozen set; neither
+$\mathcal C_{\rm audit}$ nor its native retained outcome is used by a guard,
+stopping rule, or checkpoint selector.
+
+\subsection{Units, funnels, and decisions}
 \label{app:outcomes}
 
-For candidate $x$ at checkpoint $t$, damage is
-$d_t(x)=\ell(x;\theta_t)-\ell(x;\theta_0)$, positive values harmful. For a
-pool $A$, mean damage is the arithmetic mean and
-$\operatorname{CVaR}_{.95}(d_t;A)$ is the mean of the largest
-$\max(1,\lceil .05|A|\rceil)$ values; audit pool sizes and tail counts are
-always disclosed. Prediction uses each parent's predeclared
-terminal-budget checkpoint as the primary horizon, including criterion
-failures; fixed-step and criterion-matched horizons are sensitivities.
-Within each request we report Spearman correlation, AUROC for realized
-top-$K_p$ damage membership, and
-$\operatorname{Overlap@}K_p=
-|\operatorname{TopK}_{K_p}(r)\cap\operatorname{TopK}_{K_p}(d)|/K_p$
-against the chance rate $K_p/|\mathcal C_{\mathrm{audit}}|$.
+Every prediction correlation is formed within one
+model--request--seed--parent cell. Seeds are averaged within requests and
+requests receive equal weight. The paired hierarchical bootstrap resamples
+requests, trajectory seeds within requests, and semantic groups within
+requests. Its replicate count, seed, and
+finite-sample percentile rule are manifest fields. No candidate is pooled
+across requests before a correlation is computed.
 
-Protection is a two-part estimand: unconditional criterion reach, then
-retention conditional on reach. Single-stage parents use the first saved
-reaching checkpoint; repaired arms enter repair there and use the final
-saved repair output that still satisfies the same criterion. Conditional
-outcomes always report $n_{\mathrm{reach}}/n_{\mathrm{total}}$.
+Within a request, empirical $\mathrm{CVaR}_{.95}$ is the mean of the largest
+5\% damage values, using fractional weight at the quantile boundary. When an
+audit has fewer than 20 candidates, this reduces to the maximum and the row is
+flagged as low-tail-support rather than pooled with larger audits.
 
-Metrics are first averaged over seeds within request. For the interaction
-in Eq.~\eqref{eq:interaction}, we bootstrap candidates. Request-level aggregation uses hierarchical
-bootstrap over targets and requests, with leave-one-target-out ranges
-whenever the top level is small. Paraphrase, generation, extraction, and
-general-utility audits are evaluated at selected checkpoints but never
-define stopping.
+The audit exposes four denominators. $N_{\rm prof}$ counts all predeclared
+profiles and $N_{\rm valid}$ those passing the outcome-blind integrity check.
+$N_{\rm att}$ counts all predeclared parent trajectories and $N_{\rm reach}$
+those reaching the common entry criterion. $N_{\rm rv}$ is the
+reached--valid intersection. Prediction common support requires joint score,
+both endpoints, the frozen simple control, and damage on the same units. A
+tail cell is eligible only when its positive-damage count is at least $m=K_p$,
+with $q=m/|\mathcal C_{\rm audit}|$. Tail-ineligible cells remain in
+the RQ1 correlation denominator; $N_{\rm tail}/N_{\rm rv}$ is always reported,
+and the tail claim requires at least 0.80 coverage. Protection feasibility
+requires mixture, no repair, every frozen random draw, $S_0$, and $S_1$ to
+satisfy all four constraints on the same units; common support additionally
+requires both damage outcomes and the native retained metric for every arm.
+No missing outcome is imputed.
 
-% ==================================================== B. Probe implementation
+RQ1 is the intersection--union test (IUT)
+$\rho_S>0\land g_G>0\land g_H>0\land L_{\rm tail}>0$, with the tail term
+additionally requiring at least 0.80 coverage. RQ2 requires
+$f_\rho>0.80$, $f_K>0.70$, $g_H>0$, and $g_{\rm ctl}>0$ through their
+one-sided lower bounds. Protection is the IUT over four comparators, two
+$\Delta$NLL outcomes, and one native-metric non-inferiority margin per
+comparator. Thus success requires four RQ1 lower bounds, four RQ2 lower
+bounds, and eight superiority plus four non-inferiority bounds for RQ3 to
+cross their frozen boundaries in the favorable direction. Statistical
+success and eligibility are separate
+fields. A fallback weight, invalid profile, missing
+expected cell, non-reach, infeasible arm, incomplete random-draw roster, or
+incomplete common support forces claim pass to ``no,'' even if a conditional
+effect is printable. Exact-gradient allocation is a same-estimand numerical
+reference outside the protection IUT.
 
-\section{Probe Implementation and the Fidelity Gate}
-\label{app:probe-details}
+Parent rows use their one-sided IUT level without a within-row multiplicity
+penalty. The later setting-level rule can select a passing parent from each
+readout group, so that selection applies a Bonferroni threshold across the four
+output-readout or three representation-readout parents. This correction is
+used only for the breadth statement; it does not hide the complete row roster.
 
-\subsection{Exact Gradient-Norm Profile}
-\label{app:exact-norm}
+The paper-level breadth rule is defined in Section~\ref{sec:exp-supporting}; it
+does not pool parent rows or turn the least-favorable row in
+Table~\ref{tab:robustness} into a simultaneous confidence bound.
 
-For candidate $x$ the exact scorer computes $g_x=\nabla_B\ell(x;\theta_0)$
-and records $\lVert g_x\rVert_2$. Candidate gradients are processed
-sequentially and discarded after their norm is accumulated, so no
-$|\mathcal C|\times|B|$ gradient matrix is materialized; the cost is one
-candidate-side forward and backward evaluation per example. Exact norm
-serves as the output-channel reference predictor, the numerical target for
-randomized sensitivity, and the allocation ceiling in the crossed design.
+\FloatBarrier
 
-\subsection{Randomized Sensitivity Implementation}
-\label{app:randomized-impl}
-
-The randomized scorer draws $R$ seeded Gaussian vectors and normalizes
-each over block $B$: $v_r=z_r/\lVert z_r\rVert_2$,
-$z_r\sim\mathcal N(0,I_B)$. Directions are generated lazily from the seed
-and never materialized as a bank. For every direction, block parameters
-are restored from the same saved copy before applying
-$\theta_0\pm\eta v_r$; candidate order, batching, padding, masks, and
-dropout state are identical across the paired sweeps. The implemented
-ranking score is $\widehat q_G/d_B$ from
-Eq.~\eqref{eq:loss-shake-identity}; the common block-dimension factor and
-square root are omitted as rank-invariant.
-Loss differences are accumulated in fp32 even when weights and
-activations use lower precision. The profile uses no forget-gradient
-backward, no candidate-side backward, and no per-example gradient
-materialization; its cost is $2R$ complete candidate-pool forward sweeps.
-
-\subsection{Fidelity Gate: Perturbation Report and
-            \texorpdfstring{$A/B/C$}{A/B/C} Decomposition}
-\label{app:fidelity-gate}
-
-The gate certifies the randomized profile in two stages, both run before
-any confirmatory outcome is unsealed.
-
-\emph{Perturbation report.} For each radius and precision, we measure the
-realized perturbation norm $\lVert\eta v\rVert_2/\eta$ and the fraction of
-block parameters actually changed by $\pm\eta v$. Low-precision underflow
--- the failure mode that silently zeroes small perturbation components --
-appears here as a changed-parameter fraction below one, and disqualifies
-the setting before any correlation is computed.
-
-\emph{$A/B/C$ decomposition.} On the diagnostic subset we compare three
-quantities per candidate: the exact squared norm
-$A=\lVert g_x\rVert_2^2$; the exact projected proxy
-$B=(d_B/R)\sum_r (g_x^{\top}v_r)^2$, which shares the probe's direction
-distribution and operating $(\eta,R)$ but uses exact inner products
-(the gate's diagnostic sampler draws its own seeded directions); and the
-finite-difference
-estimate $C=\widehat q_G(x)$. Rank agreement of $B$ with $A$
-isolates Monte Carlo error (relative variance
-$2(d_B-1)/[R(d_B+2)]$, approaching $2/R$ in large blocks); rank agreement
-of $C$ with $B$ isolates
-finite-difference error, including catastrophic cancellation at small
-$\eta$. Because the central difference cancels the leading curvature
-term, disagreement between $C$ and $B$ at small radii is cancellation
-noise, not curvature. The operating $(\eta,R)$ is chosen as the smallest
-radius whose $C$--$B$ and $C$--$A$ rank agreements exceed the frozen
-threshold with a full perturbation report, then frozen.
-Table~\ref{tab:estimator-validation} reports both sides of the gate
-boundary.
-
-\subsection{Representation-Proximity Implementation}
-\label{app:proximity-impl}
-
-Candidates and forget examples are embedded with mean-pooled final hidden
-states of $\theta_0$ over answer tokens; each candidate's score is its
-mean cosine similarity to its $k$ nearest forget examples. External
-sentence-embedding proximity substitutes a frozen off-the-shelf encoder,
-and lexical overlap uses answer-token Jaccard similarity; both are
-reported as weaker family members. All three are forward-only and require
-no parameter perturbation.
-
-\subsection{Rejected Diagnostic: Forget-Direction Alignment}
-\label{app:alignment-impl}
-
-The alignment diagnostic computes one request-level forget gradient in
-block $B$, normalizes it, and scores candidates by
-$[\ell_x(\theta_0+\eta\hat g_f)-
-\ell_x(\theta_0-\eta\hat g_f)]/(2\eta)$. Exact JVP,
-vectorized reverse-mode gradient dot, and streaming candidate backward
-compute the same local target and are numerical implementations, not
-separate hypotheses; their role is to separate finite-difference error
-from the scientific failure of the single-direction hypothesis, analyzed
-in Appendix~\ref{app:alignment-postmortem}.
-
-% ================================================= C. Protection implementation
-
-\section{Protection Implementation}
-\label{app:protection-details}
-
-\subsection{Profile Construction and Pools}
-\label{app:pools}
-
-Every scorer covers the declared candidate universe, but only discovery
-candidates are eligible for optimization. At fixed budget $K_p$, the
-protect pool contains the highest-scoring eligible candidates with
-deterministic tie-breaking. Randomized-sensitivity scores are nonnegative:
-a high score means high estimated local sensitivity, not positive signed
-interference. A size-matched low-response stream $\mathcal R_0$ is drawn
-from a frozen near-zero quantile of the discovery fold as the repair-time
-reference; for either probe family, a low score does not by itself
-establish semantic remoteness. Pool sizes, quantiles, group exclusions,
-tie breaking, and fallback rules are fixed without target outcomes, and no
-audit candidate can enter either pool.
-
-\subsection{Engine-Then-Repair Pipeline}
-\label{app:repair}
-
-Each crossed-design arm runs its parent unmodified from $\theta_0$ to the
-first saved checkpoint satisfying the common forget criterion; a parent
-that never reaches remains a reach failure and repair is not applied. At
-the reaching state, per-sequence and per-answer-token forget losses are
-cached as paired references. Repair minimizes answer-token NLL on the
-protect pool. At declared refresh steps it computes mean forget and
-reference-stream gradients $b_1,\ldots,b_m$ and projects the repair
-gradient $v$ away from their span:
-\[
-    \zeta=(G+\varepsilon I)^{-1}[\langle b_i,v\rangle]_i,
-    \qquad G_{ij}=\langle b_i,b_j\rangle,
-    \qquad
-    \widetilde v=v-\textstyle\sum_i\zeta_i b_i,
-\]
-with the ridge scaled to the Gram diagonal and a fallback to the primary
-forget basis if the declared condition-number threshold is exceeded.
-Projection is a local first-order constraint, not a global preservation
-guarantee.
-
-\subsection{Paired One-Sided Guard and Auxiliary Bound}
-\label{app:guard-proof}
-
-With $\bar u_i$ the cached post-unlearning forget loss and $u_i$ its
-current value, the identity-paired guard is
-\begin{equation}
-    D_{\downarrow}(u,\bar u)
-    =
-    \frac{1}{n}
-    \sum_{i=1}^{n}
-    \bigl[\bar u_i-\epsilon-u_i\bigr]_+^2.
-    \label{eq:guard}
-\end{equation}
-Sequence- and token-level guards (Eq.~\eqref{eq:guard}) have separate
-threshold and multipliers. At an audited refresh, a step exceeding either
-budget is rejected: the last accepted block parameters and optimizer state
-are restored, the repair step size is reduced, and updated multipliers are
-retained. Projection is proactive and mean-level; the guard is reactive
-and identity-specific. Both require backward evaluations, so the complete
-pipeline is not backward-free.
-
-The guard admits a simple tail bound. Let
-$a_i=[\bar u_i-\epsilon-u_i]_+$ and suppose an accepted audited checkpoint
-satisfies $n^{-1}\sum_i a_i^2\leq\delta^2$. If
-$u_i\leq\bar u_i-\epsilon-\Delta$ then $a_i\geq\Delta$, so with
-$I_\Delta$ the set of such indices,
-\[
-    |I_\Delta|\,\Delta^2
-    \leq
-    \sum_{i\in I_\Delta}a_i^2
-    \leq
-    n\delta^2
-    \qquad\Longrightarrow\qquad
-    \frac{|I_\Delta|}{n}\leq\frac{\delta^2}{\Delta^2}:
-\]
-the fraction of forget examples whose loss regresses by more than
-$\Delta$ beyond tolerance is controlled by the accepted guard threshold. The
-bound applies only to audited loss vectors at accepted refreshes; it is
-not a guarantee about generated continuations, extraction, relearning, or
-global deletion.
-
-% ============================================ D. Supplementary prediction
-
-\section{Supplementary Prediction Results}
+\section{Additional Prediction Analyses}
 \label{app:prediction-supp}
 
-\subsection{Headline-Probe Secondary Metrics}
-\label{app:headline-secondary}
+The main paper defines the tail premise and carries every parent-level claim
+decision. Table~\ref{tab:tail-structure} provides the parent breakdown and
+secondary controls. Tail support is conditioned on a realized parent damage
+vector, not on profile validity, so a failed profiler cannot erase evidence
+about whether aggregate retention hides a coherent tail. The permutation
+keeps request-specific group sizes fixed. If a request has zero positive
+damage mass, its concentration ratio is undefined: we report it as a
+zero-mass request and exclude it only from that ratio, never from the
+prediction denominator. Tail size and minimum support are frozen in the
+manifest.
 
-Table~\ref{tab:headline-secondary} reports the secondary prediction
-metrics for the two headline probes on every objective, complementing the
-$\rho$ matrix of Table~\ref{tab:channel-matrix}. The channel structure
-should reappear in each metric: the matched probe dominates AUROC and
-Overlap@$K_p$ on its own channel, and tail-restricted $\rho$ verifies that
-ranking quality persists inside the damage tail where protection budgets
-are spent.
 \begin{table*}[t]
-\caption{Secondary metrics for the headline probes (TOFU tofu-a180,
-sealed audit fold, $n{=}300$, $K_p{=}30$; chance Overlap@$K_p$ is
-$0.10$). AUROC and Overlap mirror the channel flip of
-Table~\ref{tab:channel-matrix}: the gradient probe is strong on
-output-channel objectives (AUROC $0.75$--$0.82$) and at chance on
-representation-channel objectives ($0.51$--$0.58$). Tail $\rho$ is
-computed within the worst-5\% damage tail ($n{\approx}15$) and is
-high-variance; it is reported for completeness and read qualitatively.
-$^{\dag}$/$^{\ddag}$ as in Table~\ref{tab:channel-matrix}.}
-\label{tab:headline-secondary}
+\caption{\textbf{Additional tail, reference, and construction analyses.}
+Panel A expands the premise behind Figure~\ref{fig:channel-main}A. Panel B
+compares pre-unlearning references on equal parent/request support. Panel C
+contains representative one-factor checks; the full grid and bootstrap draws
+are artifacts. None of these panels replaces the main table's absolute and
+two-endpoint prediction test.}
+\label{tab:tail-structure}
+\label{tab:prospective-prediction}
+\label{tab:profile-construction}
+\label{tab:horizon-sensitivity}
 \centering
 \scriptsize
-\setlength{\tabcolsep}{3pt}
-\begin{tabular}{@{}llcccc@{}}
+\setlength{\tabcolsep}{2pt}
+\resizebox{0.88\textwidth}{!}{%
+\begin{tabular}{@{}lccccccc@{}}
 \toprule
-Probe & Objective (channel) & $\rho$ & AUROC & Overlap@$K_p$ &
-Tail $\rho$ \\
+\multicolumn{8}{@{}l}{\textbf{A. Damage-tail evidence on repair-held-out audit behaviors}} \\
+Parent & Mean damage & CVaR$_{.95}$ & $M_q/q$ [95\% CI] &
+$L_{\rm grp}$ [95\% CI] & Permutation $p$ & Damage support $n/N$ & Tail $n$ \\
 \midrule
-Randomized sensitivity & GradDiff (output) & 0.41 & 0.75 & 0.20 & -0.06 \\
-& NPO (output) & 0.40 & 0.79 & 0.27 & 0.10 \\
-& SimNPO (output) & 0.40 & 0.79 & 0.27 & 0.18 \\
-& GRU (output) & 0.43 & 0.77 & 0.23 & -0.10 \\
-& GA$^{\ddag}$ (output) & 0.20 & 0.51 & 0.07 & -0.18 \\
-& IdkDPO$^{\dag}$ (output) & 0.41 & 0.82 & 0.30 & -0.26 \\
-& RMU (repr.) & -0.05 & 0.58 & 0.10 & 0.02 \\
-& RepNoise (repr.) & -0.17 & 0.55 & 0.17 & 0.26 \\
-& CB$^{\dag}$ (repr.) & -0.25 & 0.53 & 0.17 & -0.12 \\
-\addlinespace
-Hidden-state proximity & GradDiff (output) & 0.49 & 0.70 & 0.27 & -0.15 \\
-& NPO (output) & 0.23 & 0.67 & 0.23 & -0.38 \\
-& SimNPO (output) & 0.21 & 0.67 & 0.23 & -0.31 \\
-& GRU (output) & 0.42 & 0.68 & 0.23 & -0.18 \\
-& GA$^{\ddag}$ (output) & 0.50 & 0.77 & 0.30 & 0.53 \\
-& IdkDPO$^{\dag}$ (output) & 0.05 & 0.57 & 0.10 & -0.00 \\
-& RMU (repr.) & 0.34 & 0.66 & 0.30 & -0.67 \\
-& RepNoise (repr.) & 0.14 & 0.42 & 0.10 & -0.02 \\
-& CB$^{\dag}$ (repr.) & 0.09 & 0.66 & 0.17 & -0.03 \\
+GradDiff & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph \\
+NPO & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph \\
+SimNPO & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph \\
+GRU & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph \\
+RMU & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph \\
+RepNoise & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph \\
+CB & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph \\
 \bottomrule
-\end{tabular}
+\end{tabular}}
+
+\vspace{3pt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}llccccccc@{}}
+\toprule
+\multicolumn{9}{@{}l}{\textbf{B. Pre-unlearning reference roster; descriptive equal-parent summaries}} \\
+Family & Predictor & Candidate reverse & All $\rho$ & Output $\rho$ &
+Representation $\rho$ & Top-$q$ recall & Common support & Role \\
+\midrule
+Gradient & exact gradient energy & yes & \tblph & \tblph & \tblph & \tblph & \tblph & numerical reference \\
+Directional & forget-direction symmetric FD & no & \tblph & \tblph & \tblph & \tblph & \tblph & baseline \\
+Loss response & one random direction & no & \tblph & \tblph & \tblph & \tblph & \tblph & baseline \\
+Representation & sentence-embedding proximity & no & \tblph & \tblph & \tblph & \tblph & \tblph & baseline \\
+Lexical & token-overlap proximity & no & \tblph & \tblph & \tblph & \tblph & \tblph & baseline \\
+Representation & request-shuffled proximity & no & \tblph & \tblph & \tblph & \tblph & \tblph & negative control \\
+Loss & initial NLL & no & \tblph & \tblph & \tblph & \tblph & \tblph & baseline \\
+Length & answer length & no & \tblph & \tblph & \tblph & \tblph & \tblph & baseline \\
+Random & repeated frozen rankings & no & \tblph & \tblph & \tblph & \tblph & \tblph & chance \\
+\bottomrule
+\end{tabular}}
+
+\vspace{3pt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}lllccccc@{}}
+\toprule
+\multicolumn{8}{@{}l}{\textbf{C. Representative one-factor checks}} \\
+Axis & Primary / variant & Scope & Joint $\rho$ & min gain [min LB] &
+Top-$q$ recall & Common support & Eligible/pass \\
+\midrule
+Representation layer & final / penultimate & one output + one representation parent & \tblph & \tblph & \tblph & \tblph & \tblph \\
+Pooling & answer-token mean / final token & same & \tblph & \tblph & \tblph & \tblph & \tblph \\
+Loss-shake block & frozen late MLP / last layer & same & \tblph & \tblph & \tblph & \tblph & \tblph \\
+Mixture & parent-specific / one global weight & all primary parents & \tblph & \tblph & \tblph & \tblph & \tblph \\
+Horizon & first reach / fixed or terminal & all reached parents & \tblph & \tblph & \tblph & \tblph & \tblph \\
+\bottomrule
+\end{tabular}}
 \end{table*}
 
-\subsection{Seed Replication of the Interaction}
-\label{app:seed-replication}
+All reference predictors use the same candidate folds and outcome horizons.
+Construction ablations keep the primary prediction weight fixed; a separately
+reported development refit diagnoses weight mismatch but cannot replace that
+ablation. The request-shuffled control draws a different forget request of the
+same declared size before target outcomes.
 
-Table~\ref{tab:seed-replication} repeats the complete nine-objective run
-(SFT, scoring, and all trajectories) under independent seeds and
-recomputes the preregistered interaction. The per-cell correlations move
-with the seed -- e.g.\ the RMU column's proximity signal is markedly
-weaker under seed 2026 -- but the difference-in-differences absorbs
-these level shifts, and the CI excludes zero at every replicate: the
-interaction, not any single correlation, is the stable quantity.
+\FloatBarrier
 
-\begin{table}[t]
-\caption{Seed replication of the preregistered interaction $\Delta$
-(Eq.~\eqref{eq:interaction}; candidate bootstrap, 2{,}000 resamples,
-$n{=}300$). Each seed is a fully independent rerun of SFT, probe
-scoring, and all nine trajectories on the same request.}
-\label{tab:seed-replication}
-\centering
-\scriptsize
-\setlength{\tabcolsep}{3pt}
-\begin{tabular}{@{}lcc@{}}
-\toprule
-Seed & GradDiff/RMU $\Delta$ [95\% CI] & NPO/RepNoise $\Delta$ [95\% CI] \\
-\midrule
-2025 & $+0.300$ $[+0.131, +0.466]$ & $+0.470$ $[+0.232, +0.698]$ \\
-2026 & $+0.226$ $[+0.048, +0.406]$ & $+0.737$ $[+0.532, +0.950]$ \\
-2027 & \tblph & \tblph \\
-\bottomrule
-\end{tabular}
-\end{table}
-
-\subsection{Randomized-Estimator Accuracy and Stability}
+\section{Loss-Shake Numerical Validation}
 \label{app:estimator-stability}
+\label{app:probe-details}
+\label{app:randomized-impl}
+
+For each Gaussian draw, the implementation normalizes
+$v_r=g_r/\lVert g_r\rVert_2$, saves the declared parameter block, applies
+$\theta_0+\eta v_r$ and $\theta_0-\eta v_r$ from that same copy, and restores
+it before the next direction. Candidate order,
+batching, masks, padding, precision, and dropout state are identical within a
+pair. Signed responses are accumulated in fp32 and persisted before squaring,
+so nested-$R$, direction-bank, and split-half analyses require no new model
+evaluation. The dimension factor in Eq.~\eqref{eq:loss-shake-identity} is
+stored even though it does not affect ranking.
+
+The confirmatory operating point uses fp32 parameters. Bfloat16 is retained
+only as a numerical boundary check: a configuration is invalid when the
+realized block displacement or changed-coordinate fraction falls below its
+frozen perturbation-survival threshold.
+
+The exact reference streams one candidate at a time, records its gradient
+energy on the same block, and discards the vector. Outcome-blind development
+calibration chooses the smallest $(R,\eta)$ satisfying the frozen criteria for
+exact-rank fidelity, top-$K_p$ overlap, perturbation survival, and
+direction-split stability. A
+target profile is valid only when the latter forward-only checks pass on
+$\mathcal C_{\rm disc}$ before the sealed audit is opened.
+\label{app:fidelity-gate}
 
 \begin{table*}[t]
-\caption{\textbf{The backward-free probe: fidelity to the exact profile
-and profiling cost.} Left: rank agreement with the exact gradient norm
-inside and outside the preregistered fidelity gate (Qwen models, fp32);
-at the gate-certified setting the probe's damage prediction matches the
-exact profile within $\pm 0.01$ on all nine objectives of
-Table~\ref{tab:channel-matrix}. Right: measured wall-clock and peak
-memory per pass over one candidate universe (Qwen2.5-7B, bf16, batch 4);
-``randomized sensitivity'' time is per symmetric direction pair
-($2\times$ forward sweep) -- total time scales linearly in $R$ while
-peak memory stays at the same inference-level $18.3$\,GB, so the claim
-is memory and backward-freedom, not universal wall-clock supremacy.}
+\caption{\textbf{Loss-shake fidelity--cost frontier and numerical
+sensitivity.} Timing uses device synchronization and a common measurement
+boundary; memory is peak allocated device memory. The selected operating
+point is marked frozen. Exact gradients are evaluated only as a reference.}
 \label{tab:bwfree}
-\centering
-\scriptsize
-\setlength{\tabcolsep}{3.0pt}
-\begin{tabular}{@{}lcc c lcc@{}}
-\toprule
-\multicolumn{3}{c}{\textbf{Fidelity (fp32)}} & &
-\multicolumn{3}{c}{\textbf{Cost (7B, bf16, per pass)}} \\
-\cmidrule(r){1-3}\cmidrule(l){5-7}
-Regime & $\rho$(rand, exact) & Damage-$\rho$ retained & &
-Profiler & Time (s) & Peak mem (GB) \\
-\midrule
-Gate-certified ($\eta{=}3\mathrm{e}{-}3$, $R{=}64$) & 0.94 &
-9/9 obj.\ within $\pm 0.01$ & &
-Randomized sensitivity (per pair, fwd only) & 5.97 & \textbf{18.3} \\
-Cancellation zone ($\eta{=}3\mathrm{e}{-}4$) & 0.50 & \tblph & &
-Exact per-candidate backward (streaming) & 17.4 & 18.7 \\
-Low-precision underflow (bf16) & \tblph & \tblph & &
-Exact JVP (forward-mode) & 9.9 & 27.4 \\
-Curvature zone (large $\eta$) & \tblph & \tblph & &
-Vectorized gradient-dot & 10.0 & 35.2 \\
-\bottomrule
-\end{tabular}
-\end{table*}
-
-Table~\ref{tab:estimator-validation} varies one profiling factor at a
-time around the frozen operating point; direction-count rows report the
-spread across independent direction seeds. The gate rows make the
-boundary of Appendix~\ref{app:fidelity-gate} concrete: agreement collapses
-in the small-radius cancellation zone and under bf16 underflow, and the
-perturbation report flags both before any damage outcome is consulted.
-System cost is excluded here (Table~\ref{tab:full-cost}).
-
-\begin{table*}[t]
-\caption{Accuracy and stability of the randomized estimator. ``Norm
-agreement'' compares randomized sensitivity with exact gradient norm on
-rank; ``damage $\rho$'' uses the same sealed outcomes as
-Table~\ref{tab:channel-matrix}. Cells report estimate [range over seeds].}
 \label{tab:estimator-validation}
 \centering
 \scriptsize
-\setlength{\tabcolsep}{3pt}
-\begin{tabular}{@{}llcccc@{}}
+\setlength{\tabcolsep}{2.2pt}
+\resizebox{\textwidth}{!}{%
+\begin{tabular}{@{}lllcccccc@{}}
 \toprule
-Factor & Variant & Norm agreement $\rho$ $\uparrow$ &
-Norm overlap@$K_p$ $\uparrow$ & Damage $\rho$ $\uparrow$ &
-Finite rate $\uparrow$ \\
+\multicolumn{9}{@{}l}{\textbf{A. Matched fidelity--cost frontier}} \\
+Model / block / precision & Profiler & $R$ & $\rho$ vs. exact & overlap@$K_p$ &
+Pool passes / candidate reverse & Time & Peak memory & Integrity valid $n/N$ \\
 \midrule
-Random directions
-    & $R=4$  & \tblph & \tblph & \tblph & \tblph \\
-    & $R=16$ & \tblph & \tblph & \tblph & \tblph \\
-    & $R=64$ (frozen) & \tblph & \tblph & \tblph & \tblph \\
-\midrule
-Radius
-    & $\eta_0/10$ (cancellation) & 0.50 & \tblph & \tblph & \tblph \\
-    & $\eta_0$ (frozen) & 0.94 & \tblph & \tblph & \tblph \\
-    & $10\eta_0$ (curvature) & \tblph & \tblph & \tblph & \tblph \\
-\midrule
-Precision
-    & fp32 weights, fp32 loss & \tblph & \tblph & \tblph & \tblph \\
-    & bf16 weights, fp32 loss (underflow) & \tblph & \tblph & \tblph & \tblph \\
-\midrule
-Parameter block
-    & late MLP (frozen) & \tblph & \tblph & \tblph & \tblph \\
-    & last layer & \tblph & \tblph & \tblph & \tblph \\
+Qwen2.5-1.5B / \tblph / fp32 & exact energy & --- & 1.00 & 1.00 & candidate F+B / yes & \tblph & \tblph & n.a. \\
+& exact energy (batched, if feasible) & --- & 1.00 & 1.00 & batched F+B / yes & \tblph & \tblph & n.a. \\
+& loss-shake & \tblph & \tblph & \tblph & $2R$ pool F / no & \tblph & \tblph & \tblph \\
+& loss-shake (frozen) & \tblph & \tblph & \tblph & $2R$ pool F / no & \tblph & \tblph & \tblph \\
+Qwen2.5-7B / \tblph / fp32 & exact energy & --- & 1.00 & 1.00 & candidate F+B / yes & \tblph & \tblph & n.a. \\
+& loss-shake (frozen) & \tblph & \tblph & \tblph & $2R$ pool F / no & \tblph & \tblph & \tblph \\
+Llama-3.1-8B / \tblph / fp32 & loss-shake (frozen) & \tblph & \tblph & \tblph & $2R$ pool F / no & \tblph & \tblph & \tblph \\
 \bottomrule
-\end{tabular}
+\end{tabular}}
+
+\vspace{3pt}
+\resizebox{0.9\textwidth}{!}{%
+\begin{tabular}{@{}llccccc@{}}
+\toprule
+\multicolumn{7}{@{}l}{\textbf{B. One-factor numerical sensitivity}} \\
+Axis & Frozen / variants & $\rho$ range & overlap range & split-half range &
+Valid $n/N$ & Boundary diagnosis \\
+\midrule
+Directions & $R$ / nested prefixes and new banks & \tblph & \tblph & \tblph & \tblph & \tblph \\
+Radius & $\eta$ / log-grid neighbors & \tblph & \tblph & \tblph & \tblph & \tblph \\
+Precision & declared / fp32, bf16 & \tblph & \tblph & \tblph & \tblph & \tblph \\
+Pool size & full / nested pools, fixed common subset & \tblph & \tblph & \tblph & \tblph & \tblph \\
+\bottomrule
+\end{tabular}}
 \end{table*}
 
-\subsection{Alignment-Probe Post-Mortem}
-\label{app:alignment-postmortem}
+Rank agreement validates computation of $\widehat q_G$ only. Fidelity alone
+establishes neither component's predictive added value; the main paired gains
+and simple-control comparison decide that separate claim.
 
-The post-mortem separates two questions about the forget-direction
-alignment probe: whether it is numerically correct, and whether the
-single-direction hypothesis survives the trajectory.
-Table~\ref{tab:local-fidelity} tests the first -- symmetric FD should
-recover the exact JVP directional derivative to high precision, so any
-failure in Table~\ref{tab:channel-matrix} would not be estimator error.
-Table~\ref{tab:score-anatomy} decomposes the local response on the
-diagnostic gradient subset; the preregistered prediction is that gradient
-magnitude carries the transferable signal on output-channel damage,
-whereas the signed-alignment factor -- the part specific to the initial
-forget direction -- does not survive the trajectory.
-Table~\ref{tab:trajectory-mechanism} completes the account by measuring
-whether saved-checkpoint displacement rotates away from the initial
-direction and whether alignment's predictive value decays with that
-rotation.
+\FloatBarrier
 
-\begin{table*}[t]
-\caption{Numerical fidelity of implementations targeting the initial
-forget-direction derivative. Exact JVP is the reference; this table
-establishes local correctness only. Relative error excludes reference
-values inside the frozen zero tolerance.}
-\label{tab:local-fidelity}
-\centering
-\small
-\setlength{\tabcolsep}{4pt}
-\begin{tabular}{@{}lcccccc@{}}
-\toprule
-Estimator & Candidate reverse & Abs.\ error $\downarrow$ &
-Rel.\ error $\downarrow$ & Sign agreement $\uparrow$ &
-JVP rank $\rho$ $\uparrow$ & JVP overlap@$K_p$ $\uparrow$ \\
-\midrule
-Exact JVP
-    & no & --- & --- & 1.000 & 1.000 & 1.000 \\
-Symmetric FD
-    & no & \tblph & \tblph & \tblph & \tblph & \tblph \\
-One-sided FD
-    & no & \tblph & \tblph & \tblph & \tblph & \tblph \\
-Vmap gradient dot
-    & yes & \tblph & \tblph & \tblph & \tblph & \tblph \\
-Streaming backward
-    & yes & \tblph & \tblph & \tblph & \tblph & \tblph \\
-\bottomrule
-\end{tabular}
-\end{table*}
+\section{Protection Sensitivity and Boundary Checks}
+\label{app:protection-supp}
+\label{app:protection-details}
 
-\begin{table*}[t]
-\caption{Score anatomy on the frozen gradient subset. Cells report
-within-request Spearman correlation with terminal damage, one
-representative objective per channel. Magnitude transfers on the output
-channel; the alignment factor does not; neither carries the
-representation channel.}
-\label{tab:score-anatomy}
-\centering
-\scriptsize
-\setlength{\tabcolsep}{3.2pt}
-\begin{tabular}{@{}lccccc@{}}
-\toprule
-Signal & Formula & Candidate backward &
-GradDiff (output) & GRU (output) & RMU (repr.) \\
-\midrule
-Initial NLL
-    & $\ell(x;\theta_0)$ & no & \tblph & \tblph & \tblph \\
-Answer length
-    & $|x_{\mathrm{answer}}|$ & no & \tblph & \tblph & \tblph \\
-\midrule
-Gradient magnitude
-    & $\|g_x\|_2$ & yes & \tblph & \tblph & \tblph \\
-Signed alignment
-    & $\cos(g_x,g_f)$ & yes & \tblph & \tblph & \tblph \\
-Magnitude $\times$ alignment
-    & $\langle g_x,\hat g_f\rangle$ & yes & \tblph & \tblph & \tblph \\
-Directional FD
-    & $\delta_\eta(x;\hat g_f)$ & no & \tblph & \tblph & \tblph \\
-Absolute directional FD
-    & $|\delta_\eta(x;\hat g_f)|$ & no & \tblph & \tblph & \tblph \\
-\bottomrule
-\end{tabular}
-\end{table*}
+\subsection{Common repair harness}
+\label{app:guard-proof}
+\label{app:repair-protocol}
 
-\begin{table*}[t]
-\caption{Checkpoint-level directional persistence. $a_t$ is the signed
-cosine between saved block displacement and the initial forget direction.
-``Alignment pred.''\ is directional-FD correlation with damage at that
-checkpoint; ``norm pred.''\ is exact-norm correlation with the same
-damage. A positive relationship between $a_t$ and alignment prediction
-supports, but does not prove, the rotation explanation.}
-\label{tab:trajectory-mechanism}
-\centering
-\scriptsize
-\setlength{\tabcolsep}{3pt}
-\begin{tabular}{@{}lccccc@{}}
-\toprule
-Parent & Units & $a_t$ [IQR] &
-$\rho(a_t,\text{alignment pred.})$ &
-Norm pred.\ [IQR] & Alignment pred.\ [IQR] \\
-\midrule
-GradDiff & \tblph & \tblph & \tblph & \tblph & \tblph \\
-NPO & \tblph & \tblph & \tblph & \tblph & \tblph \\
-RMU & \tblph & \tblph & \tblph & \tblph & \tblph \\
-\bottomrule
-\end{tabular}
-\end{table*}
+Every active arm begins from the same first criterion-reaching parent
+checkpoint. It selects exactly $K_p$ eligible discovery examples, but shares
+the neutral stream $\mathcal R_0$, example order, optimizer random stream,
+processed-token budget, projection, guards, and save schedule. The neutral
+stream enters $L_{\rm rep}$ through the entry-anchored KL term in
+Eq.~\eqref{eq:budgeted-repair}; no susceptibility score selects it. The token
+budget charges protected, neutral, constraint-refresh, guard, and
+checkpoint-evaluation tokens.
 
-\subsection{Specificity Controls}
+Projection covers only differentiable surrogate constraints. Each is oriented
+as $c_j(\theta)\leq0$ on a frozen guard set and is active when
+$c_j(\theta)\geq-\kappa_j$. The matrix $G$ is refreshed every $m_{\rm ref}$
+accepted steps and Eq.~\eqref{eq:repair-projection} uses ridge $\lambda$.
+For a forget token $(i,s)$, the anchored adverse margin is
+\[
+ r^{f}_{is}(\theta)=\log p_\theta(y_{is}\mid y_{i,<s})-
+ \log p_{t^\dagger}(y_{is}\mid y_{i,<s});
+\]
+for a neutral or utility token it is the NLL increase
+\[
+ r^{u}_{is}(\theta)=-\log p_\theta(y_{is}\mid y_{i,<s})+
+ \log p_{t^\dagger}(y_{is}\mid y_{i,<s}).
+\]
+A proposed step must keep every token margin below its frozen
+$\epsilon^{\rm tok}$ and every example-average margin below
+$\epsilon^{\rm ex}$. Otherwise the parameters are restored, the step size is
+halved, and the step is retried up to $J_{\rm retry}$ times; exhaustion stops
+the arm. The manifest freezes $\beta$, $\kappa_j$, $m_{\rm ref}$, $\lambda$,
+both tolerances, $J_{\rm retry}$, and guard IDs before target runs.
+
+Non-differentiable extraction, generation, and full utility metrics are not
+represented in $G$. They are evaluated only at the shared save schedule on
+selector-safe sets. The reported output is the last checkpoint satisfying
+every row of Table~\ref{tab:constraint-contract}; if none does, the arm is
+infeasible. Sealed $\Delta$NLL and native retained outcomes are opened only
+after this selection. The artifact records refreshes, retries, accepted and
+rejected updates, margins, and the selected step.
+
+Repeated random allocation uses $B_{\rm rand}$ pools frozen before outcomes.
+Every draw must complete and satisfy the same constraints. Draw IDs are
+resampled and averaged inside their trajectory within each bootstrap
+replicate. Diagnostic arms replace only the selector: exact-energy allocation
+substitutes $q_G^\star$ for $\widehat q_G$; prediction-weight allocation uses
+$\widehat\alpha_{\rm pred}$; uniform rehearsal ignores ranking; and a
+realized-discovery-damage oracle gives an unattainable repair-capacity
+reference. All remain outside the four-comparator claim.
+
+\subsection{Budget and specificity checks}
 \label{app:specificity}
 
-Randomized sensitivity does not use the target forget request, so its
-unlearning-specific reading requires controls. We compare every frozen
-profile against damage from target unlearning, a different forget
-request, benign supervised fine-tuning, and random motion matched to the
-target displacement norm within the same block.
+The specificity analysis keeps the sealed target profile fixed. Other-request
+motion uses a size-matched forget set; random motion matches the target block
+displacement and uses directions independent of profiling. These controls
+bound interpretation: loss-shake energy is intentionally direction- and
+request-agnostic, whereas proximity should carry the request-specific part.
+MUSE-Books and PISTOL remain boundary settings and never count toward the
+paper-level breadth rule.
 
-\begin{table*}[t]
-\caption{Specificity controls. Cells report candidate-level correlation
-with realized damage. Similar prediction across all columns supports the
-narrower interpretation of general update sensitivity rather than
-request-specific unlearning risk.}
-\label{tab:specificity}
-\centering
-\small
-\setlength{\tabcolsep}{4pt}
-\begin{tabular}{@{}lcccc@{}}
-\toprule
-Predictor & Target unlearning & Other forget request &
-Benign SFT & Matched random update \\
-\midrule
-Exact gradient norm & \tblph & \tblph & \tblph & \tblph \\
-Randomized sensitivity & \tblph & \tblph & \tblph & \tblph \\
-Hidden-state proximity & \tblph & \tblph & \tblph & \tblph \\
-Forget-direction alignment & \tblph & \tblph & \tblph & \tblph \\
-Random ranking & \tblph & \tblph & \tblph & \tblph \\
-\bottomrule
-\end{tabular}
-\end{table*}
+Hyperparameter grids, source-to-target weight carryover, exploratory traces of
+directional persistence, and early hypothesis development are artifact
+diagnostics rather than paper tables. They never select a target rule or fill
+a confirmatory cell.
 
-\subsection{Continuous Channel Diagnostic}
-\label{app:alpha-diagnostic}
-
-The mixture analysis is an append-only exploratory extension frozen after
-the primary channel design but before any $s_\alpha$ curve was computed on
-sealed outcomes.
-It uses the rank-normalized loss-shake and hidden-state profiles of
-Eq.~\eqref{eq:mixture}, with deterministic candidate-ID tie-breaking. The
-prediction analysis evaluates
-$\alpha\in\{0,0.125,\ldots,1\}$ offline on every
-sealed objective trajectory. The protection analysis uses the five-point
-subset $\{0,0.25,0.5,0.75,1\}$; the endpoint arms are the existing
-confirmatory selectors and only the three interior arms are additional.
-
-For prediction we report every per-objective
-$\rho(s_\alpha,\mathrm{damage})$ curve and its descriptive argmax. For
-protection we report audit CVaR and reach at every mixture weight, including
-parent-floor regimes. These argmax values summarize observed curves only:
-they neither tune deployment nor revise the fixed output-$0$/representation-$1$
-router. A mismatch between prediction- and protection-optimal weights is
-reported directly because individual risk ranking and repair transfer need
-not induce the same ordering.
-
-The measured prediction curves (seed 2025; seed-2026 replicate in
-parentheses): every output-channel objective peaks at an interior
-weight -- GradDiff $\alpha^{*}{=}0.5$, $\rho{=}0.612$ ($0.375$,
-$0.573$); GRU $0.5$, $0.592$ ($0.375$, $0.564$); NPO $0.375$, $0.466$
-($0.25$, $0.484$); SimNPO $0.375$, $0.460$ ($0.25$, $0.478$);
-GA$^{\ddag}$ $0.75$, $0.518$ ($0.75$, $0.660$); IdkDPO$^{\dag}$ $0.25$,
-$0.427$ ($0.25$, $0.534$) -- and every representation-channel objective
-is a corner solution at $\alpha^{*}{=}1$ in both seeds (RMU $0.339$ /
-$0.120$; RepNoise $0.136$ / $0.335$; CB$^{\dag}$ $0.092$ / $0.069$).
-The interior optima on the output channel exceed both endpoints by up to
-$+0.12$ absolute $\rho$; on the representation channel any gradient
-weight only hurts. The protection interior arms have not yet been run.
-
-\begin{figure}[t]
-\centering
-\fbox{\parbox{0.92\linewidth}{\centering\vspace{0.85cm}
-\resph{Top: all per-objective $\rho(s_\alpha,\mathrm{damage})$ curves on
-the frozen nine-point grid, grouped by declared channel. Bottom: audit
-CVaR and reach for each parent on the five-point protection grid. Mark
-descriptive optima without using them as router choices.}
-\vspace{0.85cm}}}
-\caption{\textbf{Continuous diagnostic, not routing.} Prediction uses the
-frozen nine-point grid; protection uses its five-point subset. Endpoints
-remain the only confirmatory routes. Interior, opposite-endpoint, and flat
-curves are all reported.}
-\Description{Two stacked diagnostic panels: prediction correlation versus
-alpha for each objective and protection tail damage versus alpha for each
-parent, with the fixed zero and one endpoints highlighted.}
-\label{fig:alpha-sweep}
-\end{figure}
-
-% ============================================ E. Supplementary protection
-
-\section{Supplementary Protection Results}
-\label{app:protection-supp}
-
-\subsection{Protection-Budget Sweep}
-\label{app:budget-sweep}
-
-The default-budget crossed result is in Table~\ref{tab:crossed}.
-Table~\ref{tab:budget-sweep} varies the eligible pool fraction inside the
-same output-channel parent (GradDiff entry state) with processed repair
-tokens fixed, so a larger pool does not receive a larger optimization
-budget. The channel prediction is that the matched selectors' advantage
-persists across budgets while random allocation dilutes.
-
-\begin{table*}[t]
-\caption{Matched protection-budget sweep (GradDiff parent). Every selector
-uses the same entry checkpoint, repair algorithm, updates, processed
-tokens, and sealed native audit. Reach is unconditional; remaining
-outcomes use the final saved criterion-satisfying repair output.}
+\begin{table*}[!t]
+\caption{\textbf{Protection sensitivity and specificity boundaries.} Panel A
+varies the protected fraction under the unchanged five-arm contract. Panel B
+asks whether each frozen component responds specifically to the target
+request. Primary parent decisions and their decisive worst UCB remain in
+Table~\ref{tab:core-evidence}; complete arm effects, constraint vectors, guard
+events, and random-pool rows are released with the artifact.}
+\label{tab:crossed}
 \label{tab:budget-sweep}
-\centering
-\scriptsize
-\setlength{\tabcolsep}{3pt}
-\begin{tabular}{@{}lccccc@{}}
-\toprule
-Selector & $K_p/|\mathcal C_{\mathrm{disc}}|$ & Reach $\uparrow$ &
-Native mean $\Delta$NLL $\downarrow$ &
-Native CVaR$_{.95}$ $\downarrow$ & Utility ret.\ $\uparrow$ \\
-\midrule
-Exact gradient norm & .05 & \tblph & \tblph & \tblph & \tblph \\
-Exact gradient norm & .10 & \tblph & \tblph & \tblph & \tblph \\
-Exact gradient norm & .20 & \tblph & \tblph & \tblph & \tblph \\
-\midrule
-Randomized sensitivity & .05 & \tblph & \tblph & \tblph & \tblph \\
-Randomized sensitivity & .10 & \tblph & \tblph & \tblph & \tblph \\
-Randomized sensitivity & .20 & \tblph & \tblph & \tblph & \tblph \\
-\midrule
-Hidden-state proximity & .05 & \tblph & \tblph & \tblph & \tblph \\
-Hidden-state proximity & .10 & \tblph & \tblph & \tblph & \tblph \\
-Hidden-state proximity & .20 & \tblph & \tblph & \tblph & \tblph \\
-\midrule
-Random & .05 & \tblph & \tblph & \tblph & \tblph \\
-Random & .10 & \tblph & \tblph & \tblph & \tblph \\
-Random & .20 & \tblph & \tblph & \tblph & \tblph \\
-\bottomrule
-\end{tabular}
-\end{table*}
-
-\subsection{Repair-Component Ablations}
-\label{app:repair-ablations}
-
-Table~\ref{tab:protection-ablations} ablates projection and the paired
-guard within each parent's matched-selector arm. The prediction is that
-selection quality (the crossed contrast) and repair safety (the guard) are
-separable: removing the guard should trade forget regression for
-retention, and removing projection should slow repair without changing
-which candidates benefit.
-
-\begin{table*}[t]
-\caption{Repair-component ablations at the frozen budget, matched selector
-per parent. Conditional outcomes report
-$n_{\mathrm{reach}}/n_{\mathrm{total}}$. Paired drift is measured only at
-audited refreshes.}
 \label{tab:protection-ablations}
+\label{app:budget-sweep}
 \centering
 \scriptsize
-\setlength{\tabcolsep}{2.3pt}
-\begin{tabular}{@{}llcccccccc@{}}
-\toprule
-Parent & Repair arm & Proj. & Guard & Reach $\uparrow$ &
-Forget recall $\downarrow$ & Native mean $\downarrow$ &
-Native CVaR $\downarrow$ & Utility $\uparrow$ &
-Paired drift $\downarrow$ \\
-\midrule
-GradDiff & No repair
-    & --- & --- & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph \\
-GradDiff & Full repair
-    & on & on & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph \\
-GradDiff & No projection
-    & off & on & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph \\
-GradDiff & No paired guard
-    & on & off & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph \\
-\midrule
-RMU & No repair
-    & --- & --- & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph \\
-RMU & Full repair
-    & on & on & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph \\
-RMU & No paired guard
-    & on & off & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph \\
-\bottomrule
-\end{tabular}
-\end{table*}
-
-\subsection{Strong-Method Context}
-\label{app:strong-methods}
-
-Table~\ref{tab:main} places the complete channel-matched pipeline
-alongside strong recent unlearning methods under the same evaluation
-contract. It is context rather than the confirmatory claim: the pipeline
-is a layer over a parent objective, so the causal comparison remains the
-crossed design of Table~\ref{tab:crossed}, and no channel-blind method can
-exhibit the interaction that constitutes our endpoint. Initial and
-retain-only retraining checkpoints are behavioral references, not
-budget-matched competitors.
-
-\begin{table*}[t]
-\caption{Strong-method comparison on TOFU single-author requests. Reach
-includes all requests. Single-stage methods use their first saved reaching
-checkpoint; repaired methods use their final saved output that still
-satisfies the same criterion. Conditional outcomes report
-$n_{\mathrm{reach}}/n_{\mathrm{total}}$; lower native-audit damage is
-better.}
-\label{tab:main}
-\centering
-\scriptsize
-\setlength{\tabcolsep}{3.0pt}
-\begin{tabular}{@{}lcccccc@{}}
-\toprule
-Method & Reach $\uparrow$ & Forget recall $\downarrow$ &
-Para.\ recall $\downarrow$ & Native mean $\Delta$NLL $\downarrow$ &
-Native CVaR$_{.95}$ $\downarrow$ & Utility ret.\ $\uparrow$ \\
-\midrule
-Initial target reference &
-\tblph & \tblph & \tblph & \tblph & \tblph & \tblph \\
-Retain-only retrain reference &
-\tblph & \tblph & \tblph & \tblph & \tblph & \tblph \\
-\midrule
-GA & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph \\
-GradDiff & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph \\
-NPO & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph \\
-IdkDPO & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph \\
-SimNPO & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph \\
-GRU & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph \\
-RMU & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph \\
-RepNoise & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph \\
-Circuit Breakers & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph \\
-GUARD & \tblph & \tblph & \tblph & \tblph & \tblph & \tblph \\
-Cheng split-aware &
-\tblph & \tblph & \tblph & \tblph & \tblph & \tblph \\
-\midrule
-Channel-matched probe + guarded repair (ours) &
-\tblph & \tblph & \tblph & \tblph & \tblph & \tblph \\
-\bottomrule
-\end{tabular}
-\end{table*}
-
-% ============================================== F. Cost, replication, stress
-
-\section{Cost, Replication, and Stress Details}
-\label{app:full-transfer}
-
-\subsection{Profiling-Cost Protocol}
-\label{app:cost-protocol}
-
-Profiling comparisons use the same candidate order, batches, hardware,
-warm-up, precision, and loss accumulation. Timing starts
-before method-specific shared setup and ends after all scores are
-persisted; direction-specific methods include their forget-gradient
-evaluation, which randomized sensitivity does not require. The systems
-claim is limited to eliminating candidate-side reverse mode and
-per-example gradient materialization; runtime speedup is measured, not
-assumed.
-
-\begin{table*}[t]
-\caption{Complete-pool profiling cost (Qwen2.5-7B, bf16, batch 4). $R$ is
-the random-direction count; ``pool evaluations'' reports the actual
-traversal form rather than equating one candidate backward with one
-full-pool forward sweep. Cells report median [IQR].}
-\label{tab:full-cost}
-\centering
-\scriptsize
-\setlength{\tabcolsep}{2.6pt}
-\begin{tabular}{@{}lccccccc@{}}
-\toprule
-Implementation & $R$ & Pool evaluations & Forget reverse &
-Candidate reverse & Wall time & Peak memory & Tokens/s \\
-\midrule
-Exact gradient norm
-    & --- & $|\mathcal C|\times(\mathrm{F{+}B})$ & no & $|\mathcal C|$
-    & \tblph & \tblph & \tblph \\
-Randomized sensitivity
-    & 16 & $32\times$forward & no & 0
-    & \tblph & 18.3 & \tblph \\
-Randomized sensitivity
-    & 64 & $128\times$forward & no & 0
-    & \tblph & 18.3 & \tblph \\
-Forget-direction FD
-    & --- & $2\times$forward & 1 & 0
-    & 5.97 & 18.3 & \tblph \\
-Exact JVP
-    & --- & $1\times$forward-mode JVP & 1 & 0
-    & 9.9 & 27.4 & \tblph \\
-Vmap gradient dot
-    & --- & chunked F+B & 1 & yes
-    & 10.0 & 35.2 & \tblph \\
-Streaming backward
-    & --- & $|\mathcal C|\times(\mathrm{F{+}B})$ & 1 & $|\mathcal C|$
-    & 17.4 & 18.7 & \tblph \\
-Hidden-state proximity
-    & --- & representation forward & no & 0
-    & \tblph & \tblph & \tblph \\
-\bottomrule
-\end{tabular}
-\end{table*}
-
-\subsection{Replication and Stress Protocol}
-\label{app:replication}
-
-Each replication dataset (WMDP-bio, MUSE-News, RWKU) reruns the reduced
-crossed roster with identical endpoints, channel assignments, probe
-settings, and fold discipline; only the dataset adapter changes. Because
-each dataset shifts the probes' base rates -- forget--retain lexical and
-embedding proximity distributions are disclosed per dataset -- the
-confirmatory quantity is the interaction, not any absolute correlation.
-Stress settings follow the same protocol where the honesty clauses
-predict attenuation: PISTOL's maximal structural entanglement inflates
-proximity scores even where output-channel damage may not follow them,
-and MUSE-Books tests whether verbatim-memorization removal behaves as an
-output-channel member as its loss definition declares.
-
-\begin{table*}[t]
-\caption{Replication and stress results. Each row reports the
-preregistered interaction $\Delta$ (Eq.~\eqref{eq:interaction}) with
-candidate-bootstrap CI, the crossed-protection outcome (matched CVaR
-lowest per parent), and the dataset's proximity profile disclosed for
-base-rate context.}
-\label{tab:full-transfer-results}
-\centering
-\scriptsize
-\setlength{\tabcolsep}{3pt}
+\setlength{\tabcolsep}{1.8pt}
+\resizebox{0.72\textwidth}{!}{%
 \begin{tabular}{@{}lccccc@{}}
 \toprule
-Setting & Units & Forget--retain proximity profile &
-Prediction $\Delta$ [95\% CI] & Matched wins (GradDiff) &
-Matched wins (RMU) \\
+\multicolumn{6}{@{}l}{\textbf{A. Fixed-budget sensitivity}} \\
+Budget & Eligible/pass & worst $\Delta$ [UCB] & Bottleneck &
+min F/U slack & Updates/support \\
 \midrule
-TOFU (primary, 1 request measured) & 20 requests & \tblph &
-$+0.300$ $[+0.131,+0.466]$ & no (proximity wins) & floor (unidentifiable) \\
-WMDP-bio & 1 corpus & \tblph & \tblph & \tblph & \tblph \\
-MUSE-News & 5 requests & \tblph & \tblph & \tblph & \tblph \\
-RWKU & 10 requests & \tblph & \tblph & \tblph & \tblph \\
-MUSE-Books (stress) & 3 requests & \tblph & \tblph & \tblph & \tblph \\
-PISTOL (stress) & 10 requests & \tblph & \tblph & \tblph & \tblph \\
+0.05 & \tblph & \tblph & \tblph & \tblph/\tblph & \tblph/\tblph \\
+0.10 (primary) & \tblph & \tblph & \tblph & \tblph/\tblph & \tblph/\tblph \\
+0.20 & \tblph & \tblph & \tblph & \tblph/\tblph & \tblph/\tblph \\
 \bottomrule
-\end{tabular}
+\end{tabular}}
+
+\vspace{3pt}
+\resizebox{0.72\textwidth}{!}{%
+\begin{tabular}{@{}llcccc@{}}
+\toprule
+\multicolumn{6}{@{}l}{\textbf{B. Request specificity and motion controls}} \\
+Motion & Conditioning & $\Delta\rho_{G/H/S}$ & top-$q$ lift & Disp. matched & Support \\
+\midrule
+Target unlearning & target request & \tblph/\tblph/\tblph & \tblph & yes & \tblph \\
+Other-request & different request & \tblph/\tblph/\tblph & \tblph & yes & \tblph \\
+Benign SFT & neutral stream & \tblph/\tblph/\tblph & \tblph & yes & \tblph \\
+Random motion & independent directions & \tblph/\tblph/\tblph & \tblph & yes & \tblph \\
+\bottomrule
+\end{tabular}}
+\label{tab:specificity}
 \end{table*}
 
-% ====================================================== G. Additional limits
-
-\section{Additional Limitations and Reporting Scope}
-\label{app:limitations}
-
-Randomized sensitivity measures local update sensitivity and may predict
-benign fine-tuning or unrelated updates as well as target unlearning;
-Table~\ref{tab:specificity} determines how far the interpretation can be
-narrowed. The score depends on the declared block, radius, perturbation
-distribution, precision, loss, and checkpoint -- changing any of these
-defines another profile, certified separately by the fidelity gate. On
-hardware with efficient vectorized per-example gradients, wall-clock
-savings over exact profiling are not guaranteed; the claim is
-backward-freedom and memory, reported in Table~\ref{tab:full-cost}.
-Neither the profile nor guarded repair certifies deletion: removal claims
-require direct, paraphrase, extraction, relearning, and privacy audits,
-and profile-defined pools are never the sole evidence of successful
-unlearning or preservation.
+\FloatBarrier

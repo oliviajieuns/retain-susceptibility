@@ -1,160 +1,140 @@
-\section{Problem Setup and Damage Channels}
+\section{Problem Setup: From Profiling to Prediction and Protection}
 \label{sec:setup}
 
-\subsection{Deletion Request and Retained-Behavior Scope}
+Our question is not whether a parent objective such as NPO can optimize its
+training loss. It is which retained behaviors are harmed once that parent
+meets a predeclared direct-forgetting condition, and whether pre-target risk
+can guide a limited repair budget. Figure~\ref{fig:method-overview} makes the conditional
+order explicit: profile and seal at the frozen model, run an unchanged parent,
+apply a common forgetting gate, and only then evaluate prediction or perform
+guarded repair.
 
-Let $\theta_0$ denote the model before unlearning. A deletion request
-specifies a forget set $\mathcal D_f$ and an enumerated universe
-$\mathcal C$ of retained behaviors that should remain usable. An element
-$x\in\mathcal C$ is a prompt--answer behavior on which retention can be
-measured; it need not be a record from the original training set.
+\begin{figure*}[!t]
+\centering
+\input{figures/fig5_experiment_anatomy}
+\caption{\textbf{From pre-target profiling to prediction and protection.}
+At $\theta_0$, loss-shake estimates how easily each retained loss can move,
+while proximity measures exposure to this request; the audit ranking and
+repair pool are then sealed. From the unchanged parent's saved trajectory,
+the first checkpoint passing an external forgetting gate is selected.
+\textbf{RQ1} tests prospective damage
+prediction, \textbf{RQ2} tests loss-shake fidelity and added value, and
+\textbf{RQ3} tests fixed-budget protection. Retained-damage outcomes never
+choose a weight, pool, or checkpoint; only predeclared forgetting and utility
+rules do.}
+\Description{A chronological operational overview. A frozen model, forget
+request, and split retained candidates produce loss-shake and representation
+scores, which are sealed before an unchanged parent unlearner runs. An
+external forgetting gate selects the entry checkpoint. The upper branch opens
+realized audit damage only to evaluate prediction. The lower branch applies
+fixed-budget guarded repair using a preselected discovery pool, then evaluates
+forgetting, utility, and sealed retained damage.}
+\label{fig:method-overview}
+\end{figure*}
 
-We split $\mathcal C$ at the semantic-group level into disjoint discovery
-and audit folds,
-$\mathcal C=\mathcal C_{\mathrm{disc}}\,\dot\cup\,\mathcal C_{\mathrm{audit}}$.
-All profile-guided selection and protection use only
-$\mathcal C_{\mathrm{disc}}$. Scores on $\mathcal C_{\mathrm{audit}}$ may be
-computed before unlearning for prediction evaluation, but they are sealed
-and cannot affect optimization, hyperparameter selection, checkpoint
-selection, or stopping. Where a benchmark provides a native retain
-partition, it is included in the sealed audit fold and denoted
-$\mathcal A_{\mathrm{native}}$.
-
-For a behavior $x$ and parameters $\theta$, let
-\[
-    \ell(x;\theta)
-    =
-    -\frac{1}{|y_x|}
-    \sum_{j=1}^{|y_x|}
-    \log p_\theta
-    \bigl(y_{x,j}\mid p_x,y_{x,<j}\bigr)
-\]
-be the mean answer-token negative log-likelihood, with prompt tokens
-masked. The realized damage to $x$ at a checkpoint $\theta_t$ of an
-unlearning procedure is
-\begin{equation}
-    d_t(x)=\ell(x;\theta_t)-\ell(x;\theta_0),
-    \label{eq:realized-damage}
-\end{equation}
-with positive values indicating harmful retention loss.
-
-\subsection{Damage Channels}
-\label{sec:setup-channels}
-
-To first order in the update,
-\[
-    d(x)\approx g_x^{\top}\Delta\theta,
-    \qquad
-    |d(x)|\lesssim\lVert g_x\rVert_2\lVert\Delta\theta\rVert_2,
-    \qquad
-    g_x=\nabla_\theta\ell(x;\theta_0).
-\]
-This first-order coupling between a candidate's local gradient and the
-realized update is the \emph{update-conditioned gradient interference}
-mechanism named in the abstract. Gradient magnitude is then a
-direction-free \emph{exposure envelope}; it
-does not imply damage to every high-score candidate. Whether the envelope
-ranks realized damage is an empirical interaction tested across objectives.
-The method instantiates the envelope on a declared parameter block $B$
-covering the parents' trainable parameters (Section~\ref{sec:method}).
-The update is nevertheless structured: its gradients are set by where the
-unlearning loss directly reads the model. Current objectives place their
-forget-suppression signal at one of two readouts.
-
-\paragraph{Output channel (loss-gradient).}
-If the forget-suppression loss directly supervises outputs -- answer-token
-likelihoods or preferences, as in GA, GradDiff, NPO, SimNPO, IdkDPO, and
-GRU -- then $\Delta\theta$ is assembled from output-loss gradients. Trying
-to predict each candidate's signed exposure $g_x^{\top}\Delta\theta$
-requires anticipating the realized update direction, which is brittle over
-a multi-step trajectory because that direction rotates with the model and
-optimizer state. We instead measure the direction-free exposure envelope
-$\lVert g_x\rVert_2$: how strongly the candidate loss can respond to small
-parameter motion, before knowing which output-channel trajectory will run.
-
-\paragraph{Representation channel.}
-If the forget-suppression loss directly supervises internal hidden states,
-as in RMU, RepNoise, and Circuit Breakers, the update is chosen to displace
-activation geometry in a region occupied by the forget set. The matched
-hypothesis is therefore \emph{proximity in hidden-state space}: candidates
-whose representations share that region are more exposed to its
-displacement. This is complementary to, rather than implied by, an
-output-loss gradient norm.
-
-\paragraph{Declaration, not post-hoc labeling.}
-The channel of an objective is read off its loss definition before any
-experiment is run -- a static inspection of which tensors enter the loss,
-requiring no training run: token likelihoods or preferences imply the
-output channel; hidden states imply the representation channel. For
-objectives that mix terms (RepNoise adds an auxiliary output-side ascent
-term), the declaration rule is the \emph{forget-suppression term}: the
-loss component that drives removal decides the channel. Likewise, GRU
-modifies the update rule but its losses read outputs, so it is declared
-output-channel. We preregister the assignment (output: GA, GradDiff,
-NPO, SimNPO, IdkDPO, GRU; representation: RMU, RepNoise, Circuit Breakers)
-and never revise it against results. Two honesty clauses apply. First, the
-dichotomy reflects where \emph{existing} objectives read the model, not a
-law of nature; an objective reading some third quantity would define a
-third channel, and the framework extends to it. Second, the channels are
-poles of a spectrum rather than a partition of downstream effects: an
-output-channel objective also perturbs representations incidentally, while
-a representation objective ultimately changes outputs. The declaration is
-about the objective's direct supervision signal, not every tensor in its
-computation graph. Cross-channel signal is therefore measured rather than
-ruled out; the confirmatory claim concerns the interaction between declared
-channel and probe family.
-
-\subsection{Prospective Prediction and the Interaction Endpoint}
+\subsection{Forgetting as an External Condition}
 \label{sec:setup-prediction}
 
-A pre-unlearning predictor assigns each candidate a scalar score
-$r(x;\theta_0,\mathcal D_f)$ before any target trajectory is run.
-Predictive validity is evaluated against damage generated by independently
-configured unlearning procedures that receive no access to $r$: within each
-objective, we report Spearman correlation between the sealed score and
-realized damage, plus tail-focused summaries.
+Let $\theta_0$ be the model before unlearning, let $\mathcal D_f$ be the
+deletion request, and let $\mathcal C$ be an enumerated universe of retained
+prompt--answer behaviors. The candidate universe need not be the retain stream
+$\mathcal D_r$ used by a parent unlearner.
 
-The channel claim is not that some probe achieves high correlation -- it is
-that \emph{which} probe family predicts flips with the objective's channel.
-The preregistered primary endpoint is therefore a difference-in-differences
-interaction. For a gradient-family probe $r_g$, a representation-family
-probe $r_h$, an output-channel objective $\mathcal U_{\mathrm{out}}$, and a
-representation-channel objective $\mathcal U_{\mathrm{rep}}$, with
-$\rho(r,\mathcal U)$ the Spearman correlation of probe $r$ on damage from
-$\mathcal U$:
+A parent $u$ produces saved checkpoints $\theta_1,\ldots,\theta_T$ by
+optimizing its own objective $\mathcal J_u$. A decrease in $\mathcal J_u$ is
+optimization evidence, not our definition of successful forgetting and not
+our prediction target. Instead, metrics and thresholds external to
+$\mathcal J_u$ define a common gate. Its entry time is
 \begin{equation}
-    \Delta
-    =
-    \bigl[\rho(r_g,\mathcal U_{\mathrm{out}})-\rho(r_h,\mathcal U_{\mathrm{out}})\bigr]
-    -
-    \bigl[\rho(r_g,\mathcal U_{\mathrm{rep}})-\rho(r_h,\mathcal U_{\mathrm{rep}})\bigr].
-    \label{eq:interaction}
+    t^\dagger
+    =\min\left\{t\in\mathcal T_{\mathrm{save}}:
+      \mathsf{ForgetOK}(\theta_t;\mathcal D_f)=1\right\},
+    \label{eq:forgetting-gate}
 \end{equation}
-$\Delta>0$ with a candidate-bootstrap confidence interval excluding zero
-supports channel matching. The double difference cancels both nuisance
-factors that contaminate single comparisons: a probe that is uniformly
-better, and an objective that is uniformly more predictable.
+where the gate and saved-checkpoint set are fixed before the target run. A
+trajectory with no such checkpoint is recorded as non-reaching.
+The entry gate uses the common primary direct-forgetting criterion. After
+repair, a broader final contract additionally checks paraphrase forgetting,
+extraction and generation limits, and a general-utility floor.
 
-\subsection{Channel-Matched Protection and the Crossed Design}
+For retained behavior $x$, let $\ell(x;\theta)$ be mean answer-token negative
+log-likelihood with prompt tokens masked. Its realized damage is
+\begin{equation}
+    d_t(x)=\ell(x;\theta_t)-\ell(x;\theta_0).
+    \label{eq:realized-damage}
+\end{equation}
+Positive values mean that the retained answer became less likely. The primary
+prediction target is $d_{t^\dagger}(x)$: forgetting is the condition for a
+comparable run, whereas retained damage is the outcome to predict. This
+outcome is observed only after the trajectory and is never an input to target
+profiling, pool selection, or checkpoint selection.
+
+\subsection{Why a Pre-Target Two-Signal Profile?}
+
+A prospective profile must distinguish two quantities: how strongly a
+retained loss could respond to an unknown local update, and how strongly that
+behavior is exposed to the current deletion request. Over the declared block
+$\mathcal B$, the ideal susceptibility is
+$q_G^\star(x)=\|\nabla_{\mathcal B}\ell_x(\theta_0)\|_2^2$. It supplies a
+pre-update sensitivity prior rather than a prediction of signed damage.
+Loss-shake energy $\widehat q_G$ estimates this quantity by reusing shared
+weight perturbations across the candidate pool, while hidden-state proximity
+$\widehat q_H$ supplies request-specific exposure. A behavior may be locally
+sensitive but unrelated to the request, or request-proximal but locally
+stable; the two signals therefore answer complementary questions rather than
+forming a causal decomposition.
+
+This separation yields three claim-bearing questions.
+
+\paragraph{RQ1---Prospective risk.}
+Conditional on the common forgetting gate, can a profile sealed at $\theta_0$
+identify candidate-level retained damage and capture its harmful tail on
+repair-held-out audit behaviors better than either component alone?
+
+\paragraph{RQ2---Loss-shake fidelity and added value.}
+Does loss-shake approximate the exact gradient-energy ranking at $\theta_0$
+without candidate-side backpropagation, and does it add prospective
+information beyond proximity and simple controls? Fidelity alone is
+insufficient if gradient sensitivity does not improve damage prediction.
+
+\paragraph{RQ3---Decision value.}
+Can the frozen profile allocate a fixed repair budget that lowers sealed-audit
+mean and worst-tail damage while keeping forgetting and utility within the
+predeclared contract?
+
+\subsection{Sealed Identification and Decision Contract}
 \label{sec:setup-protection}
 
-A score profile allocates a limited protection budget: using only the
-discovery fold, a selector constructs a protected pool
-$\mathcal P_{K_p}(r)\subseteq\mathcal C_{\mathrm{disc}}$ of the $K_p$
-highest-ranked eligible behaviors, plus a matched low-score reference pool
-$\mathcal R_0(r)$ (construction details in Section~\ref{sec:method}).
-Protection methods are compared only at a common forgetting criterion
-$\Gamma_f(\theta)\leq\tau_f$; a run that does not reach the criterion is a
-reach failure, not a comparison point. Conditional on reach, the
-confirmatory outcomes on the sealed audit are mean damage and upper-tail
-damage $\operatorname{CVaR}_{.95}(\{d(x)\})$ -- the tail because that is
-where collateral damage concentrates and where aggregate metrics hide it.
+We split candidates by semantic group into discovery and audit folds,
+$\mathcal C=\mathcal C_{\mathrm{disc}}\,\dot\cup\,
+\mathcal C_{\mathrm{audit}}$. Target-free development requests separately fix
+the numerical probe, prediction weight, protection weight, repair budget,
+eligibility rules, and stopping rules. Three constraints identify the claims.
 
-The operational endpoint is again an interaction, realized as a
-preregistered crossed design: each parent objective (one per channel) is
-run with each selector (matched family, mismatched family, random, none),
-holding the parent, budgets, and repair procedure fixed. Success means the
-channel-matched selector attains the lowest audit CVaR per parent. This
-criterion deliberately does not ask our pipeline to outperform any
-particular unlearner; it asks whether channel information -- and only
-channel information -- moves protection where it helps.
+\paragraph{Pre-outcome sealing.}
+At $\theta_0$, only $\mathcal C_{\mathrm{disc}}$ fits target rank maps or
+supplies repair examples. The audit ranking and Top-$K_p$ eligible discovery
+pool are frozen before unlearning; the parent receives neither, and realized
+damage cannot revise them.
+
+\paragraph{Conditional comparability.}
+The unchanged parent runs from $\theta_0$, and only the external rule in
+Eq.~\eqref{eq:forgetting-gate} determines entry at
+$\theta_{t^\dagger}$. The frozen prediction ranking is then compared with
+$d_{t^\dagger}$ on $\mathcal C_{\mathrm{audit}}$. This holds the forgetting
+condition fixed rather than treating a decrease in parent-objective loss as
+the outcome.
+
+\paragraph{Common-operator evaluation.}
+Every protection arm starts from the same $\theta_{t^\dagger}$ and receives
+the same repair operator, reference stream, optimizer seed, and compute
+budget; only its discovery selector changes. A final model must remain inside
+the full forgetting/utility region before sealed-audit mean and tail damage
+are compared. The unrepaired entry checkpoint is the no-protection baseline.
+
+The prediction and protection weights are frozen on different development
+folds because damage ranking and repair transfer are different estimands.
+Accordingly, the framework tests two uses of one pre-update signal family; it
+does not claim that prediction correlation itself causes successful repair.
+Likewise, the final contract requires shared thresholds, not numerically
+identical forgetting scores.

@@ -90,10 +90,10 @@ def _paper_contract(campaign: Mapping[str, Any]) -> dict[str, Any]:
     setting_ids = raw.get("setting_ids")
     stage_ids = raw.get("stage_ids")
     dtype = raw.get("confirmatory_dtype")
-    if not isinstance(setting_ids, list) or len(setting_ids) != 8 or any(
+    if not isinstance(setting_ids, list) or len(setting_ids) != 9 or any(
         not _nonempty_string(value) for value in setting_ids
     ):
-        raise PreflightConfigError("paper_contract must freeze exactly eight setting_ids")
+        raise PreflightConfigError("paper_contract must freeze exactly nine setting_ids")
     if len(set(setting_ids)) != len(setting_ids):
         raise PreflightConfigError("paper_contract setting_ids must be unique")
     if not isinstance(stage_ids, list) or len(stage_ids) != 4 or any(

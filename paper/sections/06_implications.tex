@@ -1,50 +1,32 @@
 \section{Discussion}
 \label{sec:implications}
 
-\paragraph{From a single score to a conditional one.}
-The literature's implicit model has been
-$\text{risk}(x)=f(\text{model},\text{data})$: some one signal --
-similarity, alignment, magnitude -- should rank vulnerable candidates for
-any unlearner. We instead test the conditional model
-$\text{risk}(x \mid \text{channel})$. The proposed interaction is the right
-evidence for this claim precisely because it is immune to the two
-confounds that plague probe leaderboards: a uniformly better probe and a
-uniformly more predictable objective both cancel in the double
-difference. Cross-channel signal, reversals, and floor regimes remain part
-of the evidence rather than exceptions to it. That the conditioning
-variable is cheap to evaluate -- a static read of the loss definition --
-is useful only if the frozen family-level interaction confirms its
-non-obvious consequence.
+\paragraph{Why loss-shake energy?}
+For a small update in parameter block $\mathcal B$, the retained loss changes
+to first order as
+$\ell_x(\theta_0+\Delta\theta)-\ell_x(\theta_0)
+\approx\nabla_{\mathcal B}\ell_x(\theta_0)^\top
+\Delta\theta_{\mathcal B}$. Alignment with one anticipated forget update is
+therefore fragile when the realized direction varies across parents and steps
+\cite{wang2025gradient}. Loss-shake energy instead uses shared symmetric
+shakes to estimate gradient energy for the whole candidate pool, without
+candidate-side reverse mode or choosing a future direction. The identity is
+classical; the new role is pre-target pool profiling. This signal asks which
+losses are easy to disturb, not which are exposed to the current deletion
+request. Forget-conditioned proximity supplies that second cue. Their mixture
+is a practical risk profile, not a causal decomposition.
 
-\paragraph{Operational picture.}
-A practitioner declares the checkpoint, candidate scope, parameter block,
-loss, and probe settings; reads the parent objective's channel off its
-loss definition; and runs the matched probe. The profile's high-risk tail
-localizes where post-unlearning measurement should concentrate, and it
-allocates the protection budget before any audit is opened. The router
-adds no tuning surface: the channel table is a lookup, and both probes are
-forward-only at candidate scale. The profile does not decide whether a
-request should be served by unlearning, retraining, or refusal, and a high
-score does not mandate preservation; those remain application decisions.
-
-\paragraph{Selection is not confirmation.}
-A profile-selected pool may guide optimization, but improvement on that
-pool is not evidence of preservation -- it rewards the method for
-protecting what it was handed. All confirmatory outcomes are therefore
-sealed-audit quantities, with both mean and tail reported because
-concentrated damage hides in means.
-
-\paragraph{What the score means.}
-Each profile is conditional on the model, block, loss, precision, and
-radius, and should be recomputed after material model changes. Randomized
-sensitivity is an update-sensitivity prior rather than an
-unlearning-specific quantity; its unlearning reading must be licensed by
-the specificity controls, and its trustworthiness by the fidelity gate,
-rather than assumed.
-
-\paragraph{Prediction and intervention are separate tests.}
-A predictor can rank damage yet fail to support safe repair, and a repair
-procedure can help for reasons unrelated to its selector. The crossed
-design keeps the two claims apart: Table~\ref{tab:channel-matrix}
-tests conditional prediction, and Table~\ref{tab:crossed} independently
-tests whether acting on the matched prediction moves the sealed tail.
+\paragraph{Why predict and protect?}
+Prediction and protection answer different questions. Prediction tests
+whether a weight frozen on target-free development requests anticipates
+candidate-level and tail damage from independent target trajectories. A good
+ranking alone, however, does not improve retention. Protection therefore uses
+a separately frozen weight from the same signal family to allocate a fixed
+post-unlearning guarded-repair budget, with transfer measured on a sealed
+audit. Active allocation arms share the entry checkpoint, repair operator,
+budget, and predeclared forgetting/utility contract; only the selector
+changes. Random and single-component comparisons thus isolate allocation,
+whereas no repair tests the full repair pipeline. The framework does not claim
+that one predictor causally produces protection. It gives one pre-update
+signal family two independently tested uses: prospective risk localization
+and targeted resource allocation around existing unlearners.
