@@ -170,12 +170,16 @@ datasets:
 
   RWKU:
     adapter: rwku
-    roster_unit: TBD_RWKU_REQUEST_UNIT
+    roster_unit: forget-target request_id
+    # Systematic, outcome-independent spacing over the 200 forget_target rows,
+    # mirroring the TOFU roster shape (2 development / 4 prediction /
+    # 4 protection / 10 target). Chosen by index arithmetic before any RWKU
+    # score exists; review and freeze before the first RWKU GPU run.
     rosters:
-      D_cal: [TBD_RWKU_D_CAL_REQUEST_IDS]
-      D_pred: [TBD_RWKU_D_PRED_REQUEST_IDS]
-      D_prot: [TBD_RWKU_D_PROT_REQUEST_IDS]
-      target: [TBD_RWKU_TARGET_REQUEST_IDS]
+      D_cal: [rwku-t000, rwku-t001]
+      D_pred: [rwku-t010, rwku-t011, rwku-t012, rwku-t013]
+      D_prot: [rwku-t020, rwku-t021, rwku-t022, rwku-t023]
+      target: [rwku-t030, rwku-t031, rwku-t032, rwku-t033, rwku-t034, rwku-t035, rwku-t036, rwku-t037, rwku-t038, rwku-t039]
 
   PISTOL:
     adapter: pistol

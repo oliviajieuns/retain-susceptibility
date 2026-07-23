@@ -218,11 +218,31 @@ def _substrate_factory(**kwargs: Any) -> Request:
     return request
 
 
+def _rwku_factory(**kwargs: Any) -> Request:
+    """Lazy wrapper around the RWKU loader and request builder."""
+
+    from rsus.data.rwku import load_rwku_tables, rwku_request
+
+    values = dict(kwargs)
+    if values.get("tables") is None and values.get("tokenizer") is None:
+        raise TypeError("RWKU adapter needs tokenizer (tables are loaded lazily)")
+    if values.get("tables") is None:
+        values["tables"] = load_rwku_tables()
+    return rwku_request(**values)
+
+
 def _tofu_roster_id(value: str) -> bool:
     prefix = "tofu-a"
     if not value.startswith(prefix) or not value[len(prefix) :].isdigit():
         return False
     return 180 <= int(value[len(prefix) :]) < 200
+
+
+def _rwku_roster_id(value: str) -> bool:
+    prefix = "rwku-t"
+    if not value.startswith(prefix) or not value[len(prefix) :].isdigit():
+        return False
+    return 0 <= int(value[len(prefix) :]) < 200
 
 
 def _substrate_roster_id(value: str) -> bool:
@@ -248,6 +268,28 @@ ADAPTERS.register(
         ),
         description="TOFU forget10, one deletion request per held-out author",
         roster_id_validator=_tofu_roster_id,
+    )
+)
+
+ADAPTERS.register(
+    DatasetAdapter(
+        key="rwku",
+        aliases=("RWKU", "jinzhuoran/RWKU"),
+        factory=_rwku_factory,
+        capabilities=AdapterCapabilities(
+            stages=frozenset(
+                {"calibration", "prediction", "protection", "target_evaluation"}
+            ),
+            roster_unit="forget-target request_id",
+            grouped_candidates=True,
+            native_audit=True,
+            independent_target_roster=True,
+        ),
+        description=(
+            "RWKU real-world knowledge removal: one deletion request per "
+            "forget_target row; neighbor probes are the native audit set"
+        ),
+        roster_id_validator=_rwku_roster_id,
     )
 )
 

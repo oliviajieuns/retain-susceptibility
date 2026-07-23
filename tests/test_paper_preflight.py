@@ -162,8 +162,15 @@ def test_tbd_missing_adapter_and_unprovisioned_model_are_explicit(tmp_path):
     assert "WMDP-bio/MMLU" in report["summary"]["missing_adapter_datasets"]
     assert "MUSE-News" in report["summary"]["missing_adapter_datasets"]
     assert "MUSE-Books" in report["summary"]["missing_adapter_datasets"]
-    assert "RWKU" in report["summary"]["missing_adapter_datasets"]
     assert "PISTOL" in report["summary"]["missing_adapter_datasets"]
+    # RWKU graduated from this list on 2026-07-23: the adapter is registered
+    # and its rosters are concrete, pairwise-disjoint request ids.
+    assert "RWKU" not in report["summary"]["missing_adapter_datasets"]
+    assert report["datasets"]["RWKU"]["pairwise_disjoint"]
+    for roster in report["datasets"]["RWKU"]["rosters"].values():
+        assert "reasons" not in roster or not any(
+            "unresolved" in reason for reason in roster["reasons"]
+        )
     assert report["datasets"]["WMDP-bio/MMLU"]["rosters"]["D_cal"][
         "reasons"
     ] == ["contains unresolved ids: TBD_WMDP_D_CAL_REQUEST_IDS"]
