@@ -105,6 +105,9 @@ calibration:
       - {id: a10_c3_lr4_s240, lr: 4.0e-6, steps: 240, rmu_alpha: 10.0, rmu_c: 3.0}
       - {id: a10_c3_lr8_s240, lr: 8.0e-6, steps: 240, rmu_alpha: 10.0, rmu_c: 3.0}
       - {id: a10_c3_lr16_s240, lr: 1.6e-5, steps: 240, rmu_alpha: 10.0, rmu_c: 3.0}
+      # Round-3 documentation probe: unlike 7B (0.78->0.21 over the same lr
+      # range), 14B rmu is dose-flat (0.74->0.65) — lr32 completes the curve.
+      - {id: a10_c3_lr32_s240, lr: 3.2e-5, steps: 240, rmu_alpha: 10.0, rmu_c: 3.0}
     repnoise:
       - {id: a1_c3_lr1_s120, lr: 1.0e-6, steps: 120, rmu_alpha: 1.0, rmu_c: 3.0}
       - {id: a10_c3_lr1_s120, lr: 1.0e-6, steps: 120, rmu_alpha: 10.0, rmu_c: 3.0}

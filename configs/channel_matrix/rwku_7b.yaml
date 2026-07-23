@@ -91,6 +91,10 @@ calibration:
       # Round-3: reach 0.095 at lr1_s240 but the tail blows again (cvar 15.5)
       # — test the gentle-long tail-thinning hypothesis shared with TOFU-7B.
       - {id: lr05_s480, lr: 5.0e-7, steps: 480, forget_weight: 1.0, retain_weight: 1.0}
+      # Round-4: t000 fails mean (2.44 at lr05_s480) and t001 fails tail
+      # (17.7) — interior schedules between lr05_s480 and lr1_s240.
+      - {id: lr075_s300, lr: 7.5e-7, steps: 300, forget_weight: 1.0, retain_weight: 1.0}
+      - {id: lr1_s200, lr: 1.0e-6, steps: 200, forget_weight: 1.0, retain_weight: 1.0}
     npo:
       - {id: b01_lr2_s120, lr: 2.0e-6, steps: 120, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
       - {id: b01_lr4_s120, lr: 4.0e-6, steps: 120, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}

@@ -93,6 +93,12 @@ calibration:
       - {id: lr05_s360, lr: 5.0e-7, steps: 360, forget_weight: 1.0, retain_weight: 1.0}
       - {id: lr075_s240, lr: 7.5e-7, steps: 240, forget_weight: 1.0, retain_weight: 1.0}
       - {id: lr1_s180, lr: 1.0e-6, steps: 180, forget_weight: 1.0, retain_weight: 1.0}
+      # Round-4 micro-probes: a198's tail frontier sits at 16.02 vs the 16.0
+      # bound with ~+-2 nonmonotone jitter across neighbors — sample nearby
+      # settings rather than push the schedule further.
+      - {id: lr06_s300, lr: 6.0e-7, steps: 300, forget_weight: 1.0, retain_weight: 1.0}
+      - {id: lr07_s240, lr: 7.0e-7, steps: 240, forget_weight: 1.0, retain_weight: 1.0}
+      - {id: lr08_s240, lr: 8.0e-7, steps: 240, forget_weight: 1.0, retain_weight: 1.0}
     npo:
       - {id: b01_lr2_s120, lr: 2.0e-6, steps: 120, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
       - {id: b01_lr4_s120, lr: 4.0e-6, steps: 120, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
