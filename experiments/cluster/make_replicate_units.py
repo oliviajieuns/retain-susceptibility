@@ -133,7 +133,7 @@ def main() -> None:
         manifest,
         expand_seeds(args.seeds),
         tag_base,
-        sys.executable or "python",
+        "python",  # resolved by the worker's activated venv
         GATE.read_text(encoding="utf-8"),
     )
 

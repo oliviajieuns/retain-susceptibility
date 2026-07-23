@@ -45,7 +45,7 @@ def _enabled_models(cfg: dict, selected: set[str]) -> list[str]:
 
 def build_units(cfg: dict, config_rel: str, phase: str, models: list[str],
                 max_attempts: int, unit_suffix: str = "") -> list[Unit]:
-    python = sys.executable or "python"
+    python = "python"  # resolved by the worker's activated venv, not the enqueuing shell
     units: list[Unit] = []
 
     def add(unit_id: str, cmd: list[str]) -> None:
