@@ -89,8 +89,9 @@ def test_grad_cosine_anatomy_identity(tiny_model, req, spec):
     m = _as_vec(get_scorer("grad_norm")(tiny_model, req, spec), order)
     dot = _as_vec(get_scorer("streaming_backward")(tiny_model, req, spec), order)
     assert torch.all(a.abs() <= 1.0 + 1e-12)
-    # eq:score-anatomy: s(x) = m(x) * a(x)
-    assert torch.allclose(m * a, dot, atol=1e-9)
+    # grad_norm stores the paper's exact energy ||g_x||^2. The older
+    # alignment anatomy therefore uses sqrt(energy) * cosine.
+    assert torch.allclose(m.sqrt() * a, dot, atol=1e-9)
 
 
 def test_diagnostic_subset_frozen(req):
@@ -145,7 +146,7 @@ def test_knn_embed_with_injected_encoder(tiny_model, req, spec):
 
 
 def test_fd_norm_unbiased_gradient_magnitude(tiny_model, req, spec):
-    """fd_norm estimates ||grad_B ell_c||^2 / dim(B) without per-candidate
+    """fd_norm estimates ||grad_B ell_c||^2 without per-candidate
     backwards: E_v[(d ell/d v)^2] over random unit v. The toy world's spread
     across candidates is ~1.7x (below the K=48 estimator noise), so assert
     per-candidate unbiasedness rather than rank agreement — ranking power on
@@ -154,10 +155,9 @@ def test_fd_norm_unbiased_gradient_magnitude(tiny_model, req, spec):
 
     from rsus.probe.base import get_scorer
 
-    d = sum(p.numel() for p in spec.block.select(tiny_model).values())
     exact = get_scorer("grad_norm")(tiny_model, req, spec).scores
     est = get_scorer("fd_norm")(tiny_model, req, dataclasses.replace(spec, n_dirs=48)).scores
-    ratios = [est[c] / (exact[c] ** 2 / d) for c in exact]
+    ratios = [est[c] / exact[c] for c in exact]
     assert all(0.25 < r < 4.0 for r in ratios), ratios
     mean = sum(ratios) / len(ratios)
     assert 0.7 < mean < 1.4, mean
@@ -199,11 +199,12 @@ def test_fd_norm_two_stage_equals_streaming(tiny_model, req, spec):
     from rsus.probe.finite_diff import aggregate_fd_norm, fd_norm_responses
 
     sp = dataclasses.replace(spec, n_dirs=8)
+    d = sum(p.numel() for p in spec.block.select(tiny_model).values())
     direct = get_scorer("fd_norm")(tiny_model, req, sp).scores
     responses = fd_norm_responses(tiny_model, req, sp, CostRecord())
     assert len(responses) == 8
-    assert aggregate_fd_norm(responses) == direct
-    sliced = aggregate_fd_norm(responses[:4])
+    assert aggregate_fd_norm(responses, d) == direct
+    sliced = aggregate_fd_norm(responses[:4], d)
     small = get_scorer("fd_norm")(tiny_model, req, dataclasses.replace(spec, n_dirs=4)).scores
     assert sliced == small
 

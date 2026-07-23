@@ -129,17 +129,25 @@ def fd_norm_responses(
     return responses
 
 
-def aggregate_fd_norm(responses: list[dict[str, float]]) -> dict[str, float]:
-    """Stage 2 of the loss-shake probe (offline, CPU): mean squared response
-    per candidate. Accumulates in direction order, so the result is bit-exactly
-    the streaming score the sealed runs produced. Slicing `responses[:k]`
-    before calling gives the R-ablation estimate at k directions."""
+def aggregate_fd_norm(
+    responses: list[dict[str, float]], block_dimension: int
+) -> dict[str, float]:
+    """Return dimension-corrected loss-shake energy from signed responses.
+
+    The paper's score is ``d_B`` times the mean squared directional response,
+    not only a rank-equivalent unscaled mean. Requiring ``block_dimension``
+    keeps offline nested-``R`` analyses on the exact deployed estimand.
+    """
+    if isinstance(block_dimension, bool) or int(block_dimension) < 1:
+        raise ValueError("block_dimension must be a positive integer")
+    if not responses:
+        raise ValueError("responses must be non-empty")
     acc: dict[str, float] = {}
     for deriv in responses:
         for cid, val in deriv.items():
             acc[cid] = acc.get(cid, 0.0) + val * val
     n = len(responses)
-    return {cid: s / n for cid, s in acc.items()}
+    return {cid: int(block_dimension) * s / n for cid, s in acc.items()}
 
 
 @register("fd_norm")
@@ -156,9 +164,32 @@ def score_fd_norm(model: torch.nn.Module, request: Request, spec: ProbeSpec) -> 
     rec = CostRecord()
     with Meter(rec):
         responses = fd_norm_responses(model, request, spec, rec)
-        scores = aggregate_fd_norm(responses)
-    rec.notes["eta_used"] = spec.norm_eta if spec.norm_eta is not None else spec.eta
-    return ScoreProfile(request.request_id, "fd_norm", scores, spec, rec)
+    eta_used = spec.norm_eta if spec.norm_eta is not None else spec.eta
+    block_dimension = sum(parameter.numel() for parameter in spec.block.select(model).values())
+    scores = aggregate_fd_norm(responses, block_dimension)
+    mean_squared_response = {
+        candidate_id: value / block_dimension
+        for candidate_id, value in scores.items()
+    }
+    rec.notes["eta_used"] = eta_used
+    rec.notes["block_dimension"] = block_dimension
+    return ScoreProfile(
+        request.request_id,
+        "fd_norm",
+        scores,
+        spec,
+        rec,
+        artifacts={
+            "schema": "loss-shake-responses-v1",
+            "direction_responses": responses,
+            "direction_count": len(responses),
+            "direction_seed": spec.seed,
+            "eta": eta_used,
+            "block_dimension": block_dimension,
+            "mean_squared_response": mean_squared_response,
+            "dimension_corrected_energy": scores,
+        },
+    )
 
 
 @register("one_sided")

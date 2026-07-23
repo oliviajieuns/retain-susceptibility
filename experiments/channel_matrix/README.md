@@ -198,11 +198,13 @@ the matched remote pool are computed only inside the discovery fold. Audit
 scores and audit damage cannot affect allocation.
 
 This extension starts only after `objective_freeze.yaml` is frozen. It runs
-the five-point alpha grid for GradDiff, NPO, RMU, and RepNoise on development
+the five-point alpha grid for all seven primary parents (GradDiff, NPO,
+SimNPO, GRU, RMU, RepNoise, and Circuit Breakers) on development
 authors 198/199. For each model and parent, the selector minimizes worst-run
 development CVaR subject to every run reaching forget recall at most 0.10 and
 ordinary utility retention at least 0.90. Ties prefer mean CVaR, then the
-declared channel prior. No feasible alpha means unresolved; there is no audit
+distance to the readout-independent midpoint 0.5, then the smaller alpha. No
+feasible alpha means unresolved; there is no audit
 fallback.
 
 The utility probe is fixed to the first four QA of authors 150--179 (`n=120`),
@@ -258,16 +260,38 @@ GPU=0 MODEL_ID=qwen25_7b nohup \
   bash experiments/channel_matrix/h100_campaign.sh alpha-audit \
   > "runs/logs/channel7b_alpha_audit_$(hostname).out" 2>&1 &
 
-bash experiments/channel_matrix/h100_campaign.sh alpha-aggregate
+# Optional debugging only; this writes a superseded conditional CVaR summary.
+bash experiments/channel_matrix/h100_campaign.sh legacy-alpha-diagnostic
 ```
 
 The audit runs the already frozen alpha as the deployable method. The other
 grid points are retained as a descriptive response curve, never an audit
-oracle. Comparators are no protection, random allocation, both mixture
-endpoints, the declared channel prior, and the candidate-backward exact-
-gradient ceiling. Aggregate contrasts use only paired cells where both arms
-meet forgetting and utility, while retaining explicit reach/eligibility
-counts.
+oracle. Confirmatory comparators are no protection, five independently frozen
+random allocations, and both mixture endpoints. The candidate-backward exact
+energy reference replaces only the loss-shake component at the same frozen
+alpha and remains outside the IUT. Every repair arm starts from the identical
+first-reaching parent checkpoint and reports only its last saved checkpoint
+satisfying direct, paraphrase, greedy autoregressive generation, and utility
+constraints. Aggregate contrasts require exact candidate support and retain
+explicit reach/feasibility counts.
+
+`aggregate_alpha_protection.py` and the launcher command above are deliberately
+legacy diagnostics: they do not produce the paper's mean+CVaR eight-way IUT.
+Claim-bearing output must be converted by
+`experiments/paper/export_alpha_protection.py` into the candidate-level
+five-arm schema fixed by `results/paper/raw_plan.json`, then consumed by
+`experiments/paper/aggregate_raw.py` and
+`experiments/paper/build_evidence.py`; see
+`docs/PAPER_EVIDENCE_PIPELINE.md`.
+
+The roster in `configs/channel_matrix/7b_tofu.yaml` is also an older 7B
+diagnostic roster. It must not be relabeled as a paper target run: the paper
+contract freezes distinct `D_cal`, `D_pred`, `D_prot`, and target rosters in
+`configs/paper/campaign.yaml`. In particular, this runner still chooses its
+protection weight on authors 198/199 and audits 181/186/191, whereas the paper
+contract uses `D_prot` 184--187 and target 188--197. A paper launch therefore
+requires a runner configuration generated from the immutable paper plan, not
+reuse of this YAML.
 
 Implementation note: this extension also fixes the remote-band quantile to use
 discovery scores only. Earlier `xprot` artifacts were produced before this

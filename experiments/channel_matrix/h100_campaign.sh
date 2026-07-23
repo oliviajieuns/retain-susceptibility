@@ -13,7 +13,7 @@ set -Eeuo pipefail
 #   GPU=0 MODEL_ID=qwen25_7b bash experiments/channel_matrix/h100_campaign.sh alpha-development
 #   bash experiments/channel_matrix/h100_campaign.sh select-alpha-freeze
 #   GPU=0 MODEL_ID=qwen25_7b bash experiments/channel_matrix/h100_campaign.sh alpha-audit
-#   bash experiments/channel_matrix/h100_campaign.sh alpha-aggregate
+#   bash experiments/channel_matrix/h100_campaign.sh legacy-alpha-diagnostic
 # Two-GPU request sharding (use disjoint AUTHORS values):
 #   GPU=0 AUTHORS=198 MODEL_ID=qwen25_7b bash experiments/channel_matrix/h100_campaign.sh calibration
 #   GPU=1 AUTHORS=199 MODEL_ID=qwen25_7b bash experiments/channel_matrix/h100_campaign.sh calibration
@@ -27,7 +27,7 @@ AUTHORS="${AUTHORS:-}"
 ACTION="${1:-}"
 
 if [[ -z "${ACTION}" ]]; then
-  echo "usage: GPU=<index> MODEL_ID=<alias|all> $0 {preflight|prefetch|dry-calibration|fidelity|calibration|select-freeze|audit|aggregate|dry-alpha-development|alpha-development|select-alpha-freeze|dry-alpha-audit|alpha-audit|alpha-aggregate}" >&2
+  echo "usage: GPU=<index> MODEL_ID=<alias|all> $0 {preflight|prefetch|dry-calibration|fidelity|calibration|select-freeze|audit|aggregate|dry-alpha-development|alpha-development|select-alpha-freeze|dry-alpha-audit|alpha-audit|legacy-alpha-diagnostic}" >&2
   exit 2
 fi
 
@@ -219,8 +219,9 @@ case "${ACTION}" in
     preflight
     run_alpha_phase audit
     ;;
-  alpha-aggregate)
+  legacy-alpha-diagnostic)
     python experiments/channel_matrix/aggregate_alpha_protection.py \
+      --legacy-diagnostic \
       --config "${CONFIG}" \
       --root runs/channel_matrix_7b/alpha_protection/audit \
       --out runs/channel_matrix_7b/alpha_protection/aggregate \

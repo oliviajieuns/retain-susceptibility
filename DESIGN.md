@@ -1,6 +1,13 @@
 # retain-susceptibility — Code Design
 
-Spec of record: the paper on Overleaf ("When Does LLM Unlearning Fail?
+> **Archived design note.** This document describes an earlier
+> directional-probe/two-stage draft and is kept only for implementation
+> history. It must not populate the current paper. The executable sources of
+> truth are `configs/paper/evidence.yaml`, `configs/paper/campaign.yaml`, and
+> `docs/PAPER_EVIDENCE_PIPELINE.md`; when this note disagrees, those contracts
+> win.
+
+Spec of record (historical): the paper on Overleaf ("When Does LLM Unlearning Fail?
 Probing Update-Conditioned Retain Susceptibility"), currently the
 probe-to-protection revision of 2026-07-19 (single causal chain:
 gradient alignment → susceptibility profile → realized-damage prediction →

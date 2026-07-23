@@ -1,10 +1,12 @@
-"""Aggregate the complete frozen alpha-protection audit.
+"""LEGACY CVaR-only diagnostic for the old alpha-protection campaign.
 
-The deployable method is the row marked ``deployed`` by the pre-audit alpha
-freeze.  The remaining alpha grid is a descriptive response curve.  Paired
-contrasts are reported only where both arms reach the forget criterion and
-meet the frozen ordinary-utility floor; missing or failed cells remain counts,
-not silently dropped successes.
+This script is deliberately *not* a producer for the current paper. It does
+not form the four-comparator x two-outcome IUT, resample repeated-random draw
+IDs, require five-arm common candidate support, or enforce the complete
+direct/paraphrase/generation/utility feasibility conjunction. Use
+``experiments/paper/aggregate_raw.py`` followed by ``build_evidence.py`` for
+claim-bearing results. The explicit ``--legacy-diagnostic`` switch prevents a
+conditional one-outcome CSV from being mistaken for Table 1 evidence.
 """
 from __future__ import annotations
 
@@ -84,12 +86,23 @@ def _write_csv(path: Path, rows: list[dict]) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
+    parser.add_argument("--legacy-diagnostic", action="store_true")
     parser.add_argument("--config", required=True)
     parser.add_argument("--root", required=True)
     parser.add_argument("--out", required=True)
     parser.add_argument("--n-boot", type=int, default=2000)
     parser.add_argument("--seed", type=int, default=2027)
     args = parser.parse_args()
+    if not args.legacy_diagnostic:
+        parser.error(
+            "legacy CVaR-only diagnostic; current-paper evidence must use "
+            "experiments/paper/aggregate_raw.py then build_evidence.py. Pass "
+            "--legacy-diagnostic only for intentional debugging."
+        )
+    print(
+        "WARNING: writing legacy conditional CVaR diagnostics, not paper evidence",
+        file=sys.stderr,
+    )
 
     config_path = Path(args.config).resolve()
     cfg = _load_yaml(config_path)
@@ -254,7 +267,9 @@ def main() -> None:
     _write_csv(out / "alpha_protection_curve.csv", curve_rows)
     _write_csv(out / "alpha_protection_contrasts.csv", contrast_rows)
     summary = {
-        "schema": "channel-mixture-protection-aggregate-v1",
+        "schema": "legacy-channel-mixture-protection-diagnostic-v1",
+        "paper_evidence": False,
+        "superseded_by": "experiments/paper/aggregate_raw.py",
         "campaign_id": phase["campaign_id"],
         "alpha_freeze_id": frozen["freeze_id"],
         "n_cells": len(cells),
@@ -262,8 +277,9 @@ def main() -> None:
         "curve": curve_rows,
         "paired_contrasts": contrast_rows,
         "interpretation": (
-            "negative deployed-minus-comparator CVaR favors the frozen adaptive method; "
-            "contrasts are conditional on both arms reaching forgetting and utility"
+            "diagnostic only: negative deployed-minus-comparator CVaR favors the "
+            "frozen adaptive method conditionally; this omits the paper's mean outcome, "
+            "eight-way IUT, draw resampling, four constraints, and common-support gate"
         ),
     }
     (out / "alpha_protection_summary.json").write_text(

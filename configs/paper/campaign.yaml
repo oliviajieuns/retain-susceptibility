@@ -1,0 +1,187 @@
+schema_version: 1
+campaign_id: kdd27-paper-campaign-v1
+
+# This file is an executable readiness contract, not evidence that every
+# benchmark is already implemented.  ``experiments/paper/preflight.py`` exits
+# nonzero while any adapter, roster, model, dtype, or parent is unresolved.
+outputs:
+  preflight_json: results/paper/campaign_preflight.json
+
+# Mirrors the claims visible in the paper. Preflight refuses a shortened
+# evidence file or an extra/renamed stage even if the remaining rows are valid.
+paper_contract:
+  setting_ids:
+    - tofu_qwen25_1p5b
+    - tofu_qwen25_7b
+    - tofu_llama31_8b
+    - wmdp_bio_mmlu_qwen25_7b
+    - muse_news_qwen25_7b
+    - rwku_qwen25_7b
+    - muse_books_qwen25_7b
+    - pistol_qwen25_7b
+  stage_ids: [calibration, prediction, protection, target_evaluation]
+  confirmatory_dtype: float32
+
+execution:
+  # Produced only after all three target-free development stages. The target
+  # stage remains blocked while this file is absent/draft.
+  selection_freeze: configs/paper/selection_freeze.yaml
+  seeds: [2025, 2026]
+  repeated_random_draws: [rand-000, rand-001, rand-002, rand-003, rand-004]
+  bootstrap: {replicates: 2000, seed: 2027, alpha: 0.05, top_q: 0.10, cvar_q: 0.95}
+  # These fields mirror experiments/cost/bench.py.  The runner must also pass
+  # --model-id equal to the model key below; its default path basename is not
+  # an evidence-setting identifier and will fail the raw artifact key check.
+  fidelity:
+    directions: [16, 32, 64]
+    repeats: 3
+    block_last_n: 8
+    norm_eta: 0.003
+    batch_size: 4
+    author: 198
+    candidate_authors: 0-29
+    n_candidates: 128
+    candidate_seed: 314159
+    seed: 0
+    k: 0  # zero means the frozen top_q fraction of the realized candidate pool
+    min_rho: 0.8
+    min_overlap: 0.7
+    min_split_half: 0.7
+    min_perturbation_survival: 0.9
+  budget_fractions: [0.05, 0.10, 0.20]
+  specificity_controls: [target_unlearning, other_request, benign_sft, random_block_motion]
+
+required_parents: &required_parents
+  - graddiff
+  - npo
+  - simnpo
+  - gru
+  - rmu
+  - repnoise
+  - circuit_breakers
+
+stages:
+  calibration:
+    roster: D_cal
+    adapter_capability: calibration
+    # The legacy launcher is named explicitly so the report explains the
+    # blocker. It lacks PAPER_STAGE_CONTRACT and cannot consume this roster.
+    executor: experiments/channel_matrix/run_campaign.py
+  prediction:
+    roster: D_pred
+    adapter_capability: prediction
+    executor: experiments/channel_matrix/run_campaign.py
+  protection:
+    roster: D_prot
+    adapter_capability: protection
+    executor: experiments/channel_matrix/alpha_protection.py
+  target_evaluation:
+    roster: target
+    adapter_capability: target_evaluation
+    executor: experiments/channel_matrix/alpha_protection.py
+
+models:
+  Qwen2.5-1.5B:
+    source: /group-volume/models/Qwen2.5-1.5B-Instruct
+    source_kind: local_path
+    dtype: float32
+    num_hidden_layers: 28
+    provisioned: true
+    parents:
+      graddiff: true
+      npo: true
+      simnpo: true
+      gru: true
+      rmu: true
+      repnoise: true
+      circuit_breakers: true
+  Qwen2.5-7B:
+    source: /group-volume/models/Qwen2.5-7B-Instruct
+    source_kind: local_path
+    # Loss-shake perturbs the actual parameter tensor.  With a unit direction
+    # over a multi-million-dimensional block, the frozen radius can fall below
+    # a bf16 coordinate ULP; fp32 is therefore the confirmatory contract until
+    # a separately validated fp32-shadow implementation exists.
+    dtype: float32
+    num_hidden_layers: 28
+    provisioned: true
+    parents:
+      graddiff: true
+      npo: true
+      simnpo: true
+      gru: true
+      rmu: true
+      repnoise: true
+      circuit_breakers: true
+  Llama-3.1-8B:
+    source: /group-volume/models/Llama-3.1-8B-Instruct
+    source_kind: local_path
+    dtype: float32
+    num_hidden_layers: 32
+    provisioned: false  # listed in the old launcher but not yet provisioned
+    parents:
+      graddiff: true
+      npo: true
+      simnpo: true
+      gru: true
+      rmu: true
+      repnoise: true
+      circuit_breakers: true
+
+datasets:
+  TOFU:
+    adapter: tofu
+    roster_unit: forget-author request_id
+    # Exact, outcome-independent split of all forget10 authors.  Direct use of
+    # the older launcher rosters is prohibited because it reused audit authors
+    # across prediction and protection.
+    rosters:
+      D_cal: [tofu-a198, tofu-a199]
+      D_pred: [tofu-a180, tofu-a181, tofu-a182, tofu-a183]
+      D_prot: [tofu-a184, tofu-a185, tofu-a186, tofu-a187]
+      target: [tofu-a188, tofu-a189, tofu-a190, tofu-a191, tofu-a192, tofu-a193, tofu-a194, tofu-a195, tofu-a196, tofu-a197]
+
+  "WMDP-bio/MMLU":
+    adapter: wmdp_bio_mmlu
+    roster_unit: TBD_WMDP_REQUEST_UNIT
+    rosters:
+      D_cal: [TBD_WMDP_D_CAL_REQUEST_IDS]
+      D_pred: [TBD_WMDP_D_PRED_REQUEST_IDS]
+      D_prot: [TBD_WMDP_D_PROT_REQUEST_IDS]
+      target: [TBD_WMDP_TARGET_REQUEST_IDS]
+
+  MUSE-News:
+    adapter: muse_news
+    roster_unit: TBD_MUSE_NEWS_REQUEST_UNIT
+    rosters:
+      D_cal: [TBD_MUSE_NEWS_D_CAL_REQUEST_IDS]
+      D_pred: [TBD_MUSE_NEWS_D_PRED_REQUEST_IDS]
+      D_prot: [TBD_MUSE_NEWS_D_PROT_REQUEST_IDS]
+      target: [TBD_MUSE_NEWS_TARGET_REQUEST_IDS]
+
+  MUSE-Books:
+    adapter: muse_books
+    roster_unit: TBD_MUSE_BOOKS_REQUEST_UNIT
+    rosters:
+      D_cal: [TBD_MUSE_BOOKS_D_CAL_REQUEST_IDS]
+      D_pred: [TBD_MUSE_BOOKS_D_PRED_REQUEST_IDS]
+      D_prot: [TBD_MUSE_BOOKS_D_PROT_REQUEST_IDS]
+      target: [TBD_MUSE_BOOKS_TARGET_REQUEST_IDS]
+
+  RWKU:
+    adapter: rwku
+    roster_unit: TBD_RWKU_REQUEST_UNIT
+    rosters:
+      D_cal: [TBD_RWKU_D_CAL_REQUEST_IDS]
+      D_pred: [TBD_RWKU_D_PRED_REQUEST_IDS]
+      D_prot: [TBD_RWKU_D_PROT_REQUEST_IDS]
+      target: [TBD_RWKU_TARGET_REQUEST_IDS]
+
+  PISTOL:
+    adapter: pistol
+    roster_unit: TBD_PISTOL_REQUEST_UNIT
+    rosters:
+      D_cal: [TBD_PISTOL_D_CAL_REQUEST_IDS]
+      D_pred: [TBD_PISTOL_D_PRED_REQUEST_IDS]
+      D_prot: [TBD_PISTOL_D_PROT_REQUEST_IDS]
+      target: [TBD_PISTOL_TARGET_REQUEST_IDS]

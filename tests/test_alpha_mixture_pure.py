@@ -9,6 +9,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 import yaml
 
@@ -19,8 +20,10 @@ sys.path.insert(0, str(ROOT / "src"))
 from rsus.analysis.mixture import (  # noqa: E402
     alpha_label,
     channel_mixture_scores,
+    empirical_midrank01,
     rank01,
     select_development_alpha,
+    select_prediction_alpha,
 )
 
 
@@ -49,10 +52,16 @@ class MixtureScoreTest(unittest.TestCase):
         )
         self.assertEqual(alpha_label(0.25), "s_alpha_0p25")
 
-    def test_tie_break_matches_descending_score_then_candidate_id(self):
+    def test_midrank_preserves_ties_for_correlation(self):
         ranked = rank01({"b": 1.0, "a": 1.0, "c": 0.0})
-        self.assertGreater(ranked["a"], ranked["b"])
+        self.assertEqual(ranked["a"], ranked["b"])
         self.assertGreater(ranked["b"], ranked["c"])
+
+    def test_discovery_midrank_is_applied_without_audit_refit(self):
+        reference = {"d0": 0.0, "d1": 1.0, "d2": 1.0, "d3": 3.0}
+        transformed = empirical_midrank01(reference, {"a0": 1.0, "a1": 2.0})
+        self.assertEqual(transformed["a0"], 0.5)
+        self.assertEqual(transformed["a1"], 0.75)
 
     def test_discovery_normalization_is_invariant_to_audit_scores(self):
         discovery = {"d0", "d1", "d2"}
@@ -121,6 +130,72 @@ class MixtureScoreTest(unittest.TestCase):
                 utility_retention_min=0.9,
             )
 
+    def test_protection_alpha_rejects_full_constraint_infeasibility(self):
+        rows = [{
+            "campaign_phase": "development",
+            "selector_type": "mixture",
+            "alpha": 0.5,
+            "request": "tofu-a198",
+            "seed": 2025,
+            "reached": True,
+            "feasible": False,
+            "forget_recall": 0.05,
+            "utility_retention": 0.95,
+            "cvar05_dnll": 1.0,
+        }]
+        result = select_development_alpha(
+            rows,
+            alpha_grid=[0.5],
+            expected_run_keys={("tofu-a198", 2025)},
+            prior_alpha=0.0,
+            recall_max=0.10,
+            utility_retention_min=0.90,
+        )
+        self.assertFalse(result["resolved"])
+
+    def test_prediction_alpha_uses_equal_request_means_and_midpoint_tie_break(self):
+        rows = []
+        for alpha in (0.0, 0.5, 1.0):
+            for request in ("dev-a", "dev-b"):
+                rows.append({
+                    "campaign_phase": "development",
+                    "selector_type": "mixture",
+                    "alpha": alpha,
+                    "request": request,
+                    "seed": 7,
+                    "reached": True,
+                    "spearman": 0.8 if alpha in (0.0, 0.5) else 0.7,
+                    "top_q_recall": 0.6,
+                })
+        selected = select_prediction_alpha(
+            rows,
+            alpha_grid=[0.0, 0.5, 1.0],
+            expected_run_keys={("dev-a", 7), ("dev-b", 7)},
+            min_reached_requests=2,
+        )
+        self.assertTrue(selected["resolved"])
+        self.assertEqual(selected["alpha"], 0.5)
+
+    def test_prediction_alpha_fallback_is_ineligible_after_missing_cell(self):
+        selected = select_prediction_alpha(
+            [{
+                "campaign_phase": "development",
+                "selector_type": "mixture",
+                "alpha": 0.5,
+                "request": "dev-a",
+                "seed": 7,
+                "reached": True,
+                "spearman": 0.8,
+                "top_q_recall": 0.6,
+            }],
+            alpha_grid=[0.5],
+            expected_run_keys={("dev-a", 7), ("dev-b", 7)},
+            min_reached_requests=2,
+        )
+        self.assertFalse(selected["resolved"])
+        self.assertFalse(selected["claim_eligible"])
+        self.assertEqual(selected["alpha"], 0.5)
+
 
 class AlphaCampaignFreezeTest(unittest.TestCase):
     @classmethod
@@ -130,6 +205,143 @@ class AlphaCampaignFreezeTest(unittest.TestCase):
 
     def test_contract_has_disjoint_ordinary_utility_pool(self):
         alpha_campaign._validate_contract(self.base)
+        self.assertEqual(
+            self.base["alpha_protection"]["parents"],
+            [
+                "graddiff", "npo", "simnpo", "gru", "rmu", "repnoise",
+                "circuit_breakers",
+            ],
+        )
+
+    def test_exact_energy_replaces_only_qg_at_same_alpha(self):
+        exact_qg = {"a": 9.0, "b": 1.0, "c": 4.0}
+        qh = {"a": 0.0, "b": 8.0, "c": 2.0}
+        actual = alpha_campaign._exact_energy_scores(
+            exact_qg, qh, 0.25, exact_qg
+        )
+        expected = channel_mixture_scores(exact_qg, qh, 0.25)
+        self.assertEqual(actual, expected)
+        self.assertNotEqual(actual, rank01(exact_qg))
+
+    def test_repeated_random_draw_identity_is_stable_and_unique(self):
+        kwargs = dict(
+            campaign_id="campaign",
+            model_id="model",
+            request_id="request",
+            trajectory_seed=2025,
+            b_rand=5,
+            seed_base=271828,
+        )
+        first = alpha_campaign._random_draw_specs(**kwargs)
+        self.assertEqual(first, alpha_campaign._random_draw_specs(**kwargs))
+        self.assertEqual(len({row["draw_id"] for row in first}), 5)
+        self.assertEqual(len({row["seed"] for row in first}), 5)
+
+    def test_final_checkpoint_is_last_fully_feasible_repair_snapshot(self):
+        snapshots = [
+            SimpleNamespace(
+                step=10,
+                forget_recall=0.05,
+                extra={
+                    "para_recall": 0.05,
+                    "extraction_generation": 0.05,
+                    "utility_retention": 0.95,
+                },
+            ),
+            SimpleNamespace(
+                step=20,
+                forget_recall=0.06,
+                extra={
+                    "para_recall": 0.06,
+                    "extraction_generation": 0.06,
+                    "utility_retention": 0.94,
+                },
+            ),
+            SimpleNamespace(
+                step=30,
+                forget_recall=0.12,
+                extra={
+                    "para_recall": 0.07,
+                    "extraction_generation": 0.07,
+                    "utility_retention": 0.93,
+                },
+            ),
+        ]
+        contract = self.base["alpha_protection"]["final_checkpoint"]
+        selected = alpha_campaign._select_final_snapshot(
+            snapshots, contract, after_step=10
+        )
+        self.assertTrue(selected["feasible"])
+        self.assertEqual(selected["selected_step"], 20)
+
+    def test_final_checkpoint_missing_required_metric_is_infeasible(self):
+        snapshot = SimpleNamespace(
+            step=20,
+            forget_recall=0.05,
+            extra={"utility_retention": 0.95},
+        )
+        selected = alpha_campaign._select_final_snapshot(
+            [snapshot], self.base["alpha_protection"]["final_checkpoint"],
+            after_step=10,
+        )
+        self.assertFalse(selected["feasible"])
+        self.assertIsNone(selected["selected_step"])
+
+    def test_final_checkpoint_schema_can_fail_closed_on_extraction_audit(self):
+        contract = {
+            **self.base["alpha_protection"]["final_checkpoint"],
+            "required": [
+                "direct_forgetting", "paraphrase_forgetting",
+                "extraction_generation", "utility",
+            ],
+            "extraction_generation_max": 0.10,
+        }
+        missing = SimpleNamespace(
+            step=20,
+            forget_recall=0.05,
+            extra={"para_recall": 0.05, "utility_retention": 0.95},
+        )
+        present = SimpleNamespace(
+            step=30,
+            forget_recall=0.05,
+            extra={
+                "para_recall": 0.05,
+                "extraction_generation": 0.08,
+                "utility_retention": 0.95,
+            },
+        )
+        self.assertFalse(
+            alpha_campaign._select_final_snapshot([missing], contract)["feasible"]
+        )
+        self.assertEqual(
+            alpha_campaign._select_final_snapshot([missing, present], contract)[
+                "selected_step"
+            ],
+            30,
+        )
+
+    def test_repeated_random_summary_keeps_all_draw_rows(self):
+        rows = []
+        for index, value in enumerate((1.0, 3.0)):
+            rows.append({
+                "random_draw_id": f"rand-{index:03d}",
+                "executed": True,
+                "reached": True,
+                "feasible": True,
+                "forget_recall": 0.05 + index * 0.01,
+                "para_recall": 0.04,
+                "utility_retention": 0.95 - index * 0.01,
+                "utility_mean_nll": 1.0,
+                "mean_dnll": value,
+                "cvar05_dnll": value + 1.0,
+                "candidate_damage": {"x": value},
+                "candidate_groups": {"x": "g"},
+            })
+        summary = alpha_campaign._aggregate_random_draw_metrics(rows)
+        self.assertEqual(summary["random_draw_count"], 2)
+        self.assertEqual(summary["mean_dnll"], 2.0)
+        self.assertEqual(summary["candidate_damage"]["x"], 2.0)
+        self.assertEqual(summary["random_draws"], rows)
 
     def test_draft_alpha_freeze_blocks_audit(self):
         models = alpha_campaign._enabled_models(self.base, {"qwen25_7b"})
@@ -214,6 +426,30 @@ class AlphaCampaignFreezeTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "outside"):
             alpha_campaign._filter_authors([198, 199], {181}, "development")
 
+    def test_legacy_alpha_aggregate_requires_explicit_opt_in(self):
+        with tempfile.TemporaryDirectory() as directory:
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(
+                        ROOT
+                        / "experiments/channel_matrix/aggregate_alpha_protection.py"
+                    ),
+                    "--config",
+                    str(self.base_path),
+                    "--root",
+                    directory,
+                    "--out",
+                    directory,
+                ],
+                cwd=ROOT,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("legacy CVaR-only diagnostic", result.stderr)
+
     def test_development_results_to_draft_freeze_end_to_end(self):
         cfg = copy.deepcopy(self.base)
         with tempfile.TemporaryDirectory() as directory:
@@ -264,7 +500,6 @@ class AlphaCampaignFreezeTest(unittest.TestCase):
                     for selector, selector_type in (
                         ("none", "none"),
                         ("random", "random"),
-                        ("exact_grad_norm", "exact_gradient_ceiling"),
                     ):
                         rows.append({
                             "campaign_phase": "development",
@@ -428,6 +663,7 @@ class AlphaCampaignFreezeTest(unittest.TestCase):
             subprocess.run([
                 sys.executable,
                 str(ROOT / "experiments/channel_matrix/aggregate_alpha_protection.py"),
+                "--legacy-diagnostic",
                 "--config", str(config_path),
                 "--root", str(audit_root),
                 "--out", str(out),

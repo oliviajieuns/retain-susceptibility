@@ -24,6 +24,7 @@ import subprocess
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Iterable, Mapping
 
 import yaml
 
@@ -47,6 +48,238 @@ def _sha256(path: Path) -> str:
 def _json_sha(value: object) -> str:
     body = json.dumps(value, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(body.encode()).hexdigest()
+
+
+def _random_draw_specs(
+    *,
+    campaign_id: str,
+    model_id: str,
+    request_id: str,
+    trajectory_seed: int,
+    b_rand: int,
+    seed_base: int,
+) -> list[dict[str, object]]:
+    """Return the frozen, independent random-allocation draw identities.
+
+    The seeds are derived from the full run identity rather than from process
+    order.  Thus sharding/resume cannot change a random pool, and every draw
+    has a stable ID that can be resampled as its own level downstream.
+    """
+    if b_rand <= 0:
+        raise ValueError("B_rand must be positive")
+    specs = []
+    for index in range(b_rand):
+        draw_id = f"rand-{index:03d}"
+        digest = hashlib.sha256(
+            (
+                f"{campaign_id}|{model_id}|{request_id}|{trajectory_seed}|"
+                f"{seed_base}|{draw_id}"
+            ).encode("utf-8")
+        ).digest()
+        specs.append({
+            "draw_id": draw_id,
+            "selector_key": f"random_draw_{index:03d}",
+            "seed": int.from_bytes(digest[:8], "big") % (2**63 - 1),
+        })
+    return specs
+
+
+def _exact_energy_scores(
+    exact_gradient: Mapping[str, float],
+    proximity: Mapping[str, float],
+    alpha: float,
+    candidate_ids: Iterable[str],
+) -> dict[str, float]:
+    """Same-estimand exact-energy reference at the deployed mixture weight.
+
+    Only the loss-shake component is replaced by exact per-example gradient
+    energy.  The representation component, discovery-only midrank transform,
+    and frozen protection alpha are identical to the deployable selector.
+    """
+    from rsus.analysis.mixture import channel_mixture_scores
+
+    return channel_mixture_scores(
+        dict(exact_gradient),
+        dict(proximity),
+        alpha,
+        candidate_ids=set(candidate_ids),
+    )
+
+
+def _snapshot_value(snapshot: object, name: str) -> float | None:
+    if name == "direct_forgetting":
+        value = getattr(snapshot, "forget_recall", None)
+    else:
+        extra = getattr(snapshot, "extra", None) or {}
+        key = {
+            "paraphrase_forgetting": "para_recall",
+            "extraction_generation": "extraction_generation",
+            "utility": "utility_retention",
+        }[name]
+        value = extra.get(key)
+    return None if value is None else float(value)
+
+
+def _select_final_snapshot(
+    snapshots: Iterable[object],
+    contract: Mapping[str, object],
+    *,
+    after_step: int | None = None,
+) -> dict[str, object]:
+    """Choose the last *eligible* saved checkpoint satisfying all constraints.
+
+    Missing required metrics fail closed. ``after_step`` excludes the parent
+    checkpoint when choosing a repaired arm, so a failed repair cannot be
+    reported as a favorable no-repair fallback.  The full per-snapshot trace
+    remains available even when no feasible checkpoint exists.
+    """
+    allowed = {
+        "direct_forgetting",
+        "paraphrase_forgetting",
+        "extraction_generation",
+        "utility",
+    }
+    required = tuple(str(value) for value in contract.get("required", ()))
+    if not required or set(required) - allowed or len(required) != len(set(required)):
+        raise ValueError(
+            "final_checkpoint.required must be a non-empty unique subset of "
+            f"{sorted(allowed)}"
+        )
+    threshold_fields = {
+        "direct_forgetting": ("max", "direct_recall_max"),
+        "paraphrase_forgetting": ("max", "paraphrase_recall_max"),
+        "extraction_generation": ("max", "extraction_generation_max"),
+        "utility": ("min", "utility_retention_min"),
+    }
+    missing_thresholds = [
+        threshold_fields[name][1]
+        for name in required
+        if threshold_fields[name][1] not in contract
+    ]
+    if missing_thresholds:
+        raise ValueError(
+            f"final_checkpoint lacks thresholds for required metrics: {missing_thresholds}"
+        )
+    thresholds = {
+        name: (direction, float(contract[field]))
+        for name, (direction, field) in threshold_fields.items()
+        if name in required
+    }
+    trace = []
+    feasible_indices: list[int] = []
+    values = list(snapshots)
+    for index, snapshot in enumerate(values):
+        step = int(getattr(snapshot, "step"))
+        eligible_checkpoint = after_step is None or step > after_step
+        observed: dict[str, float | None] = {}
+        slacks: dict[str, float | None] = {}
+        satisfied = eligible_checkpoint
+        for name in required:
+            value = _snapshot_value(snapshot, name)
+            direction, threshold = thresholds[name]
+            observed[name] = value
+            if value is None:
+                slacks[name] = None
+                satisfied = False
+            elif direction == "max":
+                slacks[name] = threshold - value
+                satisfied = satisfied and value <= threshold
+            else:
+                slacks[name] = value - threshold
+                satisfied = satisfied and value >= threshold
+        trace.append({
+            "index": index,
+            "step": step,
+            "eligible_checkpoint": eligible_checkpoint,
+            "observed": observed,
+            "slacks": slacks,
+            "satisfies_all": satisfied,
+        })
+        if satisfied:
+            feasible_indices.append(index)
+    selected_index = feasible_indices[-1] if feasible_indices else None
+    return {
+        "feasible": selected_index is not None,
+        "selected_index": selected_index,
+        "selected_step": (
+            int(getattr(values[selected_index], "step"))
+            if selected_index is not None else None
+        ),
+        "after_step": after_step,
+        "required": list(required),
+        "trace": trace,
+        "reason": None if selected_index is not None else "no_saved_checkpoint_satisfies_all_constraints",
+    }
+
+
+def _mean_or_none(values: Iterable[float | None]) -> float | None:
+    present = list(values)
+    if not present or any(value is None for value in present):
+        return None
+    return sum(float(value) for value in present) / len(present)
+
+
+def _aggregate_random_draw_metrics(draw_rows: list[dict]) -> dict[str, object]:
+    """Explicit point summary for compatibility; never drops the draw rows.
+
+    Confirmatory resampling must use ``random_draws`` below, not treat this
+    arithmetic point summary as one random pool.  Feasibility is conjunctive:
+    every frozen draw must complete and satisfy the common contract.
+    """
+    if not draw_rows:
+        raise ValueError("cannot aggregate an empty repeated-random roster")
+    draw_ids = [str(row["random_draw_id"]) for row in draw_rows]
+    if len(draw_ids) != len(set(draw_ids)):
+        raise ValueError("duplicate repeated-random draw ID")
+    candidate_ids = set(draw_rows[0].get("candidate_damage") or {})
+    if any(set(row.get("candidate_damage") or {}) != candidate_ids for row in draw_rows):
+        raise ValueError("random draws have different candidate-damage support")
+    candidate_damage = {
+        candidate_id: _mean_or_none(
+            (row.get("candidate_damage") or {}).get(candidate_id) for row in draw_rows
+        )
+        for candidate_id in sorted(candidate_ids)
+    }
+    feasible = all(bool(row.get("feasible")) for row in draw_rows)
+    reached = all(bool(row.get("reached")) for row in draw_rows)
+    return {
+        "executed": all(bool(row.get("executed")) for row in draw_rows),
+        "reached": reached,
+        "feasible": feasible,
+        "diagnostic_only": not feasible,
+        "step": None,
+        "forget_recall": max(
+            (float(row["forget_recall"]) for row in draw_rows
+             if row.get("forget_recall") is not None),
+            default=None,
+        ),
+        "para_recall": max(
+            (float(row["para_recall"]) for row in draw_rows
+             if row.get("para_recall") is not None),
+            default=None,
+        ),
+        "extraction_generation": max(
+            (float(row["extraction_generation"]) for row in draw_rows
+             if row.get("extraction_generation") is not None),
+            default=None,
+        ),
+        "utility_retention": min(
+            (float(row["utility_retention"]) for row in draw_rows
+             if row.get("utility_retention") is not None),
+            default=None,
+        ),
+        "utility_mean_nll": _mean_or_none(
+            row.get("utility_mean_nll") for row in draw_rows
+        ),
+        "mean_dnll": _mean_or_none(row.get("mean_dnll") for row in draw_rows),
+        "cvar05_dnll": _mean_or_none(row.get("cvar05_dnll") for row in draw_rows),
+        "candidate_damage": candidate_damage,
+        "candidate_groups": draw_rows[0].get("candidate_groups"),
+        "random_draw_count": len(draw_rows),
+        "random_draw_ids": draw_ids,
+        "random_draw_aggregation": "resample_draw_ids_then_average_within_trajectory_per_bootstrap",
+        "random_draws": draw_rows,
+    }
 
 
 def _git_state() -> dict[str, object]:
@@ -226,8 +459,10 @@ def _validate_contract(cfg: dict) -> None:
     grid = [validate_alpha(value) for value in phase["alpha_grid"]]
     if len(grid) != len(set(grid)) or 0.0 not in grid or 1.0 not in grid:
         raise ValueError("alpha protection grid must be unique and contain 0 and 1")
-    if phase.get("normalization") != "rank01_discovery_only":
-        raise ValueError("primary mixture normalization must remain rank01_discovery_only")
+    if phase.get("normalization") != "empirical_midrank_discovery_only":
+        raise ValueError(
+            "primary mixture normalization must be empirical_midrank_discovery_only"
+        )
     if phase.get("orientation") != "(1-alpha)*gradient + alpha*proximity":
         raise ValueError("alpha orientation changed from the preregistered coordinate")
     for channel in {DECLARED_CHANNEL[parent] for parent in parents}:
@@ -262,6 +497,23 @@ def _validate_contract(cfg: dict) -> None:
         raise ValueError("adaptive alpha primary must remain development minimax CVaR")
     if selection.get("prohibited") != "audit_selection":
         raise ValueError("alpha protocol must explicitly prohibit audit selection")
+    repeated_random = phase.get("comparators", {}).get("repeated_random", {})
+    if int(repeated_random.get("B_rand", 0)) <= 0:
+        raise ValueError("repeated_random.B_rand must be positive and frozen")
+    if "seed_base" not in repeated_random:
+        raise ValueError("repeated_random.seed_base must be frozen in the config")
+    final_checkpoint = phase.get("final_checkpoint", {})
+    # Validate the constraint vocabulary and thresholds without needing a
+    # trajectory object.  A missing required metric later fails closed.
+    _select_final_snapshot([], final_checkpoint)
+    if float(final_checkpoint["direct_recall_max"]) != float(
+        phase["parent"]["recall_max"]
+    ):
+        raise ValueError("final direct-forgetting threshold differs from parent recall_max")
+    if float(final_checkpoint["utility_retention_min"]) != float(
+        selection["utility_retention_min"]
+    ):
+        raise ValueError("final utility floor differs from alpha-selection utility floor")
 
 
 def _candidate_pool(cfg: dict, phase: str, author: int) -> str:
@@ -356,10 +608,10 @@ def _run_worker(
     from rsus.costs import CostRecord
     from rsus.data.base import CandidateUniverse, Request
     from rsus.data.tofu import load_tofu_examples, load_tofu_paraphrases, tofu_request
-    from rsus.evalx.metrics import mean_recall
+    from rsus.evalx.metrics import greedy_generation_recall, mean_recall
     from rsus.generators import TrajectoryConfig, run_trajectory
     from rsus.generators.repaired import RepairedConfig, run_repair_from_reached
-    from rsus.partition import PartitionParams, build_partition, make_folds
+    from rsus.partition import Partition, PartitionParams, build_partition, make_folds
     from rsus.probe.base import ProbeSpec, ScoreProfile, get_scorer
     from rsus.stage1 import calibrate_floor
     from rsus.stage2 import Stage2Config
@@ -527,6 +779,9 @@ def _run_worker(
             result["para_recall"] = mean_recall(
                 model, para_examples, int(common["batch_size"])
             )
+        result["extraction_generation"] = greedy_generation_recall(
+            model, list(req.forget)
+        )
         return result
 
     probe_spec = ProbeSpec(
@@ -540,11 +795,12 @@ def _run_worker(
     score_names = [
         phase["probes"]["gradient"],
         phase["probes"]["proximity"],
-        "grad_norm",
-        "random_rank",
     ]
+    if phase_name == "audit":
+        score_names.append("grad_norm")
     scores: dict[str, dict[str, float]] = {}
     score_costs = {}
+    profile_artifacts = {}
     for scorer_name in score_names:
         log(f"scoring discovery allocation component: {scorer_name}")
         scorer_model = fresh()
@@ -552,6 +808,13 @@ def _run_worker(
             profile = get_scorer(scorer_name)(scorer_model, scoring_request, probe_spec)
             scores[scorer_name] = profile.scores
             score_costs[scorer_name] = dc.asdict(profile.cost)
+            profile_artifacts[scorer_name] = {
+                "schema": "paper-profile-v2",
+                "scorer": scorer_name,
+                "scores": profile.scores,
+                "cost": dc.asdict(profile.cost),
+                "artifacts": profile.artifacts,
+            }
         finally:
             del scorer_model
             gate_runtime.clear_cuda_cache()
@@ -603,26 +866,108 @@ def _run_worker(
             "alpha": alpha,
             "backward_free": True,
         }
-    for label, raw, backward_free in (
-        ("exact_grad_norm", scores["grad_norm"], False),
-        ("random", scores["random_rank"], True),
-    ):
-        discovery = rank01({cid: raw[cid] for cid in discovery_ids})
+
+    repeated_cfg = phase["comparators"]["repeated_random"]
+    random_specs = _random_draw_specs(
+        campaign_id=str(phase["campaign_id"]),
+        model_id=model_id,
+        request_id=req.request_id,
+        trajectory_seed=seed,
+        b_rand=int(repeated_cfg["B_rand"]),
+        seed_base=int(repeated_cfg["seed_base"]),
+    )
+    for spec in random_specs:
+        label = str(spec["selector_key"])
+        generator = torch.Generator().manual_seed(int(spec["seed"]))
+        order = torch.randperm(len(discovery_ids), generator=generator).tolist()
+        ordered_ids = sorted(discovery_ids)
+        raw = {
+            candidate_id: float(order[index])
+            for index, candidate_id in enumerate(ordered_ids)
+        }
+        discovery = rank01(raw)
         selector_scores[label] = {
-            cid: discovery[cid] if cid in discovery else 0.0 for cid in sorted(by_id)
+            cid: discovery[cid] if cid in discovery else 0.0
+            for cid in sorted(by_id)
         }
         selector_meta[label] = {
-            "selector_type": "exact_gradient_ceiling" if label == "exact_grad_norm" else "random",
+            "selector_type": "repeated_random_draw",
             "alpha": None,
-            "backward_free": backward_free,
+            "backward_free": True,
+            "random_draw_id": spec["draw_id"],
+            "random_draw_seed": spec["seed"],
         }
 
+    # Exact energy is meaningful only after the protection alpha is frozen.
+    # It replaces q_G by the exact gradient energy and retains q_H at that
+    # same parent-specific alpha; it is never an endpoint or an IUT arm.
+    exact_key_by_parent: dict[str, str] = {}
+    if phase_name == "audit":
+        frozen_by_parent = alpha_freeze["models"][model_id]
+        for parent in phase["parents"]:
+            alpha = float(frozen_by_parent[parent])
+            label = f"exact_energy__{parent}"
+            discovery = _exact_energy_scores(
+                scores["grad_norm"], proximity_scores, alpha, discovery_ids
+            )
+            selector_scores[label] = {
+                cid: discovery[cid] if cid in discovery else 0.0
+                for cid in sorted(by_id)
+            }
+            selector_meta[label] = {
+                "selector_type": "exact_energy_same_alpha",
+                "alpha": alpha,
+                "backward_free": False,
+                "reference_only": True,
+                "outside_confirmatory_iut": True,
+                "loss_component": "exact_grad_norm",
+                "representation_component": phase["probes"]["proximity"],
+            }
+            exact_key_by_parent[parent] = label
+
     partitions = {}
-    partition_manifest = {}
     for selector, selector_score in selector_scores.items():
         profile = ScoreProfile(req.request_id, selector, selector_score, probe_spec, CostRecord())
         partition = build_partition(profile, req, folds, partition_params)
         partitions[selector] = partition
+
+    # The neutral reference stream is part of the common repair operator, not
+    # an output of a selector.  Draw it once from candidates outside every
+    # protect pool and reuse the identical IDs for all arms.
+    protected_union = set().union(*(set(partition.protect) for partition in partitions.values()))
+    neutral_candidates = sorted(set(discovery_ids) - protected_union)
+    neutral_count = max(len(partition.protect) for partition in partitions.values())
+    if len(neutral_candidates) < neutral_count:
+        raise RuntimeError(
+            "cannot construct selector-independent neutral stream: "
+            f"need {neutral_count}, have {len(neutral_candidates)} outside all protect pools"
+        )
+    neutral_gen = torch.Generator().manual_seed(seed + 104729)
+    neutral_order = torch.randperm(len(neutral_candidates), generator=neutral_gen).tolist()
+    shared_neutral = tuple(sorted(neutral_candidates[index] for index in neutral_order[:neutral_count]))
+    for selector, partition in list(partitions.items()):
+        body = {
+            "request": req.request_id,
+            "scorer": selector,
+            "protect": list(partition.protect),
+            "neutral": list(shared_neutral),
+            "fallback": partition.fallback,
+            "params": dc.asdict(partition.params),
+            "universe_sha": req.universe.sha,
+        }
+        partitions[selector] = Partition(
+            partition.request_id,
+            partition.scorer,
+            partition.protect,
+            shared_neutral,
+            partition.fallback,
+            partition.params,
+            _json_sha(body),
+        )
+
+    partition_manifest = {}
+    for selector, partition in partitions.items():
+        selector_score = selector_scores[selector]
         partition_manifest[selector] = {
             **selector_meta[selector],
             "manifest_sha": partition.manifest_sha,
@@ -633,6 +978,27 @@ def _run_worker(
                 {cid: selector_score[cid] for cid in sorted(discovery_ids)}
             ),
         }
+
+    profile_dir = out / "profile_artifacts"
+    profile_dir.mkdir(parents=True, exist_ok=True)
+    candidate_meta = {
+        candidate_id: {
+            "group": by_id[candidate_id].group,
+            "fold": "audit" if candidate_id in audit_ids else "discovery",
+        }
+        for candidate_id in sorted(by_id)
+    }
+    for scorer_name, payload in profile_artifacts.items():
+        (profile_dir / f"{scorer_name}.json").write_text(
+            json.dumps({
+                **payload,
+                "request": req.request_id,
+                "model_id": model_id,
+                "candidate_universe_sha": req.universe.sha,
+                "candidate_meta": candidate_meta,
+            }, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
 
     manifest = {
         "schema": "channel-mixture-protection-run-v1",
@@ -680,6 +1046,15 @@ def _run_worker(
         "alpha_freeze_sha256": _sha256(alpha_path) if alpha_path else None,
         "campaign_config_sha256": _sha256(config_path),
         "partitions": partition_manifest,
+        "repeated_random": {
+            "B_rand": int(repeated_cfg["B_rand"]),
+            "seed_base": int(repeated_cfg["seed_base"]),
+            "draws": random_specs,
+            "all_draws_required": True,
+        },
+        "exact_energy_partition_by_parent": exact_key_by_parent,
+        "shared_neutral_ids_sha256": _json_sha(list(shared_neutral)),
+        "shared_neutral_ids": list(shared_neutral),
         **_git_state(),
     }
     manifest_path = out / "run_manifest.json"
@@ -689,7 +1064,8 @@ def _run_worker(
             "schema", "campaign_id", "campaign_phase", "model_id", "request", "seed",
             "candidate_universe_sha", "forget_sha", "objective_freeze_sha256",
             "fidelity_certificate_sha256", "alpha_freeze_sha256",
-            "campaign_config_sha256", "partitions",
+            "campaign_config_sha256", "partitions", "repeated_random",
+            "exact_energy_partition_by_parent", "shared_neutral_ids_sha256",
             "code_commit",
         )
         mismatched = [key for key in immutable_keys if old.get(key) != manifest.get(key)]
@@ -740,36 +1116,127 @@ def _run_worker(
     )
     recall_max = float(phase["parent"]["recall_max"])
 
-    def metrics(record) -> dict[str, object]:
+    final_checkpoint_contract = phase["final_checkpoint"]
+
+    def metrics(record, *, after_step: int | None = None) -> dict[str, object]:
+        decision = _select_final_snapshot(
+            record.snapshots,
+            final_checkpoint_contract,
+            after_step=after_step,
+        )
         if not record.snapshots:
             return {
                 "reached": False,
+                "feasible": False,
+                "diagnostic_only": True,
                 "step": None,
+                "selected_checkpoint_step": None,
+                "terminal_step": None,
                 "forget_recall": None,
                 "mean_dnll": None,
                 "cvar05_dnll": None,
                 "utility_retention": None,
                 "utility_mean_nll": None,
                 "para_recall": None,
+                "extraction_generation": None,
+                "candidate_damage": None,
+                "candidate_groups": {
+                    candidate_id: by_id[candidate_id].group
+                    for candidate_id in sorted(audit_ids)
+                },
+                "snapshots": [],
+                "final_checkpoint_decision": decision,
+                "trajectory_cost": dc.asdict(record.cost),
+                "trajectory_metadata": record.metadata,
             }
+
+        selected_index = decision["selected_index"]
+        eligible_indices = [
+            entry["index"] for entry in decision["trace"]
+            if entry["eligible_checkpoint"]
+        ]
+        diagnostic_index = eligible_indices[-1] if eligible_indices else None
+        report_index = selected_index if selected_index is not None else diagnostic_index
         terminal = record.snapshots[-1]
-        damage = [terminal.nll[cid] - record.nll0[cid] for cid in sorted(audit_ids)]
-        extra = terminal.extra or {}
+        if report_index is None:
+            return {
+                "reached": False,
+                "feasible": False,
+                "diagnostic_only": True,
+                "step": None,
+                "selected_checkpoint_step": None,
+                "terminal_step": int(terminal.step),
+                "forget_recall": None,
+                "mean_dnll": None,
+                "cvar05_dnll": None,
+                "utility_retention": None,
+                "utility_mean_nll": None,
+                "para_recall": None,
+                "extraction_generation": None,
+                "candidate_damage": None,
+                "candidate_groups": {
+                    candidate_id: by_id[candidate_id].group
+                    for candidate_id in sorted(audit_ids)
+                },
+                "snapshots": [],
+                "final_checkpoint_decision": decision,
+                "trajectory_cost": dc.asdict(record.cost),
+                "trajectory_metadata": record.metadata,
+            }
+        reported = record.snapshots[int(report_index)]
+        damage_by_id = {
+            cid: reported.nll[cid] - record.nll0[cid]
+            for cid in sorted(audit_ids)
+        }
+        damage = list(damage_by_id.values())
+        extra = reported.extra or {}
         return {
-            "reached": bool(terminal.forget_recall <= recall_max),
-            "step": int(terminal.step),
-            "forget_recall": float(terminal.forget_recall),
+            "reached": bool(reported.forget_recall <= recall_max),
+            "feasible": bool(decision["feasible"]),
+            "diagnostic_only": not bool(decision["feasible"]),
+            "step": int(reported.step),
+            "selected_checkpoint_step": decision["selected_step"],
+            "terminal_step": int(terminal.step),
+            "forget_recall": float(reported.forget_recall),
             "mean_dnll": sum(damage) / len(damage),
             "cvar05_dnll": cvar_upper(damage, 0.05),
             "utility_retention": extra.get("utility_retention"),
             "utility_mean_nll": extra.get("utility_mean_nll"),
             "para_recall": extra.get("para_recall"),
+            "extraction_generation": extra.get("extraction_generation"),
+            "candidate_damage": damage_by_id,
+            "candidate_groups": {
+                candidate_id: by_id[candidate_id].group
+                for candidate_id in sorted(audit_ids)
+            },
+            "snapshots": [
+                {
+                    "step": int(snapshot.step),
+                    "forget_recall": float(snapshot.forget_recall),
+                    "extra": snapshot.extra,
+                    "candidate_damage": {
+                        cid: snapshot.nll[cid] - record.nll0[cid]
+                        for cid in sorted(audit_ids)
+                    },
+                }
+                for snapshot in record.snapshots
+            ],
+            "final_checkpoint_decision": decision,
+            "trajectory_cost": dc.asdict(record.cost),
+            "trajectory_metadata": record.metadata,
         }
 
-    def row_base(parent: str, selector: str) -> dict[str, object]:
-        meta = selector_meta.get(selector, {
+    parent_checkpoint_meta: dict[str, dict[str, object]] = {}
+
+    def row_base(
+        parent: str,
+        selector: str,
+        *,
+        meta_override: Mapping[str, object] | None = None,
+    ) -> dict[str, object]:
+        meta = dict(meta_override or selector_meta.get(selector, {
             "selector_type": "none", "alpha": None, "backward_free": True,
-        })
+        }))
         channel = DECLARED_CHANNEL[parent]
         selected_alpha = (
             float(alpha_freeze["models"][model_id][parent]) if alpha_freeze else None
@@ -782,20 +1249,35 @@ def _run_worker(
             "parent": parent,
             "channel": channel,
             "selector": selector,
+            "parent_checkpoint": parent_checkpoint_meta.get(parent),
             **meta,
             "declared_prior": (
+                meta.get("selector_type") == "mixture"
+                and
                 meta.get("alpha") is not None
                 and float(meta["alpha"]) == declared_alpha(channel)
             ),
             "deployed": (
-                selected_alpha is not None and meta.get("alpha") is not None
+                meta.get("selector_type") == "mixture"
+                and selected_alpha is not None and meta.get("alpha") is not None
                 and float(meta["alpha"]) == selected_alpha
             ),
         }
 
+    random_result_log = out / "random_draws.partial.jsonl"
+    prior_random_rows = _read_jsonl(random_result_log)
+    random_rows_by_key = {
+        (str(row["parent"]), str(row["random_draw_id"])): row
+        for row in prior_random_rows
+    }
+    if len(random_rows_by_key) != len(prior_random_rows):
+        raise RuntimeError("duplicate parent/draw ID in repeated-random partial log")
+
     for parent in phase["parents"]:
-        required_selectors = [alpha_label(alpha) for alpha in alphas_by_parent[parent]]
-        required_selectors += ["exact_grad_norm", "random"]
+        regular_selectors = [alpha_label(alpha) for alpha in alphas_by_parent[parent]]
+        required_selectors = [*regular_selectors, "random"]
+        if phase_name == "audit":
+            required_selectors.append("exact_grad_norm")
         expected_keys = {(parent, "none"), *((parent, value) for value in required_selectors)}
         if expected_keys <= completed:
             log(f"SKIP complete parent {parent}")
@@ -817,6 +1299,46 @@ def _run_worker(
                 name: tensor.detach().cpu().clone()
                 for name, tensor in save_params(probe_block.select(parent_model)).items()
             }
+            checkpoint_digest = hashlib.sha256()
+            for name, tensor in sorted(saved_parent_block.items()):
+                contiguous = tensor.detach().cpu().contiguous()
+                checkpoint_digest.update(name.encode("utf-8"))
+                checkpoint_digest.update(str(tuple(contiguous.shape)).encode("utf-8"))
+                checkpoint_digest.update(str(contiguous.dtype).encode("utf-8"))
+                checkpoint_digest.update(
+                    contiguous.view(torch.uint8).numpy().tobytes()
+                )
+            parent_checkpoint_meta[parent] = {
+                "first_direct_reaching": bool(
+                    parent_record.snapshots
+                    and parent_record.snapshots[-1].forget_recall <= recall_max
+                ),
+                "step": (
+                    int(parent_record.snapshots[-1].step)
+                    if parent_record.snapshots else None
+                ),
+                "block_sha256": checkpoint_digest.hexdigest(),
+                "shared_by_all_repair_arms": True,
+            }
+            prior_parent_rows = [
+                row for row in prior_rows if str(row.get("parent")) == parent
+            ] + [
+                row for row in prior_random_rows if str(row.get("parent")) == parent
+            ]
+            prior_checkpoint_hashes = {
+                (row.get("parent_checkpoint") or {}).get("block_sha256")
+                for row in prior_parent_rows
+                if (row.get("parent_checkpoint") or {}).get("block_sha256")
+            }
+            current_checkpoint_hash = parent_checkpoint_meta[parent]["block_sha256"]
+            if prior_checkpoint_hashes and prior_checkpoint_hashes != {
+                current_checkpoint_hash
+            }:
+                raise RuntimeError(
+                    f"resume changed first-reaching parent checkpoint for {parent}: "
+                    f"prior={sorted(prior_checkpoint_hashes)}, "
+                    f"current={current_checkpoint_hash}"
+                )
         finally:
             del parent_model
             gc.collect()
@@ -842,6 +1364,16 @@ def _run_worker(
                     "error": "parent_did_not_reach_forget_criterion",
                     **parent_metrics,
                 }
+                if selector == "random":
+                    row.update({
+                        "selector_type": "repeated_random",
+                        "random_draw_count": int(repeated_cfg["B_rand"]),
+                        "random_draw_ids": [spec["draw_id"] for spec in random_specs],
+                        "all_random_draws_required": True,
+                    })
+                elif selector == "exact_grad_norm":
+                    exact_key = exact_key_by_parent[parent]
+                    row.update(selector_meta[exact_key])
                 _append_jsonl(result_log, row)
                 completed.add((parent, selector))
             del parent_record, saved_parent_block
@@ -854,15 +1386,20 @@ def _run_worker(
             batch_size=int(common["batch_size"]),
             stage2_snapshots=int(phase["stage2"]["snapshots"]),
         )
-        for selector in required_selectors:
-            if (parent, selector) in completed:
-                log(f"  SKIP completed selector {selector}")
-                continue
-            partition = partitions[selector]
+        repair_start_step = int(parent_record.snapshots[-1].step)
+
+        def run_selector(
+            *, selector_key: str, public_selector: str, meta: Mapping[str, object]
+        ) -> dict[str, object]:
+            partition = partitions[selector_key]
             protect = [by_id[cid] for cid in partition.protect]
             remote = [by_id[cid] for cid in partition.remote_stream]
-            log(f"  repair selector={selector} protect={len(protect)} remote={len(remote)}")
+            log(
+                f"  repair selector={public_selector} partition={selector_key} "
+                f"protect={len(protect)} remote={len(remote)}"
+            )
             repair_model = fresh()
+            record = None
             try:
                 load_params_(probe_block.select(repair_model), saved_parent_block)
                 record = run_repair_from_reached(
@@ -878,24 +1415,103 @@ def _run_worker(
                     extra_eval=extra_eval,
                     log=log,
                 )
-                result_metrics = metrics(record)
+                result_metrics = metrics(record, after_step=repair_start_step)
             finally:
                 del repair_model
-                if "record" in locals():
+                if record is not None:
                     del record
                 gc.collect()
                 gate_runtime.clear_cuda_cache()
-            row = {
-                **row_base(parent, selector),
+            return {
+                **row_base(parent, public_selector, meta_override=meta),
                 "executed": True,
+                "partition_key": selector_key,
                 "partition_sha": partition.manifest_sha,
                 **result_metrics,
             }
+
+        for selector in regular_selectors:
+            if (parent, selector) in completed:
+                log(f"  SKIP completed selector {selector}")
+                continue
+            row = run_selector(
+                selector_key=selector,
+                public_selector=selector,
+                meta=selector_meta[selector],
+            )
             _append_jsonl(result_log, row)
             completed.add((parent, selector))
             log(
                 f"    reached={row['reached']} CVaR={row['cvar05_dnll']} "
                 f"utility={row['utility_retention']}"
+            )
+
+        if phase_name == "audit" and (parent, "exact_grad_norm") not in completed:
+            exact_key = exact_key_by_parent[parent]
+            row = run_selector(
+                selector_key=exact_key,
+                public_selector="exact_grad_norm",
+                meta=selector_meta[exact_key],
+            )
+            _append_jsonl(result_log, row)
+            completed.add((parent, "exact_grad_norm"))
+            log(
+                f"    exact-energy reached={row['reached']} feasible={row['feasible']} "
+                f"CVaR={row['cvar05_dnll']}"
+            )
+
+        if (parent, "random") not in completed:
+            for spec in random_specs:
+                draw_id = str(spec["draw_id"])
+                random_key = (parent, draw_id)
+                if random_key in random_rows_by_key:
+                    log(f"  SKIP completed repeated-random draw {draw_id}")
+                    continue
+                selector_key = str(spec["selector_key"])
+                draw_row = run_selector(
+                    selector_key=selector_key,
+                    public_selector="random",
+                    meta=selector_meta[selector_key],
+                )
+                _append_jsonl(random_result_log, draw_row)
+                random_rows_by_key[random_key] = draw_row
+            expected_draw_ids = {str(spec["draw_id"]) for spec in random_specs}
+            draw_rows = [
+                row for (row_parent, _), row in random_rows_by_key.items()
+                if row_parent == parent
+            ]
+            actual_draw_ids = {str(row["random_draw_id"]) for row in draw_rows}
+            if actual_draw_ids != expected_draw_ids or len(draw_rows) != len(expected_draw_ids):
+                raise RuntimeError(
+                    f"repeated-random roster incomplete for {parent}: "
+                    f"missing={sorted(expected_draw_ids - actual_draw_ids)}, "
+                    f"extra={sorted(actual_draw_ids - expected_draw_ids)}"
+                )
+            draw_rows.sort(key=lambda row: str(row["random_draw_id"]))
+            random_metrics = _aggregate_random_draw_metrics(draw_rows)
+            row = {
+                **row_base(
+                    parent,
+                    "random",
+                    meta_override={
+                        "selector_type": "repeated_random",
+                        "alpha": None,
+                        "backward_free": True,
+                        "all_random_draws_required": True,
+                    },
+                ),
+                "partition_shas": {
+                    str(row["random_draw_id"]): str(row["partition_sha"])
+                    for row in draw_rows
+                },
+                **random_metrics,
+            }
+            _append_jsonl(result_log, row)
+            completed.add((parent, "random"))
+            log(
+                f"    repeated-random draws={row['random_draw_count']} "
+                f"reached={row['reached']} feasible={row['feasible']} "
+                f"CVaR={row['cvar05_dnll']}"
             )
         del parent_record, saved_parent_block
         gate_runtime.clear_cuda_cache()
@@ -905,7 +1521,9 @@ def _run_worker(
     for parent in phase["parents"]:
         expected.add((parent, "none"))
         expected |= {(parent, alpha_label(alpha)) for alpha in alphas_by_parent[parent]}
-        expected |= {(parent, "exact_grad_norm"), (parent, "random")}
+        expected.add((parent, "random"))
+        if phase_name == "audit":
+            expected.add((parent, "exact_grad_norm"))
     actual = {(row["parent"], row["selector"]) for row in rows}
     if actual != expected or len(rows) != len(expected):
         raise RuntimeError(

@@ -36,8 +36,8 @@ class Run:
     terminal_recall: dict[str, float]
 
 
-def _terminal_damage(
-    run_dir: Path, objectives: list[str]
+def _first_reaching_damage(
+    run_dir: Path, objectives: list[str], recall_max: float
 ) -> tuple[dict[str, dict[str, float]], dict[str, float]]:
     out = {}
     recall = {}
@@ -45,8 +45,20 @@ def _terminal_damage(
         path = run_dir / f"traj_{objective}" / "damage.json"
         payload = json.loads(path.read_text(encoding="utf-8"))
         nll0 = payload["nll0"]
-        terminal = payload["snapshots"][-1]["nll"]
-        out[objective] = {key: float(terminal[key] - nll0[key]) for key in terminal if key in nll0}
+        snapshots = payload["snapshots"]
+        reaching = next(
+            (snapshot for snapshot in snapshots
+             if float(snapshot["forget_recall"]) <= recall_max),
+            None,
+        )
+        # Preserve a non-reaching row for coverage diagnostics, but never
+        # substitute its terminal outcome for the primary first-reach horizon.
+        selected = reaching if reaching is not None else snapshots[-1]
+        selected_nll = selected["nll"]
+        out[objective] = {
+            key: float(selected_nll[key] - nll0[key])
+            for key in selected_nll if key in nll0
+        }
         recall[objective] = float(payload["snapshots"][-1]["forget_recall"])
     return out, recall
 
@@ -61,7 +73,12 @@ def _load_run(path: Path) -> tuple[Run, dict]:
     }
     if not scores:
         raise ValueError(f"run has no opened predictor scores: {path}")
-    damage, terminal_recall = _terminal_damage(path, manifest["objectives"])
+    recall_max = float(
+        manifest.get("objective_acceptance_rule", {}).get("forget_recall_max", 0.10)
+    )
+    damage, terminal_recall = _first_reaching_damage(
+        path, manifest["objectives"], recall_max
+    )
     sizes = {predictor: len(values) for predictor, values in scores.items()}
     if len(set(sizes.values())) != 1:
         raise ValueError(f"predictor seals have unequal candidate counts in {path}: {sizes}")
@@ -89,7 +106,14 @@ def _load_run(path: Path) -> tuple[Run, dict]:
 
 
 def _common_ids(run: Run, predictor: str, objective: str) -> list[str]:
-    ids = sorted(set(run.scores[predictor]) & set(run.damage[objective]))
+    score_ids = set(run.scores[predictor])
+    missing = score_ids - set(run.damage[objective])
+    if missing:
+        raise ValueError(
+            f"incomplete effect support in {run.path}/{predictor}/{objective}: "
+            f"missing {sorted(missing)[:5]}"
+        )
+    ids = sorted(score_ids)
     if len(ids) < 20:
         raise ValueError(f"too few common candidates in {run.path}: {len(ids)}")
     return ids

@@ -78,6 +78,7 @@ class TrajectoryRecord:
     nll0: dict[str, float]
     snapshots: list[Snapshot] = field(default_factory=list)
     cost: CostRecord = field(default_factory=CostRecord)
+    metadata: dict = field(default_factory=dict)
 
     def damage_at(self, index: int = -1) -> dict[str, float]:
         snap = self.snapshots[index]
@@ -164,9 +165,18 @@ def run_trajectory(
         out = Path(out_dir)
         out.mkdir(parents=True, exist_ok=True)
         payload = {
+            "schema": "paper-trajectory-v2",
             "objective": objective,
             "request": request.request_id,
             "nll0": rec.nll0,
+            "candidate_groups": {
+                example.example_id: example.group
+                for example in request.universe.examples
+            },
+            "cost": {
+                key: value for key, value in vars(rec.cost).items()
+            },
+            "metadata": rec.metadata,
             "snapshots": [
                 {"step": s.step, "forget_recall": s.forget_recall, "extra": s.extra, "nll": s.nll}
                 for s in rec.snapshots

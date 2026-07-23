@@ -1,0 +1,179 @@
+schema_version: 1
+
+# This roster, rather than the set of files that happened to finish, defines
+# every denominator in the paper. Artifact paths in the ledger are repository-
+# relative and their SHA-256 digests are verified before any macro is written.
+ledger: results/paper/evidence_ledger.json
+outputs:
+  readiness_json: results/paper/evidence_readiness.json
+  tex_macros: sections/generated/results_macros.tex
+
+decision:
+  alpha: 0.05
+  minimum_support_units: 2
+  prediction_iut:
+    contrasts: [joint_minus_s0, joint_minus_s1]
+    favorable_sign: positive
+  protection_iut:
+    comparators: [no_repair, repeated_random, s0, s1]
+    outcomes: [mean, cvar95]
+    favorable_sign: negative
+    common_arms: [joint, no_repair, repeated_random, s0, s1]
+    exact_norm_role: descriptive_same_estimand_reference_outside_iut
+
+parents: &primary_parents
+  - graddiff
+  - npo
+  - simnpo
+  - gru
+  - rmu
+  - repnoise
+  - circuit_breakers
+
+settings:
+  - id: tofu_qwen25_1p5b
+    dataset: TOFU
+    model: Qwen2.5-1.5B
+    role: primary
+    parents: *primary_parents
+  - id: tofu_qwen25_7b
+    dataset: TOFU
+    model: Qwen2.5-7B
+    role: model_scale
+    parents: *primary_parents
+  - id: tofu_llama31_8b
+    dataset: TOFU
+    model: Llama-3.1-8B
+    role: model_family
+    parents: *primary_parents
+  - id: wmdp_bio_mmlu_qwen25_7b
+    dataset: WMDP-bio/MMLU
+    model: Qwen2.5-7B
+    role: dataset_replication
+    parents: *primary_parents
+  - id: muse_news_qwen25_7b
+    dataset: MUSE-News
+    model: Qwen2.5-7B
+    role: dataset_replication
+    parents: *primary_parents
+  - id: rwku_qwen25_7b
+    dataset: RWKU
+    model: Qwen2.5-7B
+    role: dataset_replication
+    parents: *primary_parents
+  - id: muse_books_qwen25_7b
+    dataset: MUSE-Books
+    model: Qwen2.5-7B
+    role: stress
+    parents: *primary_parents
+  - id: pistol_qwen25_7b
+    dataset: PISTOL
+    model: Qwen2.5-7B
+    role: stress
+    parents: *primary_parents
+
+# A setting supports the full chain only when at least one output-readout and
+# one representation-readout parent each pass both prediction and protection.
+# All seven parent rows remain visible denominators. The paper-level statement
+# additionally requires primary, >=1/2 model, and >=2/3 dataset settings.
+multi_setting_rule:
+  id: primary_plus_model_and_dataset_replication_v1
+  primary_required: [tofu_qwen25_1p5b]
+  groups:
+    - id: model_transfer
+      settings: [tofu_qwen25_7b, tofu_llama31_8b]
+      minimum_pass: 1
+    - id: dataset_replication
+      settings:
+        - wmdp_bio_mmlu_qwen25_7b
+        - muse_news_qwen25_7b
+        - rwku_qwen25_7b
+      minimum_pass: 2
+  parent_groups:
+    - id: output_readout
+      parents: [graddiff, npo, simnpo, gru]
+      minimum_joint_pass: 1
+      multiplicity: bonferroni
+    - id: representation_readout
+      parents: [rmu, repnoise, circuit_breakers]
+      minimum_joint_pass: 1
+      multiplicity: bonferroni
+  stress_excluded: [muse_books_qwen25_7b, pistol_qwen25_7b]
+  require_both_claims: true
+
+artifacts:
+  - campaign_manifest
+  - tail_structure
+  - lse_fidelity_cost
+  - protection_budget_sweep
+  - specificity_negative_controls
+
+# Registry for the intentionally compact two-main-plus-five-appendix evidence
+# layout. "producer" names the required upstream stage; build_evidence.py is
+# the single validator/renderer for all of them.
+tables:
+  - id: main_core_evidence
+    label: tab:core-evidence
+    location: main
+    settings: [tofu_qwen25_1p5b]
+    claims: [prediction, protection]
+    artifacts: []
+    producer: experiments/paper/build_evidence.py
+  - id: main_robustness
+    label: tab:robustness
+    location: main
+    settings:
+      - tofu_qwen25_1p5b
+      - tofu_qwen25_7b
+      - tofu_llama31_8b
+      - wmdp_bio_mmlu_qwen25_7b
+      - muse_news_qwen25_7b
+      - rwku_qwen25_7b
+      - muse_books_qwen25_7b
+      - pistol_qwen25_7b
+    claims: [prediction, protection]
+    artifacts: []
+    producer: experiments/paper/build_evidence.py
+  - id: appendix_scope_contract
+    label: tab:datasets
+    location: appendix
+    settings: []
+    claims: []
+    artifacts: [campaign_manifest]
+    producer: experiments/paper/build_evidence.py
+  - id: appendix_tail_prediction
+    label: tab:tail-structure
+    location: appendix
+    settings: [tofu_qwen25_1p5b]
+    claims: [prediction]
+    artifacts: [tail_structure]
+    producer: experiments/paper/build_evidence.py
+  - id: appendix_lse_fidelity_cost
+    label: tab:bwfree
+    location: appendix
+    settings: []
+    claims: []
+    artifacts: [lse_fidelity_cost]
+    producer: experiments/paper/build_evidence.py
+  - id: appendix_protection_budget
+    label: tab:budget-sweep
+    location: appendix
+    settings: [tofu_qwen25_1p5b]
+    claims: [protection]
+    artifacts: [protection_budget_sweep]
+    producer: experiments/paper/build_evidence.py
+  - id: appendix_boundaries
+    label: tab:specificity
+    location: appendix
+    settings:
+      - tofu_qwen25_1p5b
+      - tofu_qwen25_7b
+      - tofu_llama31_8b
+      - wmdp_bio_mmlu_qwen25_7b
+      - muse_news_qwen25_7b
+      - rwku_qwen25_7b
+      - muse_books_qwen25_7b
+      - pistol_qwen25_7b
+    claims: [prediction, protection]
+    artifacts: [specificity_negative_controls]
+    producer: experiments/paper/build_evidence.py

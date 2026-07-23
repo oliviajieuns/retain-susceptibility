@@ -29,7 +29,7 @@ from rsus.probe.finite_diff import canonical_forget_direction, fd_scores_along
 
 @register("grad_norm")
 def score_grad_norm(model: torch.nn.Module, request: Request, spec: ProbeSpec) -> ScoreProfile:
-    """Direction-free control: block-gradient norm per candidate."""
+    """Exact same-estimand reference: squared block-gradient norm per candidate."""
     rec = CostRecord()
     with Meter(rec):
         sel = spec.block.select(model)
@@ -41,7 +41,11 @@ def score_grad_norm(model: torch.nn.Module, request: Request, spec: ProbeSpec) -
                 seq_mean_answer_nll(model, batch)[0].backward()
                 rec.fwd_passes += 1
                 rec.bwd_passes += 1
-                scores[ex.example_id] = float(vec_norm(grads_of(sel)))
+                tokens = int(batch["attention_mask"].sum())
+                rec.tokens_fwd += tokens
+                rec.tokens_bwd += tokens
+                norm = float(vec_norm(grads_of(sel)))
+                scores[ex.example_id] = norm * norm
         model.zero_grad(set_to_none=True)
     return ScoreProfile(request.request_id, "grad_norm", scores, spec, rec)
 
@@ -85,7 +89,14 @@ def score_knn_lexical(model: torch.nn.Module, request: Request, spec: ProbeSpec)
     return ScoreProfile(request.request_id, "knn_lexical", scores, spec, rec)
 
 
-def _mean_pooled_reps(model: torch.nn.Module, batches, rec: CostRecord) -> dict[str, torch.Tensor]:
+def _mean_pooled_reps(
+    model: torch.nn.Module,
+    batches,
+    rec: CostRecord,
+    *,
+    layer: int = -1,
+    pooling: str = "answer_mean",
+) -> dict[str, torch.Tensor]:
     reps: dict[str, torch.Tensor] = {}
     with torch.no_grad():
         for batch in batches:
@@ -95,8 +106,24 @@ def _mean_pooled_reps(model: torch.nn.Module, batches, rec: CostRecord) -> dict[
                 attention_mask=batch["attention_mask"],
                 output_hidden_states=True,
             )
-            h = out.hidden_states[-1]
-            mask = batch["attention_mask"].unsqueeze(-1).to(h.dtype)
+            h = out.hidden_states[layer]
+            if pooling == "answer_mean":
+                mask_2d = batch["labels"] != IGNORE
+            elif pooling == "all_tokens_mean":
+                mask_2d = batch["attention_mask"].bool()
+            elif pooling == "final_answer_token":
+                answer = batch["labels"] != IGNORE
+                mask_2d = torch.zeros_like(answer)
+                last = answer.long().sum(dim=1) - 1
+                for row in range(answer.shape[0]):
+                    positions = torch.nonzero(answer[row], as_tuple=False).flatten()
+                    if positions.numel():
+                        mask_2d[row, positions[last[row]]] = True
+            else:
+                raise ValueError(f"unknown representation pooling: {pooling!r}")
+            if not bool(mask_2d.any(dim=1).all()):
+                raise ValueError("representation pooling found an example with no answer tokens")
+            mask = mask_2d.unsqueeze(-1).to(h.dtype)
             pooled = (h * mask).sum(dim=1) / mask.sum(dim=1)
             rec.fwd_passes += 1
             rec.tokens_fwd += int(batch["attention_mask"].sum())
@@ -112,10 +139,24 @@ def score_knn_feature(model: torch.nn.Module, request: Request, spec: ProbeSpec)
     under audit."""
     rec = CostRecord()
     with Meter(rec):
-        f_reps = _mean_pooled_reps(model, request.forget_batches(spec.batch_size), rec)
-        c_reps = _mean_pooled_reps(model, request.universe.batches(spec.batch_size), rec)
+        f_reps = _mean_pooled_reps(
+            model,
+            request.forget_batches(spec.batch_size),
+            rec,
+            layer=spec.representation_layer,
+            pooling=spec.representation_pooling,
+        )
+        c_reps = _mean_pooled_reps(
+            model,
+            request.universe.batches(spec.batch_size),
+            rec,
+            layer=spec.representation_layer,
+            pooling=spec.representation_pooling,
+        )
         F = torch.nn.functional.normalize(torch.stack(list(f_reps.values())), dim=1)
-        k = min(5, F.shape[0])
+        if spec.representation_k < 1:
+            raise ValueError("representation_k must be positive")
+        k = min(spec.representation_k, F.shape[0])
         scores: dict[str, float] = {}
         for eid, v in c_reps.items():
             sims = F @ torch.nn.functional.normalize(v, dim=0)

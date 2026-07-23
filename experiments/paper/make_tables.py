@@ -1,4 +1,10 @@
-"""Generate the paper's main LaTeX tables from run artifacts.
+"""LEGACY diagnostic renderer for the superseded channel-interaction draft.
+
+This file does not produce the current paper's claim-bearing tables. Use
+``aggregate_raw.py`` followed by ``build_evidence.py`` for the authoritative
+prediction/protection IUT and fixed-denominator pipeline. The explicit
+``--legacy-diagnostic`` switch prevents an old CSV from being mistaken for a
+current-paper result.
 
 Table 1  channel x predictor-family matrix (from channel_report.csv):
          rows = predictors grouped by family, cols = objectives grouped by
@@ -190,6 +196,7 @@ def table2(crossed: dict) -> str:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
+    ap.add_argument("--legacy-diagnostic", action="store_true")
     ap.add_argument("--report", default="", help="channel_report.csv from channel_report.py")
     ap.add_argument("--crossed", default="", help="crossed.json from crossed_protection.py")
     ap.add_argument("--out", default=str(ROOT / "docs" / "tables"))
@@ -200,6 +207,11 @@ def main() -> None:
                     help="comma-separated predictors moved out of Table 1 into "
                          "table1c_controls.tex (space fallback)")
     a = ap.parse_args()
+    if not a.legacy_diagnostic:
+        ap.error(
+            "legacy draft renderer; use experiments/paper/aggregate_raw.py and "
+            "build_evidence.py, or pass --legacy-diagnostic intentionally"
+        )
     out = Path(a.out)
     out.mkdir(parents=True, exist_ok=True)
     flags = {k: v for k, v in (kv.split("=") for kv in a.flags.split(",") if kv.strip())}

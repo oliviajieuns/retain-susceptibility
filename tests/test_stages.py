@@ -230,6 +230,9 @@ def test_engine_repaired_pipeline(req):
     assert rec.snapshots[0].step == engine_last
     assert rec.snapshots[-1].step == engine_last + cfg.stage2.max_steps
     assert set(rec.nll0) == set(rec.snapshots[-1].nll)
+    assert rec.cost.wall_s > 0.0
+    assert rec.cost.bwd_passes > 0
+    assert rec.metadata["stage2"]["steps"] == cfg.stage2.max_steps
 
 
 def test_crossed_sweep_labels_and_runs():

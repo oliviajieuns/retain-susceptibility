@@ -535,6 +535,8 @@ def main():
 
             set_embed_encoder(encode_sentences)
     scores_by_pred = {}
+    profile_artifact_dir = out / "profile_artifacts"
+    profile_artifact_dir.mkdir(parents=True, exist_ok=True)
     for pred in predictors:
         log(f"scoring: {pred}")
         scorer_model = fresh()
@@ -544,6 +546,35 @@ def main():
             del scorer_model
             clear_cuda_cache()
         scores_by_pred[pred] = prof.scores
+        profile_payload = {
+            "schema": "paper-profile-v2",
+            "request": req.request_id,
+            "model_id": a.model_id or Path(a.model).name,
+            "scorer": pred,
+            "candidate_universe_sha": req.universe.sha,
+            "probe": {
+                "block": probe_block.pattern,
+                "eta": spec.eta,
+                "norm_eta": spec.norm_eta,
+                "direction_count": spec.n_dirs,
+                "direction_seed": spec.seed,
+                "loss": spec.loss,
+            },
+            "cost": vars(prof.cost),
+            "candidates": [
+                {
+                    "candidate_id": candidate_id,
+                    "group": by_id[candidate_id].group,
+                    "fold": "audit" if candidate_id in audit_ids else "discovery",
+                    "score": prof.scores[candidate_id],
+                }
+                for candidate_id in sorted(prof.scores)
+            ],
+            "artifacts": prof.artifacts,
+        }
+        (profile_artifact_dir / f"{pred}.json").write_text(
+            json.dumps(profile_payload, indent=2, sort_keys=True), encoding="utf-8"
+        )
         seal_scores(out / "seals", out / "seal_ledger.jsonl", req.request_id, pred,
                     {c: prof.scores[c] for c in audit_ids})
 

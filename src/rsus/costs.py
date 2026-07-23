@@ -39,11 +39,16 @@ class Meter:
 
     def __enter__(self):
         if torch.cuda.is_available():
+            # CUDA kernels are asynchronous; synchronize both measurement
+            # boundaries or wall time can omit queued model work.
+            torch.cuda.synchronize()
             torch.cuda.reset_peak_memory_stats()
         self._t0 = time.perf_counter()
         return self.rec
 
     def __exit__(self, *exc):
+        if torch.cuda.is_available():
+            torch.cuda.synchronize()
         self.rec.wall_s += time.perf_counter() - self._t0
         if torch.cuda.is_available():
             self.rec.peak_mem_bytes = max(

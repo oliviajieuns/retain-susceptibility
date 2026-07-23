@@ -28,6 +28,9 @@ class ProbeSpec:
     batch_size: int = 8
     n_dirs: int = 8  # random probe directions for norm-estimating scorers (fd_norm)
     norm_eta: float | None = None  # separate (larger) FD radius for fd_norm; random
+    representation_k: int = 5
+    representation_layer: int = -1
+    representation_pooling: str = "answer_mean"
     # projections give small g.v, so at the alignment eta the loss difference sits
     # near the fp32 cancellation floor and the squared estimator is noise-inflated.
     # None -> fall back to eta.
@@ -40,6 +43,10 @@ class ScoreProfile:
     scores: dict[str, float]
     spec: ProbeSpec
     cost: CostRecord = field(default_factory=CostRecord)
+    # Raw, scorer-specific evidence needed for integrity checks and numerical
+    # ablations.  Production runners must persist this before releasing a
+    # sealed audit; aggregates alone are not sufficient for paper claims.
+    artifacts: dict[str, object] = field(default_factory=dict)
 
     def ranking(self) -> list[str]:
         """Candidate ids by descending score, deterministic tie-break by id."""

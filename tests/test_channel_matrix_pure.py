@@ -109,6 +109,7 @@ class ChannelCampaignContractTest(unittest.TestCase):
         ))
         self.assertEqual(len(commands), len(self.models))
         _, _, command = commands[0]
+        self.assertEqual(command[command.index("--dtype") + 1], "float32")
         self.assertEqual(command[command.index("--dirs") + 1], "64")
         self.assertEqual(command[command.index("--etas") + 1], "0.003")
         self.assertIn("--enforce-gate", command)
@@ -168,6 +169,7 @@ class ChannelCampaignContractTest(unittest.TestCase):
                 len(cfg["audit"]["authors"]) * len(cfg["audit"]["seeds"]),
             )
             _, command, metadata = commands[0]
+            self.assertEqual(command[command.index("--dtype") + 1], "float32")
             self.assertEqual(
                 command[command.index("--generators") + 1],
                 ",".join(all_objectives),

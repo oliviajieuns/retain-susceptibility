@@ -1,5 +1,10 @@
 # Main-table 7B/8B channel-matrix design
 
+> **Mechanism precursor, not the current claim contract.** The historical
+> difference-in-differences endpoint below is diagnostic only. The current
+> paper requires paired joint-over-both-endpoint prediction gains and the
+> eight-way protection IUT defined in `configs/paper/evidence.yaml`.
+
 Status: implementation and prospective protocol, 2026-07-22. No 7B/8B audit
 result is asserted in this document. Empty results must remain empty until the
 frozen audit has completed.

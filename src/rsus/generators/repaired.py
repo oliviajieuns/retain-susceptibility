@@ -101,6 +101,8 @@ def run_repair_from_reached(
         request.request_id,
         dict(engine_record.nll0),
         list(engine_record.snapshots),
+        engine_record.cost,
+        dict(engine_record.metadata),
     )
     eng = engine_record
     reached = bool(eng.snapshots) and eng.snapshots[-1].forget_recall <= cfg.recall_max
@@ -139,8 +141,32 @@ def run_repair_from_reached(
     # single continuous stage-2 run: momentum and guard multipliers persist
     # across snapshots (chunked re-invocation reset both, freezing progress at
     # the budget boundary and shifting divergence onsets with the chunk size)
-    run_stage2(model, block, request, protect, remote, cache, cfg.stage2,
-               snapshot_every=per, snapshot_hook=_snapshot)
+    stage2_result = run_stage2(
+        model, block, request, protect, remote, cache, cfg.stage2,
+        snapshot_every=per, snapshot_hook=_snapshot,
+    )
+    rec.cost = engine_record.cost.merge(stage2_result.cost)
+    rec.metadata["stage2"] = {
+        "steps": stage2_result.steps,
+        "n_accepted": stage2_result.n_accepted,
+        "n_rejected": stage2_result.n_rejected,
+        "eta2_final": stage2_result.eta2_final,
+        "events": [
+            {
+                "step": event.step,
+                "d_seq": event.d_seq,
+                "d_tok": event.d_tok,
+                "lam_seq": event.lam_seq,
+                "lam_tok": event.lam_tok,
+                "accepted": event.accepted,
+                "max_basis_cos": event.max_basis_cos,
+            }
+            for event in stage2_result.events
+        ],
+        "cost": vars(stage2_result.cost),
+        "protect_ids": [example.example_id for example in protect],
+        "neutral_ids": [example.example_id for example in remote],
+    }
     if not rec.snapshots or rec.snapshots[-1].step != step_base + cfg.stage2.max_steps:
         _snapshot(cfg.stage2.max_steps)
     return rec

@@ -123,9 +123,9 @@ alpha_protection:
   campaign_id: kdd27-channel-mixture-protection-7b-v1
   objective_freeze: objective_freeze.yaml
   alpha_freeze: alpha_protection_freeze.yaml
-  parents: [graddiff, npo, rmu, repnoise]
+  parents: [graddiff, npo, simnpo, gru, rmu, repnoise, circuit_breakers]
   probes: {gradient: fd_norm, proximity: knn_feature}
-  normalization: rank01_discovery_only
+  normalization: empirical_midrank_discovery_only
   orientation: (1-alpha)*gradient + alpha*proximity
   alpha_grid: [0, 0.25, 0.5, 0.75, 1]
   declared_prior: {loss_gradient: 0.0, representation: 1.0, hybrid: 0.5}
@@ -155,8 +155,25 @@ alpha_protection:
     aggregation: minimax_across_development_requests_and_seeds
     require_every_development_run: true
     utility_retention_min: 0.90
-    tie_break: [mean_cvar05_dnll, distance_to_declared_prior, alpha]
+    tie_break: [mean_cvar05_dnll, distance_to_midpoint_0p5, alpha]
     prohibited: audit_selection
+  comparators:
+    repeated_random:
+      # Independent allocation pools; each draw ID and complete trajectory is
+      # persisted, then resampled within its request in the paired bootstrap.
+      B_rand: 5
+      seed_base: 271828
+  final_checkpoint:
+    # The reporter selects the last saved repair checkpoint satisfying every
+    # required item. Missing metrics fail closed and no parent checkpoint may
+    # masquerade as a successful repair output.
+    required: [direct_forgetting, paraphrase_forgetting, extraction_generation, utility]
+    direct_recall_max: 0.10
+    paraphrase_recall_max: 0.10
+    # Greedy autoregressive gold-token recall from the prompt alone; unlike
+    # direct recall this never teacher-forces answer tokens.
+    extraction_generation_max: 0.10
+    utility_retention_min: 0.90
   stage2:
     eta2: 3.0e-5
     max_steps: 120

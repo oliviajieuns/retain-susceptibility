@@ -92,7 +92,10 @@ def main() -> None:
             f"extra={sorted(actual_cells - expected_cells)}"
         )
 
-    expected_selectors = len(phase["alpha_grid"]) + 3  # mixture grid + none/random/exact
+    # Exact energy is defined at the already-frozen protection alpha and is
+    # therefore audit-only. Development contains the mixture grid, no repair,
+    # and one explicit summary row for all frozen random draws.
+    expected_selectors = len(phase["alpha_grid"]) + 2
     all_rows = []
     for key, payload in cells.items():
         rows = payload.get("results", [])
