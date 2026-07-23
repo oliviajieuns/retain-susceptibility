@@ -84,12 +84,17 @@ calibration:
       - {id: lr15_s120, lr: 1.5e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
       - {id: lr1_s180, lr: 1.0e-6, steps: 180, forget_weight: 1.0, retain_weight: 1.0}
       - {id: lr1_s240, lr: 1.0e-6, steps: 240, forget_weight: 1.0, retain_weight: 1.0}
+      # Round-3: reach 0.095 at lr1_s240 but the tail blows again (cvar 15.5)
+      # — test the gentle-long tail-thinning hypothesis shared with TOFU-7B.
+      - {id: lr05_s480, lr: 5.0e-7, steps: 480, forget_weight: 1.0, retain_weight: 1.0}
     npo:
       - {id: b01_lr2_s120, lr: 2.0e-6, steps: 120, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
       - {id: b01_lr4_s120, lr: 4.0e-6, steps: 120, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
       # Round-2: responsive (.47->.40) with negative mean damage — escalate.
       - {id: b01_lr8_s120, lr: 8.0e-6, steps: 120, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
       - {id: b01_lr8_s240, lr: 8.0e-6, steps: 240, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
+      # Round-3: still descending (0.47->0.35) — one more dose step.
+      - {id: b01_lr16_s240, lr: 1.6e-5, steps: 240, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
     simnpo:
       - {id: b45_lr2_s120, lr: 2.0e-6, steps: 120, beta: 4.5, forget_weight: 0.125, retain_weight: 1.0}
       - {id: b45_lr4_s120, lr: 4.0e-6, steps: 120, beta: 4.5, forget_weight: 0.125, retain_weight: 1.0}
@@ -103,18 +108,28 @@ calibration:
       # same gentler-longer interiors as graddiff.
       - {id: lr15_s120, lr: 1.5e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
       - {id: lr1_s240, lr: 1.0e-6, steps: 240, forget_weight: 1.0, retain_weight: 1.0}
+      # Round-3: round-2 escalations overshot damage; probe the interior
+      # between lr1_s120 (0.21/0.80) and lr15_s120 (0.065/5.67).
+      - {id: lr125_s120, lr: 1.25e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
     rmu:
       - {id: a10_c3_lr1_s120, lr: 1.0e-6, steps: 120, rmu_alpha: 10.0, rmu_c: 3.0}
       - {id: a10_c3_lr2_s120, lr: 2.0e-6, steps: 120, rmu_alpha: 10.0, rmu_c: 3.0}
       # Round-2: recall .69-.77 at ~zero damage — escalate lr.
       - {id: a10_c3_lr4_s240, lr: 4.0e-6, steps: 240, rmu_alpha: 10.0, rmu_c: 3.0}
       - {id: a10_c3_lr8_s240, lr: 8.0e-6, steps: 240, rmu_alpha: 10.0, rmu_c: 3.0}
+      # Round-3: clean descent 0.77->0.28 at ~zero damage — keep going.
+      - {id: a10_c3_lr16_s240, lr: 1.6e-5, steps: 240, rmu_alpha: 10.0, rmu_c: 3.0}
+      - {id: a10_c3_lr8_s480, lr: 8.0e-6, steps: 480, rmu_alpha: 10.0, rmu_c: 3.0}
     repnoise:
       - {id: a1_c3_lr1_s120, lr: 1.0e-6, steps: 120, rmu_alpha: 1.0, rmu_c: 3.0}
       - {id: a10_c3_lr1_s120, lr: 1.0e-6, steps: 120, rmu_alpha: 10.0, rmu_c: 3.0}
       # Round-2: unlike TOFU, damage stays low (mean .24) — escalate lr/steps.
       - {id: a1_c3_lr2_s120, lr: 2.0e-6, steps: 120, rmu_alpha: 1.0, rmu_c: 3.0}
       - {id: a1_c3_lr1_s240, lr: 1.0e-6, steps: 240, rmu_alpha: 1.0, rmu_c: 3.0}
+      # Round-3: best rep-family trajectory (0.60->0.24 at damage 0.58) —
+      # extend the schedule.
+      - {id: a1_c3_lr1_s360, lr: 1.0e-6, steps: 360, rmu_alpha: 1.0, rmu_c: 3.0}
+      - {id: a1_c3_lr1_s480, lr: 1.0e-6, steps: 480, rmu_alpha: 1.0, rmu_c: 3.0}
     circuit_breakers:
       - {id: a1_lr1_s240, lr: 1.0e-6, steps: 240, rmu_alpha: 1.0}
       - {id: a10_lr1_s240, lr: 1.0e-6, steps: 240, rmu_alpha: 10.0}
