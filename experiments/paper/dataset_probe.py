@@ -17,10 +17,17 @@ Run on any cluster node (HF Hub reachable there):
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+
+# The cluster keeps every benchmark pre-downloaded in the shared HF cache;
+# interactive shells often lack the variable, so default to it when present.
+_SHARED_HF_HOME = "/group-volume/data/hf_home"
+if os.path.isdir(_SHARED_HF_HOME):
+    os.environ.setdefault("HF_HOME", _SHARED_HF_HOME)
 
 # Multiple candidate hub ids per benchmark: the first one that resolves wins,
 # unresolved ids are recorded in the dump so the schema report is honest.
