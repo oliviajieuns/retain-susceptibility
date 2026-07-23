@@ -82,9 +82,14 @@ calibration:
     npo:
       - {id: b01_lr2_s120, lr: 2.0e-6, steps: 120, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
       - {id: b01_lr4_s120, lr: 4.0e-6, steps: 120, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
+      # Round-2 (07-23): plateau 0.53-0.55 at lr 2-4e-6 — one hard escalation
+      # probe to make the cross-scale NPO-plateau claim airtight.
+      - {id: b01_lr8_s240, lr: 8.0e-6, steps: 240, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
     simnpo:
       - {id: b45_lr2_s120, lr: 2.0e-6, steps: 120, beta: 4.5, forget_weight: 0.125, retain_weight: 1.0}
       - {id: b45_lr4_s120, lr: 4.0e-6, steps: 120, beta: 4.5, forget_weight: 0.125, retain_weight: 1.0}
+      # Round-2: plateau 0.82-0.84 — single hard escalation probe.
+      - {id: b45_lr16_s240, lr: 1.6e-5, steps: 240, beta: 4.5, forget_weight: 0.125, retain_weight: 1.0}
     gru:
       - {id: lr1_s120, lr: 1.0e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
       - {id: lr2_s120, lr: 2.0e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
@@ -94,9 +99,19 @@ calibration:
     rmu:
       - {id: a10_c3_lr1_s120, lr: 1.0e-6, steps: 120, rmu_alpha: 10.0, rmu_c: 3.0}
       - {id: a10_c3_lr2_s120, lr: 2.0e-6, steps: 120, rmu_alpha: 10.0, rmu_c: 3.0}
+      # Round-2: 0.78-0.81 at ~zero damage and lr-responsive at every other
+      # scale — escalate hard; one representation-family pass completes the
+      # Sec.5 chain condition for 14B.
+      - {id: a10_c3_lr4_s240, lr: 4.0e-6, steps: 240, rmu_alpha: 10.0, rmu_c: 3.0}
+      - {id: a10_c3_lr8_s240, lr: 8.0e-6, steps: 240, rmu_alpha: 10.0, rmu_c: 3.0}
+      - {id: a10_c3_lr16_s240, lr: 1.6e-5, steps: 240, rmu_alpha: 10.0, rmu_c: 3.0}
     repnoise:
       - {id: a1_c3_lr1_s120, lr: 1.0e-6, steps: 120, rmu_alpha: 1.0, rmu_c: 3.0}
       - {id: a10_c3_lr1_s120, lr: 1.0e-6, steps: 120, rmu_alpha: 10.0, rmu_c: 3.0}
+      # Round-2: 0.696 with damage only 1.2 (in bounds, unlike smaller scales)
+      # — escalate lr and schedule.
+      - {id: a1_c3_lr2_s120, lr: 2.0e-6, steps: 120, rmu_alpha: 1.0, rmu_c: 3.0}
+      - {id: a1_c3_lr1_s240, lr: 1.0e-6, steps: 240, rmu_alpha: 1.0, rmu_c: 3.0}
     circuit_breakers:
       - {id: a1_lr1_s240, lr: 1.0e-6, steps: 240, rmu_alpha: 1.0}
       - {id: a10_lr1_s240, lr: 1.0e-6, steps: 240, rmu_alpha: 10.0}
