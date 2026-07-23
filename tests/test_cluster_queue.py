@@ -142,6 +142,26 @@ def test_worker_executes_units_and_records_results(tmp_path):
     assert failed_log.exists() and "boom" in failed_log.name
 
 
+def test_worker_survives_unlaunchable_command(tmp_path):
+    # A typo'd custom unit (missing binary) must be recorded as a failure,
+    # not crash the worker and orphan the claim.
+    q = WorkQueue(tmp_path / "q")
+    q.enqueue([
+        Unit(unit_id="typo", cmd=["/no/such/binary"], gpus=0, max_attempts=1),
+        Unit(unit_id="after", cmd=["true"], gpus=0),
+    ])
+    log_dir = tmp_path / "logs"
+    log_dir.mkdir()
+    while (claim := q.claim(owner={"host": "test", "gpu": -1})) is not None:
+        worker.run_claim(q, claim, gpu=-1, log_dir=log_dir)
+
+    report = q.status()
+    assert report["counts"] == {"pending": 0, "claimed": 0, "done": 1, "failed": 1}
+    failed = json.loads((q.root / "failed" / "typo.json").read_text(encoding="utf-8"))
+    assert failed["result"]["exit_code"] is None
+    assert "FileNotFoundError" in failed["result"]["error"]
+
+
 def test_make_units_calibration_shards_by_model_and_author():
     cfg = yaml.safe_load(
         (ROOT / "configs/channel_matrix/7b_tofu.yaml").read_text(encoding="utf-8")

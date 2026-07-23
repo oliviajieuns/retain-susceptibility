@@ -73,31 +73,46 @@ def run_claim(queue: WorkQueue, claim: Claim, gpu: int, log_dir: Path) -> bool:
     beater.start()
     started = time.time()
     print(f"[worker gpu{gpu}] start {unit.unit_id} (attempt {attempt}) -> {log_path}", flush=True)
-    with open(log_path, "ab") as log:
-        header = (
-            f"# unit={unit.unit_id} attempt={attempt} host={host} gpu={gpu}\n"
-            f"# cmd={' '.join(unit.cmd)}\n"
-        )
-        log.write(header.encode("utf-8"))
-        log.flush()
-        proc = subprocess.run(unit.cmd, cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT)
-    stop.set()
-    beater.join(timeout=5)
+    exit_code: int | None = None
+    error: str | None = None
+    try:
+        with open(log_path, "ab") as log:
+            header = (
+                f"# unit={unit.unit_id} attempt={attempt} host={host} gpu={gpu}\n"
+                f"# cmd={' '.join(unit.cmd)}\n"
+            )
+            log.write(header.encode("utf-8"))
+            log.flush()
+            proc = subprocess.run(
+                unit.cmd, cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT
+            )
+        exit_code = proc.returncode
+    except Exception as exc:  # a broken unit must never take the worker down
+        error = f"{type(exc).__name__}: {exc}"
+        try:
+            with open(log_path, "ab") as log:
+                log.write(f"# worker error: {error}\n".encode("utf-8"))
+        except OSError:
+            pass
+    finally:
+        stop.set()
+        beater.join(timeout=5)
 
     result = {
-        "exit_code": proc.returncode,
+        "exit_code": exit_code,
+        "error": error,
         "host": host,
         "gpu": gpu,
         "duration_s": round(time.time() - started, 1),
         "log": str(log_path),
     }
-    if proc.returncode == 0:
+    if exit_code == 0:
         queue.complete(claim, result)
         print(f"[worker gpu{gpu}] done {unit.unit_id} ({result['duration_s']}s)", flush=True)
         return True
     state = queue.fail(claim, result)
     print(
-        f"[worker gpu{gpu}] FAIL {unit.unit_id} exit={proc.returncode} -> {state} "
+        f"[worker gpu{gpu}] FAIL {unit.unit_id} exit={exit_code} error={error} -> {state} "
         f"(log: {log_path})",
         flush=True,
     )
@@ -137,14 +152,27 @@ def main() -> None:
     signal.signal(signal.SIGTERM, on_term)
 
     while not interrupted["flag"]:
-        claim = queue.claim(owner=owner)
+        try:
+            claim = queue.claim(owner=owner)
+        except OSError as exc:
+            # Transient shared-volume error: back off and retry, never die.
+            print(f"[worker gpu{args.gpu}] claim error, retrying: {exc}", flush=True)
+            time.sleep(args.poll_s)
+            continue
         if claim is None:
             if not args.wait:
                 print(f"[worker gpu{args.gpu}] queue drained; exiting", flush=True)
                 return
             time.sleep(args.poll_s)
             continue
-        run_claim(queue, claim, args.gpu, log_dir)
+        try:
+            run_claim(queue, claim, args.gpu, log_dir)
+        except Exception as exc:
+            # The claim stays in claimed/ and requeue-stale will recover it;
+            # the worker itself must survive to serve the next unit.
+            print(f"[worker gpu{args.gpu}] unit {claim.unit.unit_id} bookkeeping error: {exc}",
+                  flush=True)
+            time.sleep(args.poll_s)
     print(f"[worker gpu{args.gpu}] terminated by signal", flush=True)
 
 

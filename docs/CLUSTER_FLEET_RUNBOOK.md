@@ -108,6 +108,35 @@ pkill -f "experiments/cluster/worker.py --queue"
 {"unit_id": "chanbal2-s2026", "cmd": ["python", "-u", "experiments/gate_1p5b/gate.py", "--seed", "2026", "..."], "gpus": 1, "max_attempts": 1}
 ```
 
+## 실패 triage — 봉인 러너의 partial 디렉토리는 자동 재시도로 안 살아난다
+
+calibration/audit 러너는 설계상 **부분 산출물이 남은 run 디렉토리를 절대
+재사용하지 않는다** (forensics 보존, seal append-only). 따라서 유닛이 도중에
+죽으면 자동 재시도(2번째 attempt)는 "partial or pre-existing directory"
+메시지로 몇 초 만에 실패하고 failed로 떨어진다 — 이건 데이터 보호가 작동한
+것이지 큐 버그가 아니다. 복구 절차:
+
+```bash
+python experiments/cluster/workqueue.py status --queue <Q>   # failed의 log 경로 확인
+less <log>                                                   # 죽은 원인 파악 (OOM? 노드?)
+mv runs/channel_matrix_7b/calibration/.../<부분런> \
+   runs/forensics/<부분런>.$(date +%s)                        # 부분 산출물 보존·이동
+python experiments/cluster/workqueue.py retry-failed --queue <Q>
+```
+
+`requeue-stale`은 **해당 host의 워커가 정말 죽었는지 확인한 뒤에만** 실행할 것
+(status가 보여주는 host에 들어가 프로세스 확인). NFS 지연으로 하트비트만 늦은
+살아있는 런을 requeue하면 같은 run 디렉토리에 이중 실행이 붙을 수 있다.
+기본 임계 30분은 하트비트 주기(60초)의 30배라 정상 지연으로는 안 걸린다.
+
+## 병렬 폭 감각
+
+calibration 유닛 1개 = gate 런 14개(7 objective × 2 설정) 직렬 ≈ GPU 1장을
+오래 점유. 7B 단일 모델의 calibration 웨이브는 유닛 2개뿐이므로 플릿 전체가
+아니라 **GPU 2장짜리 웨이브**다 — 이때 남는 GPU에 fidelity, 1.5B 시드 복제,
+다른 config 유닛을 같이 적재해 채우는 게 맞다. 플릿이 진짜로 넓게 도는 건
+audit(모델×저자 3)과 alpha-audit(모델×저자×시드 6) + 복수 모델부터다.
+
 ## 주의 (기존 CLAUDE.md 규칙과의 접점)
 
 - audit 계열 unit은 러너 자체의 dirty-worktree 가드를 그대로 통과해야 하므로,
