@@ -279,6 +279,8 @@ def main() -> None:
     parser.add_argument("--units", help="units JSONL file (enqueue)")
     parser.add_argument("--stale-after", type=float, default=1800.0,
                         help="requeue-stale: heartbeat age threshold in seconds")
+    parser.add_argument("--brief", action="store_true",
+                        help="status: one line per queue state instead of full JSON")
     args = parser.parse_args()
 
     queue = WorkQueue(Path(args.queue))
@@ -294,12 +296,19 @@ def main() -> None:
             print(f"  {unit_id}")
     elif args.action == "status":
         report = queue.status()
-        print(json.dumps(report, indent=2))
+        if not args.brief:
+            print(json.dumps(report, indent=2))
         counts = report["counts"]
         total = sum(counts.values())
         done = counts.get("done", 0)
         print(f"progress: {done}/{total} done, {counts.get('claimed', 0)} running, "
               f"{counts.get('pending', 0)} pending, {counts.get('failed', 0)} failed")
+        if args.brief:
+            for row in report["claimed"]:
+                print(f"  RUN  {row['unit_id']}  {row['host']} gpu{row['gpu']} "
+                      f"hb={row['heartbeat_age_s']}s")
+            for row in report["failed"]:
+                print(f"  FAIL {row['unit_id']}  exit={row['exit_code']}  {row['log']}")
     elif args.action == "requeue-stale":
         requeued = queue.requeue_stale(args.stale_after)
         print(f"requeued {len(requeued)} stale unit(s): {requeued}")
