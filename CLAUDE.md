@@ -11,9 +11,13 @@ Claude Code 세션 컨테이너에는 GPU가 없다 (CPU 검증만 가능).
 - **레포 위치(공식)**: `/group-volume/jieuns.shin/retain-susceptibility` — 홈에 클론하지 말 것.
 - 매 세션 시작 루틴:
   `source /group-volume/jieuns.shin/venvs/exp/bin/activate && cd /group-volume/jieuns.shin/retain-susceptibility`
-- **노드별 GPU 수가 다름**: H100 80GB × 1 또는 × 2 (예: run259703은 1장, run259706은 2장).
-  띄우기 전 반드시 `nvidia-smi`로 개수 확인 — 없는 번호를 CUDA_VISIBLE_DEVICES에 지정하면
+- **노드별 GPU 수가 다름**: 구형 노드는 H100 80GB × 1~2, **2026-07-23부터 8-GPU 노드
+  다수 확보 (총 100장+, 예: run261224-ul2, run261225-ul3)**. 띄우기 전 반드시
+  `nvidia-smi`로 개수 확인 — 없는 번호를 CUDA_VISIBLE_DEVICES에 지정하면
   "No CUDA GPUs available"로 즉사 (드라이버 535.129.03).
+- **2026-07-23부터 멀티노드 실행은 `experiments/cluster/` 파일 큐로 통일**
+  (노드당 워커 8개, 겹배치 방지 내장). 현재 캠페인 상태와 웨이브 설계는
+  `docs/plan_2026-07-23_fleet.md`가 단일 진실 — 세션/노드 바뀌면 이 문서부터 읽을 것.
 - **2026-07-21 활성 런 배치 (1.5B fp32 메커니즘 캠페인)**:
   - `run260112-ufail` GPU0 → gate.py chanbal2 (npo 추가 + CB 240스텝, 로그 `chanbal2_run260112-ufail.out`). GPU1 비어있음.
   - `run259703-unlearningfail` GPU0 (1장 노드) → crossed_protection.py xprot4
