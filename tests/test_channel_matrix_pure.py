@@ -115,8 +115,23 @@ class ChannelCampaignContractTest(unittest.TestCase):
         self.assertIn("--enforce-gate", command)
 
     def test_draft_objective_freeze_blocks_audit(self):
-        with self.assertRaises(RuntimeError):
-            campaign._load_freeze(self.config_path, self.config, self.models)
+        # The repo's live freeze became status=frozen on 2026-07-23, so the
+        # draft-blocking contract is exercised against a synthetic draft copy.
+        cfg = copy.deepcopy(self.config)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            freeze = yaml.safe_load(
+                (self.config_path.parent / cfg["audit"]["objective_freeze"])
+                .read_text(encoding="utf-8")
+            )
+            freeze["status"] = "draft"
+            freeze["frozen_before_audit"] = False
+            (root / "freeze.yaml").write_text(yaml.safe_dump(freeze), encoding="utf-8")
+            cfg["audit"]["objective_freeze"] = "freeze.yaml"
+            with self.assertRaises(RuntimeError):
+                campaign._load_freeze(root / "config.yaml", cfg, self.models)
+        # And the live frozen file must keep loading cleanly for the audit wave.
+        campaign._load_freeze(self.config_path, self.config, self.models)
 
     def test_frozen_audit_command_contains_core_and_stress_before_open(self):
         cfg = copy.deepcopy(self.config)
