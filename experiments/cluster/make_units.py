@@ -60,13 +60,30 @@ def build_units(cfg: dict, config_rel: str, phase: str, models: list[str],
                 "--config", config_rel, "--phase", "fidelity",
                 "--resume", "--model-id", model,
             ])
-    elif phase in ("calibration", "audit"):
-        roster = cfg[phase]["authors"]
+    elif phase == "calibration":
+        # Finest safe grain: author x objective. Cells of one objective share
+        # nothing across objectives, so a wave spreads over many GPUs instead
+        # of serializing an author's whole grid on one.
+        roster = cfg["calibration"]["authors"]
+        objectives = list(cfg["calibration"]["objective_grid"])
         for model in models:
             for author in roster:
-                add(f"{phase[:3]}__{model}__a{author}", [
+                for objective in objectives:
+                    add(f"cal__{model}__a{author}__{objective}", [
+                        python, "-u", "experiments/channel_matrix/run_campaign.py",
+                        "--config", config_rel, "--phase", "calibration",
+                        "--resume", "--model-id", model,
+                        "--only-authors", str(author),
+                        "--only-objectives", objective,
+                    ])
+    elif phase == "audit":
+        # One audit run dir spans every objective, so author stays the grain.
+        roster = cfg["audit"]["authors"]
+        for model in models:
+            for author in roster:
+                add(f"aud__{model}__a{author}", [
                     python, "-u", "experiments/channel_matrix/run_campaign.py",
-                    "--config", config_rel, "--phase", phase,
+                    "--config", config_rel, "--phase", "audit",
                     "--resume", "--model-id", model,
                     "--only-authors", str(author),
                 ])

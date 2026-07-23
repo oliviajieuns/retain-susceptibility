@@ -162,16 +162,44 @@ def test_worker_survives_unlaunchable_command(tmp_path):
     assert "FileNotFoundError" in failed["result"]["error"]
 
 
-def test_make_units_calibration_shards_by_model_and_author():
+def test_make_units_calibration_shards_by_author_and_objective():
     cfg = yaml.safe_load(
         (ROOT / "configs/channel_matrix/7b_tofu.yaml").read_text(encoding="utf-8")
     )
     units = make_units.build_units(
         cfg, "configs/channel_matrix/7b_tofu.yaml", "calibration", ["qwen25_7b"], 2
     )
-    assert [u.unit_id for u in units] == ["cal__qwen25_7b__a198", "cal__qwen25_7b__a199"]
+    objectives = list(cfg["calibration"]["objective_grid"])
+    authors = cfg["calibration"]["authors"]
+    assert len(units) == len(authors) * len(objectives)
+    assert units[0].unit_id == f"cal__qwen25_7b__a{authors[0]}__{objectives[0]}"
     for u in units:
-        assert "--only-authors" in u.cmd and "--resume" in u.cmd and u.gpus == 1
+        assert "--only-authors" in u.cmd and "--only-objectives" in u.cmd
+        assert "--resume" in u.cmd and u.gpus == 1
+        assert u.cmd[u.cmd.index("--only-objectives") + 1] in objectives
+
+    audit_units = make_units.build_units(
+        cfg, "configs/channel_matrix/7b_tofu.yaml", "audit", ["qwen25_7b"], 2
+    )
+    assert [u.unit_id for u in audit_units] == [
+        f"aud__qwen25_7b__a{a}" for a in cfg["audit"]["authors"]
+    ]
+    for u in audit_units:
+        assert "--only-objectives" not in u.cmd
+
+
+def test_cancel_moves_pending_and_claimed_units_to_failed(tmp_path):
+    q = WorkQueue(tmp_path / "q")
+    q.enqueue([_unit("a"), _unit("b")])
+    q.claim(owner={"host": "n1", "gpu": 0})  # claims a
+    assert q.cancel("a") == "claimed"
+    assert q.cancel("b") == "pending"
+    report = q.status()
+    assert report["counts"] == {"pending": 0, "claimed": 0, "done": 0, "failed": 2}
+    with pytest.raises(FileNotFoundError):
+        q.cancel("a")
+    # cancelled units can be revived explicitly
+    assert sorted(q.retry_failed()) == ["a", "b"]
 
 
 def test_make_units_alpha_phases_shard_by_author_and_seed():

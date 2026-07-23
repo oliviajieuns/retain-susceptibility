@@ -488,6 +488,15 @@ def main() -> None:
             "exact subset of the phase's frozen author roster"
         ),
     )
+    p.add_argument(
+        "--only-objectives",
+        default="",
+        help=(
+            "execution-only calibration shard (comma list); must be a subset of "
+            "the configured objective grid — lets one queue unit per objective "
+            "spread a calibration wave across GPUs"
+        ),
+    )
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--resume", action="store_true", help="skip complete run directories")
     p.add_argument("--limit", type=int, default=0, help="execute/print at most N runs (0=all)")
@@ -502,6 +511,19 @@ def main() -> None:
     selected_authors = (
         _expand_int_ranges(a.only_authors) if a.only_authors else None
     )
+    selected_objectives = {
+        part.strip() for part in a.only_objectives.split(",") if part.strip()
+    } or None
+    if selected_objectives is not None:
+        if a.phase != "calibration":
+            p.error("--only-objectives applies only to the calibration phase")
+        grid_objectives = set(cfg["calibration"]["objective_grid"])
+        unknown_objectives = selected_objectives - grid_objectives
+        if unknown_objectives:
+            p.error(
+                f"--only-objectives outside the configured grid: {sorted(unknown_objectives)}; "
+                f"allowed={sorted(grid_objectives)}"
+            )
     output_root = Path(cfg["output_root"])
     if not output_root.is_absolute():
         output_root = (ROOT / output_root).resolve()
@@ -549,6 +571,8 @@ def main() -> None:
             cfg, models, output_root, selected_authors=selected_authors
         ):
             objective = cmd[cmd.index("--generators") + 1]
+            if selected_objectives is not None and objective not in selected_objectives:
+                continue
             if a.resume and _complete(out, [objective], audit=False):
                 print(f"SKIP complete: {out}")
                 continue

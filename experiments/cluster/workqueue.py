@@ -214,6 +214,31 @@ class WorkQueue:
             requeued.append(unit_id)
         return requeued
 
+    def cancel(self, unit_id: str) -> str:
+        """Move a pending or claimed unit to failed with a cancelled marker.
+
+        Cancelling a *claimed* unit does not stop its worker process — kill
+        the process first, then cancel so the failure record is deliberate
+        rather than a retry loop.
+        """
+        for state in ("pending", "claimed"):
+            path = self._entry(state, unit_id)
+            if not path.exists():
+                continue
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            self._write_json(
+                self._entry("failed", unit_id),
+                {"unit": payload["unit"],
+                 "attempts": int(payload.get("attempts", 0)),
+                 "result": {"cancelled": True, "from_state": state}},
+            )
+            if state == "pending":
+                path.unlink()
+            else:
+                self._clear_claim(unit_id)
+            return state
+        raise FileNotFoundError(f"unit {unit_id} is not pending or claimed")
+
     def retry_failed(self) -> list[str]:
         """Move every failed unit back to pending with a fresh attempt budget."""
         retried = []
@@ -274,7 +299,10 @@ def read_units_jsonl(path: Path) -> list[Unit]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("action", choices=["init", "enqueue", "status", "requeue-stale", "retry-failed"])
+    parser.add_argument("action", choices=["init", "enqueue", "status", "requeue-stale",
+                                           "retry-failed", "cancel"])
+    parser.add_argument("--unit", action="append", default=[],
+                        help="cancel: unit id(s) to cancel (repeatable)")
     parser.add_argument("--queue", required=True, help="queue root directory (on the shared volume)")
     parser.add_argument("--units", help="units JSONL file (enqueue)")
     parser.add_argument("--stale-after", type=float, default=1800.0,
@@ -315,6 +343,12 @@ def main() -> None:
     elif args.action == "retry-failed":
         retried = queue.retry_failed()
         print(f"retried {len(retried)} failed unit(s): {retried}")
+    elif args.action == "cancel":
+        if not args.unit:
+            parser.error("cancel requires at least one --unit <id>")
+        for unit_id in args.unit:
+            state = queue.cancel(unit_id)
+            print(f"cancelled {unit_id} (was {state})")
 
 
 if __name__ == "__main__":
