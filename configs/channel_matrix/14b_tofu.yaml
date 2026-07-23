@@ -28,7 +28,11 @@ common:
       "191": "62,65,68,71,74,77,80,83,86,89,92,95,98,101,104,107,110,113,116,119,122,125,128,131,134,137,140,143,146,149"
   batch_size: 4
   sft_lr: 1.0e-5
-  sft_steps: 400
+  # 14B needs a larger memorization budget than 7B: the trainable block is the
+  # last 8 of 48 layers (vs 8 of 28), and the measured 400-step trajectory on
+  # a198 ended at NLL 0.961 vs the 0.8 gate, descending ~0.2 per 100 steps.
+  # SFT reach is a precondition, not an outcome-dependent choice; target stays 0.8.
+  sft_steps: 800
   sft_target_loss: 0.8
   sft_eval_every: 100
   require_sft_target: true
