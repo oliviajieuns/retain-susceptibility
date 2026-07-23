@@ -12,8 +12,11 @@ set -euo pipefail
 #   bash experiments/cluster/enqueue_table12.sh llama        Llama-8B fidelity+calibration -> wave_llama
 #   bash experiments/cluster/enqueue_table12.sh rwku-audit   RWKU 7B audit -> wave_rwku
 #
-# Wave -> table mapping: Table 1 <- wave2 (7B audit) + wave4_alpha (alpha-audit);
-# Table 2 rows <- wave1_14b, wave_rwku, wave_wmdp, wave_llama.
+# Wave -> table mapping: Table 1 <- wave2 (7B audit + alpha waves, all in
+# wave2); Table 2 rows <- wave1_14b, wave_rwku, wave_wmdp, wave_llama.
+# New queues (wave_wmdp/wave_llama/wave_rwku) need a node assignment in
+# configs/cluster/fleet.yaml (or FORCE_QUEUE=1 on an unassigned node)
+# before launch_node.sh will serve them.
 #
 # This script NEVER launches workers, NEVER git-pulls, and never touches queue
 # state beyond `make_units.py --enqueue`.  Queues are append-only per unit id,
@@ -34,7 +37,7 @@ source "${VENV}/bin/activate"
 export HF_HOME="${HF_HOME:-/group-volume/data/hf_home}"
 
 CFG_DIR="configs/channel_matrix"
-STATUS_QUEUES=(wave2 wave1_14b wave_wmdp wave_llama wave3_alpha wave4_alpha)
+STATUS_QUEUES=(wave1 wave2 wave1_14b wave_wmdp wave_llama wave_rwku)
 
 log()  { echo "[enqueue_table12] $*"; }
 die()  { echo "[enqueue_table12] ERROR: $*" >&2; exit 1; }
@@ -56,7 +59,8 @@ require_clean_tree() {
 }
 
 freeze_is_frozen() {  # $1 = freeze yaml path; mirrors run_campaign.py's gate
-  grep -qE '^status:[[:space:]]*frozen[[:space:]]*$' "$1"
+  grep -qE '^status:[[:space:]]*"?frozen"?[[:space:]]*(#.*)?$' "$1" \
+    && grep -qE '^frozen_before_audit:[[:space:]]*true[[:space:]]*(#.*)?$' "$1"
 }
 
 require_frozen() {  # $1 = freeze yaml path, $2 = what for
@@ -74,23 +78,23 @@ freeze_path_of() {  # $1 = config path, $2 = yaml key (objective_freeze|alpha_fr
 
 enqueue_phase() {  # $1 = description, $2 = queue dir, $3 = config, $4.. = phases
   local desc="$1" queue="$2" cfg="$3"; shift 3
-  local args=() phase out rc
+  local args=() phase units_tmp
   for phase in "$@"; do args+=(--phase "${phase}"); done
   log "enqueue ${desc}: config=${cfg} phases=[$*] queue=${queue}"
-  set +e
-  out="$(python experiments/cluster/make_units.py \
-    --config "${cfg}" "${args[@]}" --enqueue --queue "${queue}" 2>&1)"
-  rc=$?
-  set -e
-  echo "${out}"
-  if (( rc != 0 )); then
-    if grep -q "already exists in state" <<<"${out}"; then
-      log "${desc}: units already enqueued (queues are append-only per unit id) — nothing to do."
-      log "  For a deliberate re-run of a unit, use make_units.py --unit-suffix <rN> instead."
-    else
-      die "${desc}: make_units failed (see output above)."
-    fi
-  fi
+  # Two-step enqueue: emit units, then skip-existing top-up. A one-shot
+  # --enqueue aborts on the FIRST duplicate after already writing earlier
+  # units, so a topped-up roster (e.g. an added audit author) would silently
+  # lose the units after the duplicate.
+  units_tmp="$(mktemp)"
+  python experiments/cluster/make_units.py \
+    --config "${cfg}" "${args[@]}" --out "${units_tmp}" \
+    || die "${desc}: make_units failed."
+  python experiments/cluster/workqueue.py enqueue \
+    --queue "${queue}" --units "${units_tmp}" --skip-existing \
+    || die "${desc}: workqueue enqueue failed."
+  rm -f "${units_tmp}"
+  log "${desc}: done (skipped ids above were already enqueued; for a"
+  log "  deliberate re-run of a unit use make_units.py --unit-suffix <rN>)."
 }
 
 post_enqueue_notes() {  # $1 = queue dir

@@ -45,6 +45,9 @@ def _prediction_decision(
         and row.prediction.joint_rho is not None
         and row.prediction.top_q_recall is not None
         and all(effect.complete_for_gain() for effect in effects)
+        # The frozen simple control is part of prediction common support; it
+        # feeds the separate RQ2 added-value member, not the RQ1 IUT.
+        and row.prediction.vs_control.complete_for_gain()
         and tail_reported
     )
     reasons: list[str] = []

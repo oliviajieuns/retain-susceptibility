@@ -72,6 +72,11 @@ def unseal(
     done_markers: list[str | Path],
 ) -> dict[str, float]:
     """Open a seal after verifying every trajectory DONE marker exists."""
+    if not done_markers:
+        raise SealedError(
+            "cannot unseal with an empty DONE-marker list; callers must pass "
+            "one marker per planned trajectory"
+        )
     missing = [str(m) for m in done_markers if not Path(m).exists()]
     if missing:
         raise SealedError(f"cannot unseal; missing DONE markers: {missing}")

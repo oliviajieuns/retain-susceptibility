@@ -320,6 +320,7 @@ class ProtectionEvidence:
     absolute: Mapping[str, Mapping[str, float]] = field(default_factory=dict)
     native: Mapping[str, Effect] = field(default_factory=dict)
     update_diagnostics: Mapping[str, float] = field(default_factory=dict)
+    low_tail_support: bool = False
     min_forget_margin: float | None = None
     min_utility_margin: float | None = None
 
@@ -396,6 +397,10 @@ class ProtectionEvidence:
             native=native,
             update_diagnostics=_update_diagnostics(
                 data.get("update_diagnostics"), name=f"{name}.update_diagnostics"
+            ),
+            low_tail_support=_as_bool(
+                data.get("low_tail_support", False),
+                field_name=f"{name}.low_tail_support",
             ),
             min_forget_margin=_optional_number(
                 data.get("min_forget_margin"),

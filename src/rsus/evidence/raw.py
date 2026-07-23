@@ -247,9 +247,17 @@ def raw_plan_from_mapping(raw: object) -> RawPlan:
         raise EvidenceValidationError("raw plan native_margins must be a mapping")
     native_margins: dict[str, float] = {}
     for setting_id, margin in raw_native_margins.items():
-        native_margins[str(setting_id)] = _number(
+        value = _number(
             {"margin": margin}, "margin", where=f"native_margins.{setting_id}"
         )
+        # A non-inferiority margin is a small frozen concession, never a lever:
+        # negative would be nonsensical and a large delta would make h_a
+        # trivially positive.  The cap is frozen here, not configurable.
+        if not 0.0 <= value <= 0.1:
+            raise EvidenceValidationError(
+                f"native_margins.{setting_id} must lie in [0, 0.1]"
+            )
+        native_margins[str(setting_id)] = value
 
     raw_contracts = raw.get("artifact_contracts", {}) or {}
     if not isinstance(raw_contracts, Mapping):
@@ -891,8 +899,23 @@ def _tail_lift_metrics(
 
 
 def _tail_mean(values: Sequence[float], *, cvar_q: float) -> float:
-    count = max(1, math.ceil((1.0 - cvar_q) * len(values)))
-    return sum(sorted(values, reverse=True)[:count]) / count
+    """Mean of the worst (1-cvar_q) mass with fractional boundary weight.
+
+    Matches the preregistered definition: for tail mass m = (1-q)*n, the
+    floor(m) largest values enter with full weight and the next value with
+    the fractional remainder.  With fewer than 1/(1-q) values this reduces
+    to the maximum; callers flag such low-tail-support units separately.
+    """
+    ordered = sorted(values, reverse=True)
+    mass = (1.0 - cvar_q) * len(ordered)
+    if mass <= 1.0:
+        return ordered[0]
+    full = int(math.floor(mass))
+    fraction = mass - full
+    total = sum(ordered[:full])
+    if fraction > 0.0 and full < len(ordered):
+        total += fraction * ordered[full]
+    return total / mass
 
 
 def _protection_metrics(
@@ -1024,6 +1047,7 @@ def _hierarchical_bootstrap(
     request_of: Callable[[Any], str],
     seed_of: Callable[[Any], str],
     resampled_metrics: Callable[[Any, random.Random], Mapping[str, float] | None],
+    max_rejection_fraction: float = 0.5,
 ) -> list[dict[str, float]]:
     by_request: dict[str, list[Any]] = defaultdict(list)
     for unit in units:
@@ -1062,6 +1086,16 @@ def _hierarchical_bootstrap(
             "hierarchical bootstrap could not produce enough finite paired draws; "
             "increase within-group candidate variation or inspect the raw shard"
         )
+    # A bound produced after heavy replicate rejection is drawn from a
+    # truncated conditional distribution; refuse it rather than report it as
+    # if it were a clean resample.
+    rejection = 1.0 - replicates / attempts
+    if rejection > max_rejection_fraction:
+        raise EvidenceValidationError(
+            f"hierarchical bootstrap rejected {rejection:.0%} of replicates "
+            f"(cap {max_rejection_fraction:.0%}); the resampled statistic is "
+            "too fragile to report"
+        )
     return draws
 
 
@@ -1088,6 +1122,7 @@ def _empty_protection() -> dict[str, object]:
         "absolute": {},
         "native": {},
         "update_diagnostics": {},
+        "low_tail_support": False,
         "min_forget_margin": None,
         "min_utility_margin": None,
     }
@@ -1136,18 +1171,9 @@ def aggregate_raw_evidence(
         }
         reached_valid = reached_units & valid_profiles
 
-        eligible_prediction_units = [
-            prediction[unit.key]
-            for unit in row_units
-            if unit.key in prediction and unit.key in reached_valid
-        ]
-        # The frozen simple control participates only when the whole row
-        # carries it; a per-unit mixture would compare different controls.
-        row_has_control = bool(eligible_prediction_units) and all(
-            all(candidate.control is not None for candidate in data.candidates)
-            for data in eligible_prediction_units
-        )
-
+        # Prediction common support requires joint score, both endpoints, the
+        # frozen simple control, and damage on the same units; a unit without
+        # the control column stays out of the common-support funnel.
         prediction_common_data: list[PredictionUnitData] = []
         prediction_points: list[tuple[str, str, Mapping[str, float]]] = []
         for unit in row_units:
@@ -1155,7 +1181,7 @@ def aggregate_raw_evidence(
             if data is None or unit.key not in reached_valid:
                 continue
             metrics = _prediction_metrics(
-                data.candidates, top_q=plan.top_q, include_control=row_has_control
+                data.candidates, top_q=plan.top_q, include_control=True
             )
             if metrics is not None:
                 prediction_common_data.append(data)
@@ -1210,7 +1236,7 @@ def aggregate_raw_evidence(
                 resampled_metrics=lambda data, rng: _prediction_metrics(
                     _resample_groups_prediction(data.candidates, rng),
                     top_q=plan.top_q,
-                    include_control=row_has_control,
+                    include_control=True,
                 ),
             )
             prediction_evidence = {
@@ -1235,15 +1261,11 @@ def aggregate_raw_evidence(
                     beneficial="positive",
                     alpha=plan.alpha,
                 ),
-                "vs_control": (
-                    summarize_bootstrap_effect(
-                        point["gain_ctl"],
-                        [draw["gain_ctl"] for draw in bootstrap],
-                        beneficial="positive",
-                        alpha=plan.alpha,
-                    )
-                    if row_has_control
-                    else {}
+                "vs_control": summarize_bootstrap_effect(
+                    point["gain_ctl"],
+                    [draw["gain_ctl"] for draw in bootstrap],
+                    beneficial="positive",
+                    alpha=plan.alpha,
                 ),
                 "tail_lift": {},
                 "tail_eligible_n": None,
@@ -1343,6 +1365,12 @@ def aggregate_raw_evidence(
                     }
                     if all(data.updates for data in protection_common_data)
                     else {}
+                ),
+                # Preregistered flag: with fewer than 20 audit candidates the
+                # CVaR reduces to the maximum; the row is marked instead of
+                # being pooled with larger audits.
+                "low_tail_support": any(
+                    len(data.candidates) < 20 for data in protection_common_data
                 ),
                 "min_forget_margin": min(
                     data.min_forget_margin

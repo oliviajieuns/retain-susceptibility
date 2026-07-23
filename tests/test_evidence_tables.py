@@ -151,3 +151,22 @@ def test_rq1_pass_requires_positive_joint_bound(tmp_path):
     decision = report["rows"][0]["prediction"]
     assert decision["eligible"]
     assert not decision["claim_pass"]
+
+
+def test_rq2_cell_never_shows_eligible_for_ineligible_rows(tmp_path):
+    contract = _config(tmp_path)
+    raw = _row("primary")
+    # Fallback prediction weight makes the row ineligible even though every
+    # fidelity/gain member is present and favorable.
+    raw["prediction_selection"] = {"valid": False, "fallback": True, "alpha": None}
+    ledger = _ledger([raw])
+    report = _report(contract, ledger)
+    fidelity = {
+        "primary": {"f_rho": 0.97, "f_k": 0.86, "f_rho_lb": 0.93, "f_k_lb": 0.79}
+    }
+    core = render_core_evidence_table(contract, ledger, report, fidelity=fidelity)
+    robustness = render_robustness_table(
+        contract, ledger, report, fidelity=fidelity
+    )
+    assert "y/--" not in core
+    assert "y/--" not in robustness

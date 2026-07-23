@@ -13,14 +13,16 @@ outputs:
 
 # Optional per-setting loss-shake fidelity summaries consumed only by the
 # table renderer's f_rho/f_K cells and the derived RQ2 flags. Produced by
-# experiments/paper/export_channel_matrix_raw.py --fidelity-summary from the
-# frozen fd-fidelity certificates; a missing file keeps placeholders.
+# experiments/paper/export_channel_matrix_raw.py --fidelity-certificate from
+# the frozen fd-fidelity certificates into this tracked location; a missing
+# file keeps placeholders, and a summary whose setting or passed flag does
+# not match is rejected at load time.
 fidelity_inputs:
-  tofu_qwen25_7b: results/paper/fidelity/tofu_qwen25_7b.json
-  tofu_qwen25_14b: results/paper/fidelity/tofu_qwen25_14b.json
-  tofu_llama31_8b: results/paper/fidelity/tofu_llama31_8b.json
-  rwku_qwen25_7b: results/paper/fidelity/rwku_qwen25_7b.json
-  wmdp_bio_mmlu_qwen25_7b: results/paper/fidelity/wmdp_bio_mmlu_qwen25_7b.json
+  tofu_qwen25_7b: docs/data/fidelity_summaries/tofu_qwen25_7b.json
+  tofu_qwen25_14b: docs/data/fidelity_summaries/tofu_qwen25_14b.json
+  tofu_llama31_8b: docs/data/fidelity_summaries/tofu_llama31_8b.json
+  rwku_qwen25_7b: docs/data/fidelity_summaries/rwku_qwen25_7b.json
+  wmdp_bio_mmlu_qwen25_7b: docs/data/fidelity_summaries/wmdp_bio_mmlu_qwen25_7b.json
 
 decision:
   alpha: 0.05

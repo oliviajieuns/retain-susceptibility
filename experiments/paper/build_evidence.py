@@ -58,6 +58,14 @@ def _load_fidelity_inputs(contract) -> dict[str, dict]:
             raise EvidenceValidationError(
                 f"fidelity_inputs.{setting_id} root must be a mapping"
             )
+        if payload.get("setting") != setting_id:
+            raise EvidenceValidationError(
+                f"fidelity_inputs.{setting_id} carries setting "
+                f"{payload.get('setting')!r}; refusing a mismatched summary"
+            )
+        if payload.get("certificate_passed") is not True:
+            # A failed or unverified certificate cannot fill fidelity cells.
+            continue
         result[setting_id] = payload
     return result
 

@@ -214,12 +214,19 @@ def main() -> None:
     print(hdr)
     print("-" * len(hdr))
     rows = []
+    gate_C: dict[str, float] | None = None
     for s in seeds:
         for R in Rs:
             B = B_scores(projsq, s, R, d)
             rab, _ = agree(A, B, k)
             for eta in etas:
                 C = C_scores(model, req, spec, s, R, eta, d)
+                if (
+                    R == a.gate_r
+                    and s == a.gate_seed
+                    and math.isclose(eta, a.gate_eta, rel_tol=0.0, abs_tol=1e-15)
+                ):
+                    gate_C = C
                 rbc, _ = agree(B, C, k)
                 rac, oac = agree(A, C, k)
                 mba, mca, mcb = ratio_median(B, A), ratio_median(C, A), ratio_median(C, B)
@@ -280,6 +287,16 @@ def main() -> None:
         "eta": a.gate_eta,
         "probe_seed": a.gate_seed,
         "metrics": gate,
+        # Per-candidate exact (A) and frozen loss-shake (C) scores of the gate
+        # cell, so downstream summaries can bootstrap f_rho/f_K lower bounds
+        # without re-running the GPU protocol.
+        "scores": {
+            "candidate_ids": sorted(set(A) & set(gate_C or {})),
+            "A": [A[c] for c in sorted(set(A) & set(gate_C or {}))],
+            "C": [
+                (gate_C or {})[c] for c in sorted(set(A) & set(gate_C or {}))
+            ],
+        },
         "thresholds": {
             "rho_AB": a.min_rho_ab,
             "rho_BC": a.min_rho_bc,

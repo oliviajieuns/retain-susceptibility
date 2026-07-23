@@ -51,6 +51,16 @@ execution:
     min_perturbation_survival: 0.9
   budget_fractions: [0.05, 0.10, 0.20]
   specificity_controls: [target_unlearning, other_request, benign_sft, random_block_motion]
+  # Frozen per-setting native-metric non-inferiority margins (delta_nat) for
+  # h_a = M_profile - M_a + delta_nat. Utility-retention scale; the raw-plan
+  # validator caps them at 0.1 and an absent entry degrades to the strict 0.0
+  # margin. Frozen before any target outcome is opened.
+  native_margins:
+    tofu_qwen25_7b: 0.02
+    tofu_qwen25_14b: 0.02
+    tofu_llama31_8b: 0.02
+    rwku_qwen25_7b: 0.02
+    wmdp_bio_mmlu_qwen25_7b: 0.02
 
 required_parents: &required_parents
   - graddiff

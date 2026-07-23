@@ -346,3 +346,22 @@ def test_queue_cli_roundtrip(tmp_path):
         )
         assert out.returncode == 0, out.stderr
     assert (queue_dir / "pending" / "cli-a.json").exists()
+
+
+def test_enqueue_skip_existing_tops_up_after_duplicates(tmp_path):
+    q = WorkQueue(tmp_path / "q")
+    q.enqueue([_unit("u0"), _unit("u1")])
+    # Default stays append-only strict.
+    try:
+        q.enqueue([_unit("u1"), _unit("u2")])
+    except FileExistsError:
+        pass
+    else:  # pragma: no cover
+        raise AssertionError("duplicate must raise without skip_existing")
+    # skip_existing adds the units AFTER the duplicate instead of aborting.
+    added = q.enqueue([_unit("u1"), _unit("u3")], skip_existing=True)
+    assert added == ["u3"]
+    assert q.last_skipped == ["u1"]
+    # u0 u1 u3 — the strict call aborted at duplicate u1, losing u2 entirely;
+    # that lost-tail behavior is exactly why top-ups must pass skip_existing.
+    assert q.status()["counts"]["pending"] == 3

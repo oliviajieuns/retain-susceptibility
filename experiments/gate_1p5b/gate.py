@@ -600,7 +600,12 @@ def main():
                     "candidate_id": candidate_id,
                     "group": by_id[candidate_id].group,
                     "fold": "audit" if candidate_id in audit_ids else "discovery",
-                    "score": prof.scores[candidate_id],
+                    # Audit-fold scores exist ONLY behind the seal ledger; the
+                    # plain artifact keeps identity/fold metadata but no value,
+                    # so nothing can consume a sealed outcome pre-gate.
+                    "score": (
+                        None if candidate_id in audit_ids else prof.scores[candidate_id]
+                    ),
                 }
                 for candidate_id in sorted(prof.scores)
             ],

@@ -99,13 +99,27 @@ class WorkQueue:
 
     # -- producer side ------------------------------------------------------
 
-    def enqueue(self, units: Iterable[Unit]) -> list[str]:
+    def enqueue(
+        self, units: Iterable[Unit], *, skip_existing: bool = False
+    ) -> list[str]:
+        """Enqueue units; queues stay append-only per unit_id.
+
+        The default raises on the first duplicate — but note the earlier
+        units of the same call are already on disk at that point.  Top-up
+        callers (re-running an idempotent wave enqueue) should pass
+        ``skip_existing=True`` so units after a duplicate are still added;
+        skipped ids are reported by the CLI rather than silently dropped.
+        """
         self.init()
         added = []
+        skipped: list[str] = []
         for unit in units:
             _validate_unit_id(unit.unit_id)
             state = self._locate(unit.unit_id)
             if state is not None:
+                if skip_existing:
+                    skipped.append(unit.unit_id)
+                    continue
                 raise FileExistsError(
                     f"unit {unit.unit_id} already exists in state {state!r}; "
                     "queues are append-only per unit_id — pick a new id"
@@ -115,6 +129,7 @@ class WorkQueue:
                 {"unit": unit.to_payload(), "attempts": 0},
             )
             added.append(unit.unit_id)
+        self.last_skipped = skipped
         return added
 
     # -- worker side --------------------------------------------------------
@@ -303,6 +318,9 @@ def main() -> None:
                                            "retry-failed", "cancel"])
     parser.add_argument("--unit", action="append", default=[],
                         help="cancel: unit id(s) to cancel (repeatable)")
+    parser.add_argument("--skip-existing", action="store_true",
+                        help="enqueue: skip units already present in any state "
+                             "instead of aborting mid-batch")
     parser.add_argument("--queue", required=True, help="queue root directory (on the shared volume)")
     parser.add_argument("--units", help="units JSONL file (enqueue)")
     parser.add_argument("--stale-after", type=float, default=1800.0,
@@ -315,6 +333,16 @@ def main() -> None:
     if args.action == "init":
         queue.init()
         print(f"initialized {queue.root}")
+    elif args.action == "enqueue" and args.skip_existing:
+        if not args.units:
+            parser.error("enqueue requires --units <file.jsonl>")
+        added = queue.enqueue(
+            read_units_jsonl(Path(args.units)), skip_existing=True
+        )
+        skipped = getattr(queue, "last_skipped", [])
+        print(f"enqueued {len(added)} unit(s); skipped {len(skipped)} existing")
+        for unit_id in skipped:
+            print(f"  skipped: {unit_id}")
     elif args.action == "enqueue":
         if not args.units:
             parser.error("enqueue requires --units <file.jsonl>")

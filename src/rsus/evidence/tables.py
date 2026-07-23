@@ -137,7 +137,7 @@ def _rq2_pass(
     )
     eligible = bool(prediction_decision.get("eligible")) and members_present
     if not eligible:
-        return f"{'y' if members_present else 'n'}/--" if members_present else "n/--"
+        return "n/--"
     passed = (
         fidelity["f_rho_lb"] - FIDELITY_TAU_RHO > 0.0
         and fidelity["f_k_lb"] - FIDELITY_TAU_K > 0.0
@@ -269,7 +269,7 @@ def render_core_evidence_table(
         lines.append(r"\toprule")
         lines.append(
             r"\multicolumn{8}{@{}l}{\textbf{A. Prospective prediction and "
-            rf"loss-shake validation ({setting.dataset}, {setting.model})}} \\"
+            rf"loss-shake validation ({setting.dataset}, {setting.model})}}}} \\"
         )
         lines.append(
             r"Parent & Joint $\rho$ [LB] & $\min(g_G,g_H)$ [min LB] &"
@@ -315,7 +315,7 @@ def render_core_evidence_table(
         lines.append(r"\toprule")
         lines.append(
             r"\multicolumn{8}{@{}l}{\textbf{B. Constraint-matched fixed-budget "
-            rf"protection ({setting.dataset}, {setting.model})}} \\"
+            rf"protection ({setting.dataset}, {setting.model})}}}} \\"
         )
         lines.append(
             r"Parent & Profile mean; CVaR & No-repair mean; CVaR &"

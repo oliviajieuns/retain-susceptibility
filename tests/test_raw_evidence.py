@@ -28,11 +28,17 @@ def _selection(alpha: float = 0.5) -> dict:
     return {"valid": True, "fallback": False, "alpha": alpha}
 
 
-def _plan(*, units: list[tuple[str, str]] | None = None, replicates: int = 39):
+def _plan(
+    *,
+    units: list[tuple[str, str]] | None = None,
+    replicates: int = 39,
+    native_margins: dict[str, float] | None = None,
+):
     request_seeds = units or [("r1", "1"), ("r2", "1")]
     return raw_plan_from_mapping(
         {
             "schema_version": 1,
+            "native_margins": native_margins or {},
             "bootstrap": {
                 "replicates": replicates,
                 "seed": 19,
@@ -73,6 +79,7 @@ def _prediction(request: str, seed: str = "1") -> list[dict]:
                 "s0": -value,
                 "s1": float(index % 3),
                 "joint": value,
+                "control": float((index * 5) % 7),
                 "damage": value,
                 "profile_valid": True,
                 "reached": True,
@@ -540,3 +547,79 @@ def test_measurement_contract_cannot_omit_a_physical_table_field(tmp_path):
             {},
             output_dir=tmp_path,
         )
+
+
+def _with_native(rows: list[dict]) -> list[dict]:
+    native = {"joint": 0.95, "no_repair": 0.90, "s0": 0.91, "s1": 0.92}
+    draw_native = {"d0": 0.89, "d1": 0.93}
+    result = []
+    for row in rows:
+        row = dict(row)
+        if row["arm"] == "repeated_random":
+            row["native_metric"] = draw_native[row["draw_id"]]
+        else:
+            row["native_metric"] = native[row["arm"]]
+        result.append(row)
+    return result
+
+
+def test_native_non_inferiority_flows_end_to_end_with_frozen_margin():
+    plan = _plan(native_margins={"primary": 0.02})
+    protections = _with_native(_protection("r1")) + _with_native(_protection("r2"))
+    raw = aggregate_raw_evidence(
+        plan, _prediction("r1") + _prediction("r2"), protections
+    )
+    row = EvidenceLedger.from_mapping(raw).rows[("primary", "npo")]
+    # Hand check: h_no_repair = 0.95 - 0.90 + 0.02 = 0.07.
+    assert row.protection.native["no_repair"].estimate == pytest.approx(0.07)
+    assert row.protection.native["s1"].estimate == pytest.approx(0.05)
+    # Draws average to 0.91 at the point estimate: h = 0.95 - 0.91 + 0.02.
+    assert row.protection.native["repeated_random"].estimate == pytest.approx(0.06)
+    for comparator in ("no_repair", "repeated_random", "s0", "s1"):
+        effect = row.protection.native[comparator]
+        assert effect.lower_bound is not None
+        assert effect.p_one_sided is not None
+    assert row.protection.absolute["joint"]["mean"] == pytest.approx(0.45)
+    assert row.protection.absolute["no_repair"]["mean"] == pytest.approx(0.95)
+
+
+def test_partial_native_roster_fails_closed():
+    plan = _plan(units=[("r1", "1")])
+    protections = _with_native(_protection("r1"))
+    # Drop the native metric from one arm only.
+    for row in protections:
+        if row["arm"] == "s1":
+            row.pop("native_metric", None)
+    with pytest.raises(EvidenceValidationError, match="partial native"):
+        aggregate_raw_evidence(plan, _prediction("r1"), protections)
+
+
+def test_tail_ineligible_unit_is_counted_not_dropped():
+    plan = _plan()
+    eligible = _prediction("r1")
+    ineligible = _prediction("r2")
+    for row in ineligible:
+        row["damage"] = -abs(row["damage"])  # no positive damage at all
+    raw = aggregate_raw_evidence(plan, eligible + ineligible, [])
+    row = EvidenceLedger.from_mapping(raw).rows[("primary", "npo")]
+    assert row.prediction.tail_total_n == 2
+    assert row.prediction.tail_eligible_n == 1
+    assert row.prediction.tail_coverage() == pytest.approx(0.5)
+    # The ineligible unit stays in the correlation denominator.
+    assert row.funnel.prediction_common == 2
+
+
+def test_tail_mean_uses_fractional_boundary_weight():
+    from rsus.evidence.raw import _tail_mean
+
+    values = [10.0, 2.0] + [0.0] * 28  # n=30, q=0.95 -> mass 1.5
+    assert _tail_mean(values, cvar_q=0.95) == pytest.approx((10.0 + 0.5 * 2.0) / 1.5)
+    # Fewer than 1/(1-q) values reduces to the maximum.
+    assert _tail_mean([3.0, 1.0], cvar_q=0.95) == pytest.approx(3.0)
+
+
+def test_native_margin_outside_frozen_cap_is_rejected():
+    with pytest.raises(EvidenceValidationError, match=r"\[0, 0.1\]"):
+        _plan(native_margins={"primary": 0.5})
+    with pytest.raises(EvidenceValidationError, match=r"\[0, 0.1\]"):
+        _plan(native_margins={"primary": -0.01})

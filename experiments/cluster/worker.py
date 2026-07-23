@@ -50,6 +50,12 @@ def build_env(base: dict[str, str], unit_env: dict[str, str], gpu: int, needs_gp
         env["CUDA_VISIBLE_DEVICES"] = str(gpu)
         env["GPU"] = str(gpu)  # h100_campaign.sh reads GPU=
     env.setdefault("PYTHONUNBUFFERED", "1")
+    # HF Hub is blocked/unstable from the cluster (2026-07-23); every queued
+    # unit must run cache-only unless its own env explicitly opts back in
+    # (e.g. a provisioning unit setting HF_HUB_OFFLINE=0).
+    env.setdefault("HF_HUB_OFFLINE", "1")
+    env.setdefault("HF_DATASETS_OFFLINE", "1")
+    env.setdefault("TRANSFORMERS_OFFLINE", "1")
     return env
 
 

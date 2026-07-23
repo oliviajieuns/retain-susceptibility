@@ -74,13 +74,17 @@ def _load_json(path: Path) -> dict[str, Any]:
     return value
 
 
-def _profile_scores(path: Path) -> tuple[dict[str, float], dict[str, float], dict[str, str]]:
-    """Return (discovery_scores, audit_scores, group_by_id) from an artifact."""
+def _profile_scores(path: Path) -> tuple[dict[str, float], set[str], dict[str, str]]:
+    """Return (discovery_scores, audit_ids, group_by_id) from a plain artifact.
+
+    Audit-fold values are intentionally absent from the plain artifact (they
+    live behind the seal ledger); only identities and folds are read here.
+    """
     payload = _load_json(path)
     if payload.get("schema") != "paper-profile-v2":
         raise EvidenceValidationError(f"{path} is not a paper-profile-v2 artifact")
     discovery: dict[str, float] = {}
-    audit: dict[str, float] = {}
+    audit_ids: set[str] = set()
     groups: dict[str, str] = {}
     for row in payload.get("candidates", []):
         candidate_id = str(row["candidate_id"])
@@ -89,14 +93,14 @@ def _profile_scores(path: Path) -> tuple[dict[str, float], dict[str, float], dic
         if fold == "discovery":
             discovery[candidate_id] = float(row["score"])
         elif fold == "audit":
-            audit[candidate_id] = float(row["score"])
+            audit_ids.add(candidate_id)
         else:
             raise EvidenceValidationError(
                 f"{path} candidate {candidate_id} has unknown fold {fold!r}"
             )
-    if not discovery or not audit:
+    if not discovery or not audit_ids:
         raise EvidenceValidationError(f"{path} lacks a two-fold candidate split")
-    return discovery, audit, groups
+    return discovery, audit_ids, groups
 
 
 def _sealed_audit_scores(
@@ -168,24 +172,52 @@ def export_prediction(
                 seed = match.group(1)
 
                 profile_dir = seed_dir / "profile_artifacts"
-                grad_disc, _, groups = _profile_scores(
+                grad_disc, declared_audit_ids, groups = _profile_scores(
                     profile_dir / f"{gradient_probe}.json"
                 )
-                prox_disc, _, prox_groups = _profile_scores(
+                prox_disc, prox_audit_ids, prox_groups = _profile_scores(
                     profile_dir / f"{proximity_probe}.json"
                 )
                 groups.update(prox_groups)
                 control_disc: dict[str, float] | None = None
                 if args.control_predictor:
-                    control_disc, _, _ = _profile_scores(
+                    control_disc, control_ids, _ = _profile_scores(
                         profile_dir / f"{args.control_predictor}.json"
                     )
+                    if control_ids != declared_audit_ids:
+                        raise EvidenceValidationError(
+                            f"{seed_dir}: control predictor audit fold differs "
+                            "from the gradient probe's declared fold"
+                        )
+                if prox_audit_ids != declared_audit_ids:
+                    raise EvidenceValidationError(
+                        f"{seed_dir}: proximity audit fold differs from the "
+                        "gradient probe's declared fold"
+                    )
 
+                # The seal may open only after EVERY planned trajectory of the
+                # cell is done — including objectives outside --parents.  A
+                # missing trajectory directory is an incomplete cell, never a
+                # smaller marker list.
+                planned_objectives = list(audit_cfg["objectives"]) + list(
+                    audit_cfg.get("stress_objectives", [])
+                )
                 traj_dirs = {
                     parent: seed_dir / f"traj_{parent}" for parent in parents
                 }
+                missing_traj = [
+                    objective
+                    for objective in planned_objectives
+                    if not (seed_dir / f"traj_{objective}").is_dir()
+                ]
+                if missing_traj:
+                    raise EvidenceValidationError(
+                        f"{seed_dir}: planned trajectories not present yet: "
+                        f"{missing_traj}; refusing to open sealed audit scores"
+                    )
                 done_markers = [
-                    path / "DONE" for path in traj_dirs.values() if path.is_dir()
+                    seed_dir / f"traj_{objective}" / "DONE"
+                    for objective in planned_objectives
                 ]
                 grad_audit = _sealed_audit_scores(
                     seed_dir, request_id, gradient_probe, done_markers
@@ -198,22 +230,35 @@ def export_prediction(
                     control_audit = _sealed_audit_scores(
                         seed_dir, request_id, args.control_predictor, done_markers
                     )
+                    if set(control_audit) != declared_audit_ids:
+                        raise EvidenceValidationError(
+                            f"{seed_dir}: sealed control fold differs from the "
+                            "declared audit fold"
+                        )
                 audit_ids = sorted(grad_audit)
+                if set(grad_audit) != declared_audit_ids:
+                    raise EvidenceValidationError(
+                        f"{seed_dir}: sealed gradient fold differs from the "
+                        "declared audit fold"
+                    )
                 if sorted(prox_audit) != audit_ids:
                     raise EvidenceValidationError(
                         f"{seed_dir}: gradient/proximity sealed folds differ"
                     )
 
-                certificate = manifest.get("fidelity_certificate_passed")
-                if certificate is None:
-                    cert_map = audit_cfg.get("fidelity_certificates", {})
-                    model_id = manifest.get("model_id") or model_dir.name
-                    cert_path = cert_map.get(model_id)
-                    certificate = bool(
-                        cert_path
-                        and (ROOT / cert_path).is_file()
-                        and _load_json(ROOT / cert_path).get("passed") is True
+                cert_map = audit_cfg.get("fidelity_certificates", {})
+                model_id = manifest.get("model_id") or model_dir.name
+                cert_path = cert_map.get(model_id)
+                if not cert_path:
+                    raise EvidenceValidationError(
+                        f"{seed_dir}: no fidelity certificate configured for "
+                        f"model {model_id!r}; profile validity is undecidable"
                     )
+                if not (ROOT / cert_path).is_file():
+                    raise EvidenceValidationError(
+                        f"{seed_dir}: fidelity certificate missing: {cert_path}"
+                    )
+                certificate = _load_json(ROOT / cert_path).get("passed") is True
 
                 for parent in parents:
                     traj = traj_dirs[parent]
@@ -328,7 +373,7 @@ def export_protection(
         manifest = payload.get("manifest", {})
         if manifest.get("schema") != "channel-mixture-protection-run-v1":
             continue
-        if manifest.get("phase") not in (None, "audit"):
+        if manifest.get("campaign_phase") != "audit":
             continue
         request_id = str(
             manifest.get("request") or results_path.parent.parent.name
@@ -363,6 +408,11 @@ def export_protection(
             protection_alpha = None
             arm_rows: dict[str, Mapping[str, Any]] = {}
             for row in parent_rows:
+                if row.get("executed") is not True:
+                    # Placeholder rows (parent did not reach the criterion)
+                    # copy diagnostic parent metrics; they must never become
+                    # claim arms.
+                    continue
                 selector = str(row["selector"])
                 if row.get("deployed"):
                     arm_rows["joint"] = row
@@ -378,7 +428,10 @@ def export_protection(
                 ),
                 None,
             )
-            checkpoint_id = json.dumps(checkpoint, sort_keys=True) if checkpoint else "t-dagger"
+            if checkpoint is None:
+                continue
+            checkpoint_id = json.dumps(checkpoint, sort_keys=True)
+            first_reaching = bool(checkpoint.get("first_direct_reaching"))
 
             def emit(arm: str, row: Mapping[str, Any], draw_id: str | None, draw_complete: bool) -> None:
                 margins = _margins(row, final)
@@ -406,7 +459,7 @@ def export_protection(
                         **margins,
                         "draw_complete": draw_complete,
                         "parent_checkpoint_id": checkpoint_id,
-                        "parent_checkpoint_first_reaching": True,
+                        "parent_checkpoint_first_reaching": first_reaching,
                         "native_metric": (
                             float(row["utility_retention"])
                             if row.get("utility_retention") is not None
@@ -428,12 +481,9 @@ def export_protection(
             for (draw_parent, draw_id), row in sorted(draw_rows.items()):
                 if draw_parent != parent:
                     continue
-                emit(
-                    "repeated_random",
-                    row,
-                    draw_id,
-                    bool(row.get("feasible") is not None),
-                )
+                if row.get("executed") is not True:
+                    continue
+                emit("repeated_random", row, draw_id, True)
     if not records:
         raise EvidenceValidationError(
             f"no protection records exported from {output_root}"
@@ -452,19 +502,21 @@ def export_fidelity_summary(args, cfg: Mapping[str, Any], out_path: Path) -> Non
     """
     cert_path = ROOT / args.fidelity_certificate
     cert = _load_json(cert_path)
+    metrics = cert.get("metrics") or {}
     summary: dict[str, Any] = {
         "setting": args.setting_id,
         "source_certificate": str(args.fidelity_certificate),
         "certificate_passed": cert.get("passed"),
-        "f_rho": cert.get("rho_AC"),
-        "f_k": None,
+        "f_rho": metrics.get("rho_AC"),
+        "f_k": metrics.get("ov_AC"),
         "f_rho_lb": None,
         "f_k_lb": None,
         "tau_rho": 0.80,
         "tau_k": 0.70,
     }
-    scores_a = cert.get("scores_A") or cert.get("A")
-    scores_c = cert.get("scores_C") or cert.get("C")
+    scores = cert.get("scores") or {}
+    scores_a = scores.get("A")
+    scores_c = scores.get("C")
     if (
         isinstance(scores_a, list)
         and isinstance(scores_c, list)
@@ -495,6 +547,8 @@ def export_fidelity_summary(args, cfg: Mapping[str, Any], out_path: Path) -> Non
             var_c = sum((y - mean_c) ** 2 for y in rc)
             return num / math.sqrt(var_a * var_c) if var_a and var_c else 0.0
 
+        from rsus.evidence.statistics import percentile
+
         summary["f_k"] = overlap(scores_a, scores_c)
         rng = random.Random(20260723)
         rhos, overlaps = [], []
@@ -505,11 +559,8 @@ def export_fidelity_summary(args, cfg: Mapping[str, Any], out_path: Path) -> Non
             sample_c = [scores_c[i] for i in sample]
             rhos.append(spearman(sample_a, sample_c))
             overlaps.append(overlap(sample_a, sample_c))
-        rhos.sort()
-        overlaps.sort()
-        position = max(0, int(0.05 * len(rhos)) - 1)
-        summary["f_rho_lb"] = rhos[position]
-        summary["f_k_lb"] = overlaps[position]
+        summary["f_rho_lb"] = percentile(rhos, 0.05)
+        summary["f_k_lb"] = percentile(overlaps, 0.05)
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(
         json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8"
@@ -551,14 +602,25 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="YAML with a frozen per-parent prediction_alpha mapping",
     )
-    parser.add_argument("--top-q", type=float, default=0.05)
+    # Must equal the raw plan's bootstrap.top_q so the fidelity overlap@K and
+    # the tail definition share one frozen q (campaign.yaml execution.bootstrap).
+    parser.add_argument("--top-q", type=float, default=0.10)
     parser.add_argument("--out-dir", required=True)
     parser.add_argument("--skip-prediction", action="store_true")
     parser.add_argument("--skip-protection", action="store_true")
     parser.add_argument(
         "--fidelity-certificate",
         default=None,
-        help="fd-fidelity certificate JSON; writes <out-dir>/fidelity_summary.json",
+        help="fd-fidelity certificate JSON to summarize for the table renderer",
+    )
+    parser.add_argument(
+        "--fidelity-out",
+        default=None,
+        help=(
+            "fidelity summary path; defaults to the tracked "
+            "docs/data/fidelity_summaries/<setting-id>.json declared by "
+            "configs/paper/evidence.yaml fidelity_inputs"
+        ),
     )
     return parser
 
@@ -587,10 +649,13 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(f"protection: {count} records from {cells} alpha cells")
         if args.fidelity_certificate:
-            export_fidelity_summary(
-                args, cfg, out_dir / "fidelity_summary.json"
+            fidelity_out = (
+                ROOT / args.fidelity_out
+                if args.fidelity_out
+                else ROOT / "docs" / "data" / "fidelity_summaries" / f"{args.setting_id}.json"
             )
-            print(f"fidelity summary: {out_dir / 'fidelity_summary.json'}")
+            export_fidelity_summary(args, cfg, fidelity_out)
+            print(f"fidelity summary: {fidelity_out}")
         return 0
     except (EvidenceValidationError, sealing.SealedError, KeyError) as error:
         print(f"export failed: {error!r}", file=sys.stderr)
