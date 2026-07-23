@@ -83,6 +83,12 @@ calibration:
       # a199 coverage completes via the fix2 queue unit.
       - {id: lr15_s120, lr: 1.5e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
       - {id: lr1_s240, lr: 1.0e-6, steps: 240, forget_weight: 1.0, retain_weight: 1.0}
+      # Round-2 (07-23): reach is easy but the a198 CVaR tail blows (17.3 at
+      # lr1_s240 vs bound 8.0) while a199 fully passes (3.53) — thin the tail
+      # with gentler-lr, longer-schedule interior points.
+      - {id: lr05_s360, lr: 5.0e-7, steps: 360, forget_weight: 1.0, retain_weight: 1.0}
+      - {id: lr075_s240, lr: 7.5e-7, steps: 240, forget_weight: 1.0, retain_weight: 1.0}
+      - {id: lr1_s180, lr: 1.0e-6, steps: 180, forget_weight: 1.0, retain_weight: 1.0}
     npo:
       - {id: b01_lr2_s120, lr: 2.0e-6, steps: 120, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
       - {id: b01_lr4_s120, lr: 4.0e-6, steps: 120, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
@@ -91,6 +97,10 @@ calibration:
       # a199 coverage completes via the fix2 queue unit.
       - {id: b01_lr4_s240, lr: 4.0e-6, steps: 240, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
       - {id: b01_lr8_s240, lr: 8.0e-6, steps: 240, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
+      # Round-2: recall plateaus ~0.54-0.68 under 4x lr / 2x steps — escalate
+      # hard before concluding not-reachable at 7B.
+      - {id: b01_lr16_s240, lr: 1.6e-5, steps: 240, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
+      - {id: b01_lr8_s480, lr: 8.0e-6, steps: 480, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
     simnpo:
       - {id: b45_lr2_s120, lr: 2.0e-6, steps: 120, beta: 4.5, forget_weight: 0.125, retain_weight: 1.0}
       - {id: b45_lr4_s120, lr: 4.0e-6, steps: 120, beta: 4.5, forget_weight: 0.125, retain_weight: 1.0}
@@ -99,6 +109,8 @@ calibration:
       # a199 coverage completes via the fix2 queue unit.
       - {id: b45_lr4_s240, lr: 4.0e-6, steps: 240, beta: 4.5, forget_weight: 0.125, retain_weight: 1.0}
       - {id: b45_lr8_s240, lr: 8.0e-6, steps: 240, beta: 4.5, forget_weight: 0.125, retain_weight: 1.0}
+      # Round-2: slow monotone decline (0.86 -> 0.79) — single hard escalation probe.
+      - {id: b45_lr16_s240, lr: 1.6e-5, steps: 240, beta: 4.5, forget_weight: 0.125, retain_weight: 1.0}
     gru:
       - {id: lr1_s120, lr: 1.0e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
       - {id: lr2_s120, lr: 2.0e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
@@ -113,6 +125,9 @@ calibration:
       # a199 coverage completes via the fix2 queue unit.
       - {id: a10_c10_lr2_s120, lr: 2.0e-6, steps: 120, rmu_alpha: 10.0, rmu_c: 10.0}
       - {id: a10_c30_lr2_s120, lr: 2.0e-6, steps: 120, rmu_alpha: 10.0, rmu_c: 30.0}
+      # Round-2: lr-responsive at 1.5B; escalate lr with near-zero damage headroom.
+      - {id: a10_c3_lr8_s240, lr: 8.0e-6, steps: 240, rmu_alpha: 10.0, rmu_c: 3.0}
+      - {id: a10_c3_lr16_s240, lr: 1.6e-5, steps: 240, rmu_alpha: 10.0, rmu_c: 3.0}
     repnoise:
       - {id: a1_c3_lr1_s120, lr: 1.0e-6, steps: 120, rmu_alpha: 1.0, rmu_c: 3.0}
       - {id: a10_c3_lr1_s120, lr: 1.0e-6, steps: 120, rmu_alpha: 10.0, rmu_c: 3.0}
