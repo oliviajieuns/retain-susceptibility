@@ -66,11 +66,17 @@ Claude Code 세션 컨테이너에는 GPU가 없다 (CPU 검증만 가능).
 - 마운트: `/group-volume` (= `/home/user/group-volume`).
 - 주 캐시: `HF_HOME=/group-volume/data/hf_home` — TOFU `full`(4000), `forget10_perturbed`(400) 포함
   전 컨피그 로드 확인 완료(2026-07-20). 사용자 확인: Qwen 모델도 준비돼 있음.
-- **벤치마크 데이터셋도 이미 캐시에 다운로드돼 있음 (2026-07-23 사용자 확인)** —
-  예: RWKU가 `$HF_HOME/datasets/jinzhuoran___rwku`에 있음. 새 데이터셋 작업 전에
-  다운로드 안내부터 하지 말고 **먼저 `ls /group-volume/data/hf_home/datasets/`로
-  캐시 인벤토리를 확인**할 것. 단, 사용자 쉘에 HF_HOME이 없을 수 있으니 데이터셋을
-  만지는 모든 명령은 `HF_HOME=/group-volume/data/hf_home`을 명시하고 실행.
+- **벤치마크 데이터셋도 이미 캐시에 다운로드돼 있음 (2026-07-23 인벤토리 실사)**:
+  - `jinzhuoran___rwku` **완비** — forget_target, forget_level1/2/3, neighbor_level1/2,
+    mia_forget/retain, train_original_passage, train_positive/negative_llama3,
+    utility_{general,reason,truthfulness,factuality,fluency}
+  - `cais___wmdp`(wmdp-bio) + `cais___mmlu`(all) — WMDP 세팅 재료 완비
+  - `locuslab___tofu` 전 서브셋, `muse-bench___muse-books`는 knowmem만 (부분)
+  - **없음**: MUSE-News, PISTOL
+  새 데이터셋 작업 전에 다운로드 안내부터 하지 말고 먼저
+  `ls /group-volume/data/hf_home/datasets/`로 캐시를 확인할 것. 사용자 쉘에
+  HF_HOME이 없을 수 있으니 데이터셋을 만지는 모든 명령은
+  `HF_HOME=/group-volume/data/hf_home`을 명시하고 실행.
 - 보조 캐시: `/group-volume/data/TOFU/hf_home` (다른 실험용, 이 레포는 주 캐시만 쓰면 됨).
 - 데이터/모델 반입 작업 불필요 — 사용자에게 재확인시키지 말 것.
 
