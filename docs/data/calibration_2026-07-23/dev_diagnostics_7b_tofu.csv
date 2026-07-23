@@ -1,0 +1,39 @@
+# TOFU x Qwen2.5-7B (kdd27-channel-matrix-7b-v1), development selection diagnostics
+# bounds: recall<=0.10, mean_dnll<=2.0, cvar05 8.0->16.0 per prereg/AMENDMENT-2026-07-23-cvar-bound.md
+# RESOLVED: rmu a10_c3_lr32_s240 (lr=3.2e-5, steps=240, alpha=10, c=3). round-4 graddiff micro-probes pending.
+objective,setting_id,round,reach_max,mean_dnll,cvar05_dnll,verdict
+graddiff,lr1_s120,1,0.558,1.92,8.66,reach_fail
+graddiff,lr2_s120,1,0.007,1.60,15.01,per_author_tail_fail
+graddiff,lr15_s120,1,0.071,3.05,17.66,mean+tail_fail
+graddiff,lr1_s240,1,0.005,1.09,10.41,per_author_tail_fail
+graddiff,lr05_s360,2,0.005,1.31,11.86,per_author_tail_fail
+graddiff,lr075_s240,2,0.006,1.44,12.24,per_author_tail_fail_a198_16.02
+graddiff,lr1_s180,2,0.008,1.72,13.25,per_author_tail_fail
+npo,b01_lr2_s120,1,0.677,-0.01,0.21,reach_fail
+npo,b01_lr4_s120,1,0.660,-0.05,0.22,reach_fail
+npo,b01_lr4_s240,1,0.656,-0.12,0.32,reach_fail
+npo,b01_lr8_s240,1,0.622,-0.15,0.48,reach_fail
+npo,b01_lr16_s240,2,0.575,-0.13,0.55,reach_fail
+npo,b01_lr8_s480,2,0.604,-0.16,0.71,reach_fail_plateau
+simnpo,b45_lr2_s120,1,0.861,-0.09,0.13,reach_fail
+simnpo,b45_lr4_s120,1,0.843,-0.12,0.23,reach_fail
+simnpo,b45_lr4_s240,1,0.804,-0.16,0.44,reach_fail
+simnpo,b45_lr8_s240,1,0.787,-0.15,0.54,reach_fail
+simnpo,b45_lr16_s240,2,0.741,-0.11,0.65,reach_fail_plateau
+gru,lr1_s120,1,0.491,4.49,16.16,reach+damage_fail
+gru,lr2_s120,1,0.091,6.42,26.15,damage_fail
+rmu,a10_c3_lr1_s120,1,0.851,0.01,0.07,reach_fail
+rmu,a10_c3_lr2_s120,1,0.779,0.01,0.12,reach_fail
+rmu,a10_c10_lr2_s120,1,0.778,0.01,0.12,reach_fail
+rmu,a10_c30_lr2_s120,1,0.774,0.01,0.12,reach_fail
+rmu,a10_c3_lr8_s240,2,0.409,0.02,0.11,reach_fail
+rmu,a10_c3_lr16_s240,2,0.213,0.03,0.18,reach_fail
+rmu,a10_c3_lr32_s240,3,,,,RESOLVED_selected
+repnoise,a10_c3_lr1_s120,1,0.447,3.47,7.78,reach+mean_fail
+repnoise,a1_c3_lr1_s120,1,0.444,3.60,7.85,reach+mean_fail
+repnoise,a1_c10_lr05_s120,1,0.606,2.09,6.13,reach+mean_fail
+repnoise,a1_c10_lr1_s120,1,0.444,3.60,7.85,reach+mean_fail
+circuit_breakers,a1_lr1_s240,1,0.875,0.00,0.02,reach_fail_flat
+circuit_breakers,a10_lr1_s240,1,0.875,0.00,0.02,reach_fail_flat
+circuit_breakers,a100_lr1_s240,1,0.875,0.00,0.02,reach_fail_flat
+circuit_breakers,a10_lr2_s240,1,0.876,0.00,0.03,reach_fail_flat

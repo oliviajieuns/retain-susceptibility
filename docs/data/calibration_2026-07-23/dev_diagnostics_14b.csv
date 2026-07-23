@@ -1,0 +1,23 @@
+# TOFU x Qwen2.5-14B (kdd27-channel-matrix-14b-v1), development selection diagnostics
+# bounds: recall<=0.10, mean_dnll<=2.0, cvar05_dnll<=8.0 (ORIGINAL bound retained)
+# RESOLVED: graddiff lr1_s120 (0.038/0.46/1.69), gru lr1_s120 (0.029/0.95/2.43) — first passes anywhere. rmu lr32 doc-probe pending.
+objective,setting_id,round,reach_max,mean_dnll,cvar05_dnll,verdict
+graddiff,lr1_s120,1,0.038,0.46,1.69,PASS_selected
+graddiff,lr2_s120,1,0.029,1.56,5.32,PASS
+gru,lr1_s120,1,0.029,0.95,2.43,PASS_selected
+gru,lr2_s120,1,0.003,5.70,27.90,damage_fail
+npo,b01_lr2_s120,1,0.548,0.00,0.16,reach_fail
+npo,b01_lr4_s120,1,0.529,-0.03,0.15,reach_fail
+simnpo,b45_lr2_s120,1,0.835,-0.07,0.08,reach_fail
+simnpo,b45_lr4_s120,1,0.823,-0.11,0.15,reach_fail
+rmu,a10_c3_lr1_s120,1,0.813,0.01,0.05,reach_fail
+rmu,a10_c3_lr2_s120,1,0.778,0.01,0.05,reach_fail
+rmu,a10_c3_lr4_s240,2,0.736,0.01,0.05,reach_fail_dose_flat
+rmu,a10_c3_lr8_s240,2,0.708,0.01,0.06,reach_fail_dose_flat
+rmu,a10_c3_lr16_s240,2,0.647,0.01,0.08,reach_fail_dose_flat
+repnoise,a10_c3_lr1_s120,1,0.696,1.21,2.33,reach_fail
+repnoise,a1_c3_lr1_s120,1,0.696,1.22,2.36,reach_fail
+repnoise,a1_c3_lr1_s240,2,0.563,2.11,3.66,reach+mean_fail
+circuit_breakers,a1_lr1_s240,1,0.840,0.00,0.02,reach_fail_flat
+circuit_breakers,a10_lr1_s240,1,0.840,0.00,0.02,reach_fail_flat
+rmu,a10_c3_lr32_s240,3,,,,reach_fail_dose_flat_final
