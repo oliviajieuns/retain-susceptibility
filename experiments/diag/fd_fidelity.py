@@ -86,10 +86,14 @@ def main() -> None:
     p.add_argument("--model", required=True)
     p.add_argument("--device", default="cpu")
     p.add_argument("--dtype", default="float32", choices=["float32", "bfloat16"])
-    p.add_argument("--author", type=int, default=180)
-    p.add_argument("--universe-authors", type=int, default=30)
+    p.add_argument("--dataset", default="tofu", choices=["tofu", "rwku"])
+    p.add_argument("--author", type=int, default=180,
+                   help="TOFU author index, or RWKU forget_target row index")
+    p.add_argument("--universe-authors", type=int, default=30,
+                   help="tofu only; the rwku universe is the frozen remote pool")
     p.add_argument("--candidate-authors", default="",
-                   help="fixed development-only retained-author pool")
+                   help="fixed development-only retained pool (authors for "
+                        "tofu, remote target indices for rwku; required there)")
     p.add_argument("--n-cands", type=int, default=64)
     p.add_argument("--candidate-seed", type=int, default=0)
     p.add_argument("--batch-size", type=int, default=8)
@@ -113,19 +117,32 @@ def main() -> None:
     p.add_argument("--enforce-gate", action="store_true")
     a = p.parse_args()
 
+    if a.dataset == "rwku" and not a.candidate_authors:
+        p.error("--dataset rwku requires --candidate-authors "
+                "(the frozen remote-target pool)")
+
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
     dtype = torch.float32 if a.dtype == "float32" else torch.bfloat16
     tok = AutoTokenizer.from_pretrained(a.model)
     model = AutoModelForCausalLM.from_pretrained(a.model, torch_dtype=dtype).to(a.device).eval()
     candidate_authors = _int_ranges(a.candidate_authors) if a.candidate_authors else None
-    full = tofu_request(
-        a.author,
-        load_tofu_examples(tok),
-        universe_authors=a.universe_authors,
-        seed=0,
-        candidate_authors=candidate_authors,
-    )
+    if a.dataset == "rwku":
+        from rsus.data.rwku import rwku_request
+
+        full = rwku_request(
+            tok,
+            target_index=a.author,
+            candidate_targets=candidate_authors,
+        )
+    else:
+        full = tofu_request(
+            a.author,
+            load_tofu_examples(tok),
+            universe_authors=a.universe_authors,
+            seed=0,
+            candidate_authors=candidate_authors,
+        )
     all_cands = sorted(full.universe.examples, key=lambda example: example.example_id)
     candidate_gen = torch.Generator().manual_seed(a.candidate_seed)
     order = torch.randperm(len(all_cands), generator=candidate_gen).tolist()
@@ -225,6 +242,7 @@ def main() -> None:
         "passed": passed,
         "model": a.model,
         "dtype": a.dtype,
+        "dataset": a.dataset,
         "author": a.author,
         "candidate_authors": candidate_authors,
         "candidate_seed": a.candidate_seed,

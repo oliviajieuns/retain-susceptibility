@@ -7,7 +7,9 @@
 #
 # Queue paths are relative to the repository root.
 assignments:
-  run261224-ul2: runs/cluster_queue/wave1            # 7B calibration
-  run261216-unlearning: runs/cluster_queue/wave1_14b # 14B channel-matrix
+  # run261224-ul2 released 2026-07-23: wave1 drained 160/160, workers killed.
+  # Delete its stale snapshot with: rm runs/cluster_status/run261224-ul2.json
+  run261216-unlearning: runs/cluster_queue/wave1_14b # 14B audit + alpha-dev
   # 2026-07-23 (freeze landed): ul3 serves the 7B audit + alpha wave.
   run261225-ul3: runs/cluster_queue/wave2            # 7B audit + alpha
+  run261288-table: runs/cluster_queue/wave3          # RWKU-7B fidelity -> audit

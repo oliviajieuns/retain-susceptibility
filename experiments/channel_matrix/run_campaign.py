@@ -286,6 +286,7 @@ def fidelity_commands(cfg: dict, models: list[dict], output_root: Path):
             "--model", str(model["path"]),
             "--device", str(common.get("device", "cuda")),
             "--dtype", str(common["dtype"]),
+            "--dataset", str(cfg.get("dataset", "tofu")),
             "--author", str(phase["author"]),
             "--universe-authors", str(common["universe_authors"]),
             "--candidate-authors", str(common["candidate_author_pools"]["calibration"]),

@@ -113,6 +113,20 @@ class ChannelCampaignContractTest(unittest.TestCase):
         self.assertEqual(command[command.index("--dirs") + 1], "64")
         self.assertEqual(command[command.index("--etas") + 1], "0.003")
         self.assertIn("--enforce-gate", command)
+        self.assertEqual(command[command.index("--dataset") + 1], "tofu")
+
+    def test_fidelity_command_carries_campaign_dataset(self):
+        cfg = yaml.safe_load(
+            (ROOT / "configs/channel_matrix/rwku_7b.yaml").read_text(encoding="utf-8")
+        )
+        models = campaign._enabled_models(cfg, set())
+        _, _, command = next(iter(campaign.fidelity_commands(
+            cfg, models, ROOT / "runs/channel_matrix_rwku7b"
+        )))
+        self.assertEqual(command[command.index("--dataset") + 1], "rwku")
+        # The rwku fidelity request must carry the frozen remote pool: the
+        # runner refuses --dataset rwku without --candidate-authors.
+        self.assertEqual(command[command.index("--candidate-authors") + 1], "100-129")
 
     def test_draft_objective_freeze_blocks_audit(self):
         # The repo's live freeze became status=frozen on 2026-07-23, so the

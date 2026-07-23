@@ -42,9 +42,8 @@ common:
   sentence_encoder: sentence-transformers/all-MiniLM-L6-v2
 
 # Frozen randomized-sensitivity operating point evaluated on the disjoint
-# development pool. NOTE (2026-07-23): experiments/diag/fd_fidelity.py is
-# still TOFU-wired; the audit phase stays blocked on this certificate until
-# the fidelity runner grows --dataset support. Calibration does not need it.
+# development pool. fd_fidelity.py grew --dataset rwku support on 2026-07-23;
+# the audit phase requires this certificate to exist and pass.
 fidelity:
   author: 0
   n_candidates: 128

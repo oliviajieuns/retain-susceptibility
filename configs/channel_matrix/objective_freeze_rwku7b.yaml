@@ -3,8 +3,8 @@
 # graddiff's frontier fails opposite bounds per target (t000 mean vs
 # t001 tail) across four rounds and stays a stress column.
 # NOTE: the audit launch additionally requires an RWKU fidelity
-# certificate; fd_fidelity.py is still TOFU-wired, so audit remains
-# blocked on that runner growing --dataset support.
+# certificate. fd_fidelity.py grew --dataset rwku on 2026-07-23; run
+# the fidelity phase and confirm passed=true before enqueueing audit.
 
 # Values transcribed 2026-07-23 from the selector recommendation
 # (runs/*/objective_freeze.recommended.yaml) with unresolved: [].
