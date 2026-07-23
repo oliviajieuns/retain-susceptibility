@@ -126,6 +126,38 @@ def test_rwku_registry_adapter_and_roster_ids():
     assert request.request_id == "rwku-t001"
 
 
+def test_rwku_campaign_config_builds_rwku_gate_commands():
+    import importlib.util
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[1]
+    spec = importlib.util.spec_from_file_location(
+        "rwku_campaign", root / "experiments/channel_matrix/run_campaign.py"
+    )
+    campaign = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(campaign)
+
+    import yaml
+
+    cfg = yaml.safe_load(
+        (root / "configs/channel_matrix/rwku_7b.yaml").read_text(encoding="utf-8")
+    )
+    campaign._validate_campaign(cfg)
+    assert campaign._request_dirname(cfg, 0) == "rwku-t000"
+    assert campaign._request_dirname({"dataset": "tofu"}, 198) == "tofu-a198"
+
+    models = [m for m in cfg["models"] if m.get("enabled", True)]
+    commands = list(
+        campaign.calibration_commands(cfg, models, root / "runs/channel_matrix_rwku7b")
+    )
+    assert len(commands) == 32  # 2 dev targets x 16 settings
+    for out, cmd in commands:
+        assert cmd[cmd.index("--dataset") + 1] == "rwku"
+        assert "rwku-t00" in str(out)
+        assert "idkdpo" not in cmd  # no refusal variant for cloze probes
+
+
 def test_paper_campaign_rwku_rosters_are_valid_and_disjoint():
     import yaml
     from pathlib import Path

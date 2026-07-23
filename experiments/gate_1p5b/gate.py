@@ -59,6 +59,14 @@ def parse_args():
     p.add_argument("--model-id", default="", help="stable campaign alias stored in the manifest")
     p.add_argument("--device", default="cpu")
     p.add_argument("--dtype", default="float32", choices=["float32", "bfloat16"])
+    p.add_argument(
+        "--dataset", default="tofu", choices=["tofu", "rwku"],
+        help=(
+            "request adapter: tofu (default, unchanged behavior) or rwku, where "
+            "--author is the forget_target row index and --candidate-authors is "
+            "the frozen remote-target pool"
+        ),
+    )
     p.add_argument("--author", type=int, default=FORGET10_FIRST_AUTHOR)
     p.add_argument("--universe-authors", type=int, default=30)
     p.add_argument(
@@ -412,16 +420,28 @@ def main():
     log(f"host={platform.node()} model={a.model} dtype={a.dtype} "
         f"trainable_scope={a.trainable_scope} seed={a.seed}")
     tokenizer = AutoTokenizer.from_pretrained(a.model)
-    log(f"loading TOFU (universe_authors={a.universe_authors}) ...")
-    examples = load_tofu_examples(tokenizer)
     candidate_authors = parse_int_ranges(a.candidate_authors) if a.candidate_authors else None
-    req = tofu_request(
-        a.author,
-        examples,
-        universe_authors=a.universe_authors,
-        seed=a.seed,
-        candidate_authors=candidate_authors,
-    )
+    if a.dataset == "rwku":
+        from rsus.data.rwku import rwku_request
+
+        if not candidate_authors:
+            sys.exit("--dataset rwku requires an explicit frozen --candidate-authors pool")
+        log(f"loading RWKU (remote pool={len(candidate_authors)} targets) ...")
+        req = rwku_request(
+            tokenizer,
+            target_index=a.author,
+            candidate_targets=list(candidate_authors),
+        )
+    else:
+        log(f"loading TOFU (universe_authors={a.universe_authors}) ...")
+        examples = load_tofu_examples(tokenizer)
+        req = tofu_request(
+            a.author,
+            examples,
+            universe_authors=a.universe_authors,
+            seed=a.seed,
+            candidate_authors=candidate_authors,
+        )
     by_id = {e.example_id: e for e in req.universe.examples}
     log(f"request {req.request_id}: |Df|={len(req.forget)} |C|={len(req.universe)}")
 
@@ -736,13 +756,16 @@ def main():
 
     # paraphrase-recall audit at every snapshot (weights are not persisted)
     extra_eval = None
-    try:
-        paras = load_tofu_paraphrases(tokenizer)
-        para_ex = [paras[e.example_id] for e in req.forget if e.example_id in paras]
-        if para_ex:
-            extra_eval = lambda m: {"para_recall": mean_recall(m, para_ex, a.batch_size)}  # noqa: E731
-    except Exception as e:
-        log(f"paraphrase audit unavailable: {e}")
+    if a.dataset == "tofu":
+        try:
+            paras = load_tofu_paraphrases(tokenizer)
+            para_ex = [paras[e.example_id] for e in req.forget if e.example_id in paras]
+            if para_ex:
+                extra_eval = lambda m: {"para_recall": mean_recall(m, para_ex, a.batch_size)}  # noqa: E731
+        except Exception as e:
+            log(f"paraphrase audit unavailable: {e}")
+    else:
+        log(f"paraphrase audit unavailable: no paraphrase set for dataset={a.dataset}")
 
     s1_cfg = Stage1Config(lr=a.s1_lr, max_steps=a.s1_max_steps, eval_every=20,
                           batch_size=a.batch_size, seed=a.seed,
@@ -751,7 +774,12 @@ def main():
                           delta_seq_sq=a.s2_delta_seq, delta_tok_sq=a.s2_delta_tok,
                           batch_size=a.batch_size,
                           **({"eta2": a.s2_eta2} if a.s2_eta2 else {}))
-    idk = idk_variants(tokenizer, list(req.forget))
+    try:
+        idk = idk_variants(tokenizer, list(req.forget))
+    except ValueError:
+        # Non-QA forget probes (e.g. RWKU cloze) have no refusal variant; the
+        # idkdpo protection methods below fail loudly instead of silently.
+        idk = None
 
     t2 = {}
     t2_lr_per = {k: float(v) for k, v in
@@ -775,6 +803,8 @@ def main():
                 eng_cfg = _dc.replace(gen_cfg, max_steps=a.t2_steps or a.gen_steps,
                                       lr=t2_lr_per.get(engine, a.t2_lr or a.gen_lr))
                 if engine == "idkdpo":
+                    if idk is None:
+                        raise ValueError("idkdpo repair engine needs QA-formatted forget probes")
                     eng_cfg = _dc.replace(eng_cfg, idk_examples=idk)
                 rcfg = RepairedConfig(engine_cfg=eng_cfg, stage2=s2_cfg,
                                       batch_size=a.batch_size)
@@ -796,6 +826,8 @@ def main():
                 cfg_m = _dc.replace(gen_cfg, max_steps=a.t2_steps or a.gen_steps,
                                     lr=t2_lr_per.get(method, a.t2_lr or a.gen_lr))
                 if method == "idkdpo":
+                    if idk is None:
+                        raise ValueError("idkdpo t2 method needs QA-formatted forget probes")
                     cfg_m = _dc.replace(cfg_m, idk_examples=idk)
                 rec = run_trajectory(m, objective, req, retain, cfg_m, extra_eval=extra_eval)
             outp = evaluate_protection(rec, native_ids=audit_ids, utility_ids=set(),

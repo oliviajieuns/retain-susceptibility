@@ -145,6 +145,13 @@ def _kv(settings: dict[str, dict], key: str) -> str:
     )
 
 
+def _request_dirname(cfg: dict, author: int) -> str:
+    """Request directory stem matching the dataset's request_id convention."""
+    if cfg.get("dataset", "tofu") == "rwku":
+        return f"rwku-t{author:03d}"
+    return f"tofu-a{author}"
+
+
 def _common_gate_args(
     cfg: dict, model: dict, author: int, seed: int, out_dir: Path, phase: str
 ) -> list[str]:
@@ -152,6 +159,7 @@ def _common_gate_args(
     args = [
         sys.executable,
         str(GATE),
+        "--dataset", str(cfg.get("dataset", "tofu")),
         "--model", str(model["path"]),
         "--model-id", str(model["id"]),
         "--device", str(common.get("device", "cuda")),
@@ -240,9 +248,9 @@ def calibration_commands(
     ):
         for index, setting in enumerate(phase["objective_grid"][objective]):
             setting_id = setting.get("id", f"g{index:02d}")
-            out = output_root / "calibration" / model["id"] / f"tofu-a{author}" / f"seed-{seed}" / objective / setting_id
+            out = output_root / "calibration" / model["id"] / _request_dirname(cfg, author) / f"seed-{seed}" / objective / setting_id
             cmd = _common_gate_args(cfg, model, author, seed, out, "calibration")
-            sft_cache = output_root / "sft_cache" / model["id"] / f"tofu-a{author}_seed-{seed}.pt"
+            sft_cache = output_root / "sft_cache" / model["id"] / f"{_request_dirname(cfg, author)}_seed-{seed}.pt"
             cmd += [
                 "--generators", objective,
                 "--predictors", "",
@@ -417,7 +425,7 @@ def audit_commands(
     for model, author, seed in itertools.product(models, authors, phase["seeds"]):
         settings = (freeze["models"][model["id"]]
                     if "models" in freeze else freeze["objectives"])
-        out = output_root / "audit" / model["id"] / f"tofu-a{author}" / f"seed-{seed}"
+        out = output_root / "audit" / model["id"] / _request_dirname(cfg, author) / f"seed-{seed}"
         cmd = _common_gate_args(cfg, model, author, seed, out, "audit")
         cmd += [
             "--generators", _csv(objectives),

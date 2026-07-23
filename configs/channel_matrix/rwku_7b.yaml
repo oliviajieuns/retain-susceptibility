@@ -1,0 +1,110 @@
+campaign_id: kdd27-channel-matrix-rwku7b-v1
+dataset: rwku
+output_root: runs/channel_matrix_rwku7b
+
+# RWKU real-world knowledge removal on Qwen2.5-7B. "Authors" throughout this
+# file are RWKU forget_target row indices (rwku-t<idx>); candidate pools are
+# frozen remote-target pools (see src/rsus/data/rwku.py). Rosters align with
+# configs/paper/campaign.yaml: development targets 0-1 (D_cal rwku-t000/001),
+# audit targets 30/34/38 drawn from the paper's target roster t030-t039.
+models:
+  - id: qwen25_7b
+    path: /group-volume/models/Qwen2.5-7B-Instruct
+    enabled: true
+
+common:
+  device: cuda
+  dtype: float32
+  trainable_scope: probe_block
+  representation_retain_mode: stream_cached
+  block_last_n: 8
+  # Pool size per request: 30 remote targets, mirroring TOFU's 30 retained
+  # authors. Pools are disjoint across development and every audit request.
+  universe_authors: 30
+  candidate_author_pools:
+    calibration: "100-129"
+    audit:
+      "30": "130-159"
+      "34": "160-189"
+      "38": "60-89"
+  batch_size: 4
+  sft_lr: 1.0e-5
+  # The RWKU request universe (~950 probes incl. cloze) is larger than TOFU's
+  # 620; start from the 14B-calibrated budget and let the canary decide.
+  # Target stays 0.8 (same memorization contract as every other campaign).
+  sft_steps: 800
+  sft_target_loss: 0.8
+  sft_eval_every: 100
+  require_sft_target: true
+  probe_dirs: 64
+  probe_norm_eta: 3.0e-3
+  probe_seed: 0
+  sentence_encoder: sentence-transformers/all-MiniLM-L6-v2
+
+# Frozen randomized-sensitivity operating point evaluated on the disjoint
+# development pool. NOTE (2026-07-23): experiments/diag/fd_fidelity.py is
+# still TOFU-wired; the audit phase stays blocked on this certificate until
+# the fidelity runner grows --dataset support. Calibration does not need it.
+fidelity:
+  author: 0
+  n_candidates: 128
+  candidate_seed: 314159
+  min_rho_ab: 0.70
+  min_rho_bc: 0.80
+  min_rho_ac: 0.80
+  min_eff_ratio: 0.90
+  min_frac_changed: 0.90
+
+calibration:
+  authors: [0, 1]
+  seeds: [2025]
+  selection:
+    forget_recall_max: 0.10
+    mean_dnll_max: 2.0
+    cvar05_dnll_max: 8.0
+    require_every_development_run: true
+    tie_break: [mean_dnll, cvar05_dnll, steps, lr]
+    stress_rule: >-
+      Prefer settings reaching the forget criterion on every development run;
+      otherwise minimize worst development recall, then mean damage, CVaR,
+      steps, and learning rate. Stress controls may remain failed or collapsed
+      in audit and are never part of the core interaction.
+  # Round-1 bracket copied from the 7B TOFU operating ranges; RWKU difficulty
+  # may differ, so treat this as a bracketing grid, not the final one.
+  # idkdpo is excluded: cloze forget probes have no refusal-answer variant.
+  objective_grid:
+    ga:
+      - {id: lr05_s60, lr: 5.0e-7, steps: 60}
+      - {id: lr1_s60, lr: 1.0e-6, steps: 60}
+    graddiff:
+      - {id: lr1_s120, lr: 1.0e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
+      - {id: lr2_s120, lr: 2.0e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
+    npo:
+      - {id: b01_lr2_s120, lr: 2.0e-6, steps: 120, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
+      - {id: b01_lr4_s120, lr: 4.0e-6, steps: 120, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
+    simnpo:
+      - {id: b45_lr2_s120, lr: 2.0e-6, steps: 120, beta: 4.5, forget_weight: 0.125, retain_weight: 1.0}
+      - {id: b45_lr4_s120, lr: 4.0e-6, steps: 120, beta: 4.5, forget_weight: 0.125, retain_weight: 1.0}
+    gru:
+      - {id: lr1_s120, lr: 1.0e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
+      - {id: lr2_s120, lr: 2.0e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
+    rmu:
+      - {id: a10_c3_lr1_s120, lr: 1.0e-6, steps: 120, rmu_alpha: 10.0, rmu_c: 3.0}
+      - {id: a10_c3_lr2_s120, lr: 2.0e-6, steps: 120, rmu_alpha: 10.0, rmu_c: 3.0}
+    repnoise:
+      - {id: a1_c3_lr1_s120, lr: 1.0e-6, steps: 120, rmu_alpha: 1.0, rmu_c: 3.0}
+      - {id: a10_c3_lr1_s120, lr: 1.0e-6, steps: 120, rmu_alpha: 10.0, rmu_c: 3.0}
+    circuit_breakers:
+      - {id: a1_lr1_s240, lr: 1.0e-6, steps: 240, rmu_alpha: 1.0}
+      - {id: a10_lr1_s240, lr: 1.0e-6, steps: 240, rmu_alpha: 10.0}
+
+audit:
+  offline: true
+  authors: [30, 34, 38]
+  seeds: [2025, 2026]
+  objectives: [graddiff, npo, simnpo, gru, rmu, repnoise, circuit_breakers]
+  stress_objectives: [ga]
+  predictors: [grad_norm, fd_norm, knn_feature, knn_embed, knn_lexical, fd, random_rank]
+  objective_freeze: objective_freeze_rwku7b.yaml
+  fidelity_certificates:
+    qwen25_7b: runs/channel_matrix_rwku7b/fidelity/qwen25_7b.json
