@@ -9,7 +9,5 @@
 assignments:
   run261224-ul2: runs/cluster_queue/wave1            # 7B calibration
   run261216-unlearning: runs/cluster_queue/wave1_14b # 14B channel-matrix
-  # 2026-07-23: wave2 (7B audit) cannot fill before wave1 drains, so ul3
-  # helps chew the wave1 backlog (RWKU calibration + 7B round-2) until the
-  # 7B freeze lands — then flip this line to runs/cluster_queue/wave2.
-  run261225-ul3: runs/cluster_queue/wave1            # temp: wave1 backlog
+  # 2026-07-23 (freeze landed): ul3 serves the 7B audit + alpha wave.
+  run261225-ul3: runs/cluster_queue/wave2            # 7B audit + alpha

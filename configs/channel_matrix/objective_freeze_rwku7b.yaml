@@ -1,11 +1,18 @@
-# Fill from development-only calibration and commit this file BEFORE launching
-# the audit phase.  run_campaign.py refuses to audit while status is not frozen.
-freeze_id: PENDING-RWKU7B-DEVELOPMENT-CALIBRATION
-status: draft
-frozen_before_audit: false
-frozen_at_utc: null
+# Core roster {repnoise}: a1_c3_lr1_s480 passes per-target under the
+# original 8.0 bound too (t000 0.028/1.13/4.18, t001 0.080/0.42/2.80).
+# graddiff's frontier fails opposite bounds per target (t000 mean vs
+# t001 tail) across four rounds and stays a stress column.
+# NOTE: the audit launch additionally requires an RWKU fidelity
+# certificate; fd_fidelity.py is still TOFU-wired, so audit remains
+# blocked on that runner growing --dataset support.
+
+# Values transcribed 2026-07-23 from the selector recommendation
+# (runs/*/objective_freeze.recommended.yaml) with unresolved: [].
+freeze_id: FREEZE-2026-07-23-RWKU7B-DEV4ROUNDS
+status: frozen
+frozen_before_audit: true
+frozen_at_utc: "2026-07-23T09:48Z"
 source_campaign: kdd27-channel-matrix-rwku7b-v1
-unresolved: [qwen25_7b/all-objectives]
 selection_rule: >-
   Core objectives must satisfy forget_recall <= 0.10 and the fixed mean/CVaR
   utility bounds on both development requests. Stress controls prefer settings
@@ -14,11 +21,12 @@ selection_rule: >-
   score or correlation is read.
 models:
   qwen25_7b:
-    ga: {lr: null, steps: null}
-    graddiff: {lr: null, steps: null, forget_weight: 1.0, retain_weight: 1.0}
-    npo: {lr: null, steps: null, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
-    simnpo: {lr: null, steps: null, beta: 4.5, forget_weight: 0.125, retain_weight: 1.0}
-    gru: {lr: null, steps: null, forget_weight: 1.0, retain_weight: 1.0}
-    rmu: {lr: null, steps: null, rmu_alpha: null, rmu_c: null}
-    repnoise: {lr: null, steps: null, rmu_alpha: null, rmu_c: null}
-    circuit_breakers: {lr: null, steps: null, rmu_alpha: null}
+    repnoise: {beta: 1.0, forget_weight: 1.0, retain_weight: 1.0, rmu_alpha: 1.0, rmu_c: 3.0, lr: 1e-06, steps: 480}
+    ga: {beta: 1.0, forget_weight: 1.0, retain_weight: 1.0, rmu_alpha: 10.0, rmu_c: 3.0, lr: 1e-06, steps: 60}
+    graddiff: {beta: 1.0, forget_weight: 1.0, retain_weight: 1.0, rmu_alpha: 10.0, rmu_c: 3.0, lr: 5e-07, steps: 480}
+    npo: {beta: 0.1, forget_weight: 1.0, retain_weight: 1.0, rmu_alpha: 10.0, rmu_c: 3.0, lr: 8e-06, steps: 240}
+    simnpo: {beta: 4.5, forget_weight: 0.125, retain_weight: 1.0, rmu_alpha: 10.0, rmu_c: 3.0, lr: 1.6e-05, steps: 240}
+    gru: {beta: 1.0, forget_weight: 1.0, retain_weight: 1.0, rmu_alpha: 10.0, rmu_c: 3.0, lr: 1.5e-06, steps: 120}
+    rmu: {beta: 1.0, forget_weight: 1.0, retain_weight: 1.0, rmu_alpha: 10.0, rmu_c: 3.0, lr: 1.6e-05, steps: 240}
+    circuit_breakers: {beta: 1.0, forget_weight: 1.0, retain_weight: 1.0, rmu_alpha: 1.0, rmu_c: 3.0, lr: 1e-06, steps: 240}
+unresolved: []
