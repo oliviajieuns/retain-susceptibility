@@ -147,8 +147,11 @@ def _kv(settings: dict[str, dict], key: str) -> str:
 
 def _request_dirname(cfg: dict, author: int) -> str:
     """Request directory stem matching the dataset's request_id convention."""
-    if cfg.get("dataset", "tofu") == "rwku":
+    dataset = cfg.get("dataset", "tofu")
+    if dataset == "rwku":
         return f"rwku-t{author:03d}"
+    if dataset == "wmdp_bio_mmlu":
+        return f"wmdp-r{author:03d}"
     return f"tofu-a{author}"
 
 
@@ -283,6 +286,7 @@ def fidelity_commands(cfg: dict, models: list[dict], output_root: Path):
         cmd = [
             sys.executable,
             str(FIDELITY),
+            "--dataset", str(cfg.get("dataset", "tofu")),
             "--model", str(model["path"]),
             "--device", str(common.get("device", "cuda")),
             "--dtype", str(common["dtype"]),

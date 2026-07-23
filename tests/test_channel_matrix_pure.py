@@ -115,8 +115,23 @@ class ChannelCampaignContractTest(unittest.TestCase):
         self.assertIn("--enforce-gate", command)
 
     def test_draft_objective_freeze_blocks_audit(self):
-        with self.assertRaises(RuntimeError):
-            campaign._load_freeze(self.config_path, self.config, self.models)
+        # The repo's TOFU-7B freeze is committed as status=frozen
+        # (FREEZE-2026-07-23-7B-DEV3ROUNDS), so exercise the guard against an
+        # explicit draft file rather than the mutable campaign artifact.
+        cfg = copy.deepcopy(self.config)
+        cfg["audit"]["objective_freeze"] = "freeze.yaml"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "freeze.yaml").write_text(
+                yaml.safe_dump({
+                    "status": "draft",
+                    "frozen_before_audit": False,
+                    "source_campaign": cfg["campaign_id"],
+                }),
+                encoding="utf-8",
+            )
+            with self.assertRaisesRegex(RuntimeError, "not marked status=frozen"):
+                campaign._load_freeze(root / "campaign.yaml", cfg, self.models)
 
     def test_frozen_audit_command_contains_core_and_stress_before_open(self):
         cfg = copy.deepcopy(self.config)

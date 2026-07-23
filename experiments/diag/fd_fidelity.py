@@ -16,6 +16,10 @@ while staying faithful under fp32.
   python experiments/diag/fd_fidelity.py \
       --model /group-volume/models/Qwen2.5-7B-Instruct --device cuda --dtype float32 \
       --n-cands 128 --dirs 16,32,64 --etas 3e-5,3e-4,3e-3 --seeds 0,1,2
+
+Non-TOFU campaigns pass ``--dataset rwku`` / ``--dataset wmdp_bio_mmlu``; the
+pool is then built through the same registry adapter as the gate runs, with
+``--author`` and ``--candidate-authors`` in that dataset's roster convention.
 """
 from __future__ import annotations
 
@@ -35,7 +39,7 @@ sys.path.insert(0, str(ROOT / "src"))
 from rsus.analysis.prediction import spearman, top_k_ids  # noqa: E402
 from rsus.blocks import mlp_down_last_layers  # noqa: E402
 from rsus.data.base import CandidateUniverse, Request  # noqa: E402
-from rsus.data.tofu import load_tofu_examples, tofu_request  # noqa: E402
+from rsus.data.registry import get_adapter  # noqa: E402
 from rsus.probe.base import ProbeSpec  # noqa: E402
 from rsus.probe.fidelity import (  # noqa: E402
     B_scores,
@@ -69,6 +73,44 @@ def _int_ranges(raw: str) -> list[int]:
     return values
 
 
+def build_fidelity_request(
+    dataset: str,
+    tokenizer,
+    author: int,
+    universe_authors: int,
+    candidate_authors: list[int] | None,
+    **adapter_kwargs,
+) -> Request:
+    """Build the fidelity pool through the registered dataset adapters.
+
+    ``author`` is the dataset's roster index (TOFU forget author, RWKU
+    forget-target row, WMDP forget-slice index); ``candidate_authors`` is the
+    frozen development pool in the dataset's candidate-unit space (retained
+    authors, remote targets, or sorted-MMLU-subject indices).
+    """
+    adapter = get_adapter(dataset)
+    if adapter.key == "tofu":
+        return adapter.build_request(
+            tokenizer=tokenizer, author_id=author, universe_authors=universe_authors,
+            seed=0, candidate_authors=candidate_authors, **adapter_kwargs,
+        )
+    if not candidate_authors:
+        raise ValueError(
+            f"--dataset {adapter.key} requires an explicit frozen --candidate-authors pool"
+        )
+    if adapter.key == "rwku":
+        return adapter.build_request(
+            tokenizer=tokenizer, target_index=author,
+            candidate_targets=list(candidate_authors), **adapter_kwargs,
+        )
+    if adapter.key == "wmdp_bio_mmlu":
+        return adapter.build_request(
+            tokenizer=tokenizer, request_index=author,
+            candidate_subjects=list(candidate_authors), **adapter_kwargs,
+        )
+    raise ValueError(f"fd_fidelity has no request recipe for dataset {adapter.key!r}")
+
+
 def agree(u: dict[str, float], v: dict[str, float], k: int) -> tuple[float, float]:
     ids = sorted(set(u) & set(v))
     rho = spearman([u[c] for c in ids], [v[c] for c in ids])
@@ -86,6 +128,9 @@ def main() -> None:
     p.add_argument("--model", required=True)
     p.add_argument("--device", default="cpu")
     p.add_argument("--dtype", default="float32", choices=["float32", "bfloat16"])
+    p.add_argument("--dataset", default="tofu", choices=["tofu", "rwku", "wmdp_bio_mmlu"],
+                   help="request adapter building the fidelity pool; --author and "
+                        "--candidate-authors follow the dataset's roster convention")
     p.add_argument("--author", type=int, default=180)
     p.add_argument("--universe-authors", type=int, default=30)
     p.add_argument("--candidate-authors", default="",
@@ -119,11 +164,11 @@ def main() -> None:
     tok = AutoTokenizer.from_pretrained(a.model)
     model = AutoModelForCausalLM.from_pretrained(a.model, torch_dtype=dtype).to(a.device).eval()
     candidate_authors = _int_ranges(a.candidate_authors) if a.candidate_authors else None
-    full = tofu_request(
+    full = build_fidelity_request(
+        a.dataset,
+        tok,
         a.author,
-        load_tofu_examples(tok),
         universe_authors=a.universe_authors,
-        seed=0,
         candidate_authors=candidate_authors,
     )
     all_cands = sorted(full.universe.examples, key=lambda example: example.example_id)
@@ -225,6 +270,7 @@ def main() -> None:
         "passed": passed,
         "model": a.model,
         "dtype": a.dtype,
+        "dataset": a.dataset,
         "author": a.author,
         "candidate_authors": candidate_authors,
         "candidate_seed": a.candidate_seed,

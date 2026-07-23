@@ -29,8 +29,10 @@ def test_builtin_adapters_return_request_contract_without_import_breakage():
 
 
 def test_unknown_dataset_never_falls_back_to_tofu():
+    # WMDP-bio/MMLU graduated to a real adapter on 2026-07-23; MUSE-News is
+    # still a planned paper dataset without a loader.
     with pytest.raises(AdapterNotFoundError, match="no dataset adapter registered"):
-        get_adapter("WMDP-bio/MMLU")
+        get_adapter("MUSE-News")
 
 
 def test_registry_rejects_alias_collisions_and_non_request_results():

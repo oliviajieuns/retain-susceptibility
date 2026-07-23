@@ -60,11 +60,13 @@ def parse_args():
     p.add_argument("--device", default="cpu")
     p.add_argument("--dtype", default="float32", choices=["float32", "bfloat16"])
     p.add_argument(
-        "--dataset", default="tofu", choices=["tofu", "rwku"],
+        "--dataset", default="tofu", choices=["tofu", "rwku", "wmdp_bio_mmlu"],
         help=(
-            "request adapter: tofu (default, unchanged behavior) or rwku, where "
+            "request adapter: tofu (default, unchanged behavior); rwku, where "
             "--author is the forget_target row index and --candidate-authors is "
-            "the frozen remote-target pool"
+            "the frozen remote-target pool; or wmdp_bio_mmlu, where --author is "
+            "the frozen forget-slice index and --candidate-authors indexes the "
+            "sorted MMLU subject list"
         ),
     )
     p.add_argument("--author", type=int, default=FORGET10_FIRST_AUTHOR)
@@ -431,6 +433,18 @@ def main():
             tokenizer,
             target_index=a.author,
             candidate_targets=list(candidate_authors),
+        )
+    elif a.dataset == "wmdp_bio_mmlu":
+        from rsus.data.wmdp import wmdp_request
+
+        if not candidate_authors:
+            sys.exit("--dataset wmdp_bio_mmlu requires an explicit frozen "
+                     "--candidate-authors MMLU subject pool")
+        log(f"loading WMDP-bio/MMLU (retain pool={len(candidate_authors)} MMLU subjects) ...")
+        req = wmdp_request(
+            tokenizer,
+            request_index=a.author,
+            candidate_subjects=list(candidate_authors),
         )
     else:
         log(f"loading TOFU (universe_authors={a.universe_authors}) ...")

@@ -231,6 +231,19 @@ def _rwku_factory(**kwargs: Any) -> Request:
     return rwku_request(**values)
 
 
+def _wmdp_factory(**kwargs: Any) -> Request:
+    """Lazy wrapper around the WMDP-bio/MMLU loader and request builder."""
+
+    from rsus.data.wmdp import load_wmdp_tables, wmdp_request
+
+    values = dict(kwargs)
+    if values.get("tables") is None and values.get("tokenizer") is None:
+        raise TypeError("WMDP-bio/MMLU adapter needs tokenizer (tables are loaded lazily)")
+    if values.get("tables") is None:
+        values["tables"] = load_wmdp_tables()
+    return wmdp_request(**values)
+
+
 def _tofu_roster_id(value: str) -> bool:
     prefix = "tofu-a"
     if not value.startswith(prefix) or not value[len(prefix) :].isdigit():
@@ -243,6 +256,14 @@ def _rwku_roster_id(value: str) -> bool:
     if not value.startswith(prefix) or not value[len(prefix) :].isdigit():
         return False
     return 0 <= int(value[len(prefix) :]) < 200
+
+
+def _wmdp_roster_id(value: str) -> bool:
+    prefix = "wmdp-r"
+    if not value.startswith(prefix) or not value[len(prefix) :].isdigit():
+        return False
+    # 1273 wmdp-bio questions // 40-question slices = 31 frozen requests.
+    return 0 <= int(value[len(prefix) :]) < 31
 
 
 def _substrate_roster_id(value: str) -> bool:
@@ -290,6 +311,29 @@ ADAPTERS.register(
             "forget_target row; neighbor probes are the native audit set"
         ),
         roster_id_validator=_rwku_roster_id,
+    )
+)
+
+ADAPTERS.register(
+    DatasetAdapter(
+        key="wmdp_bio_mmlu",
+        aliases=("WMDP-bio/MMLU", "wmdp-bio", "cais/wmdp"),
+        factory=_wmdp_factory,
+        capabilities=AdapterCapabilities(
+            stages=frozenset(
+                {"calibration", "prediction", "protection", "target_evaluation"}
+            ),
+            roster_unit="forget-slice request_id",
+            grouped_candidates=True,
+            native_audit=True,
+            independent_target_roster=True,
+        ),
+        description=(
+            "WMDP-bio hazardous-knowledge removal: one deletion request per "
+            "frozen 40-question slice; the MMLU subject-grouped retain "
+            "universe carries the native audit set"
+        ),
+        roster_id_validator=_wmdp_roster_id,
     )
 )
 

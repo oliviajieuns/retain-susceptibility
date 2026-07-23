@@ -1,0 +1,123 @@
+campaign_id: kdd27-channel-matrix-wmdp7b-v1
+dataset: wmdp_bio_mmlu
+output_root: runs/channel_matrix_wmdp7b
+
+# WMDP-bio hazardous-knowledge removal with an MMLU retain universe on
+# Qwen2.5-7B. "Authors" throughout this file are WMDP-bio forget-slice
+# indices (wmdp-r<idx>: contiguous 40-question chunks of the frozen
+# seed-20260723 shuffle, 31 slices total); candidate pools are frozen MMLU
+# subject pools — each integer indexes the sorted MMLU subject list (57
+# subjects), and a request's retain universe is the first 8 test questions of
+# each pooled subject (see src/rsus/data/wmdp.py). Development slices 0-1,
+# audit slices 10/14/18.
+models:
+  - id: qwen25_7b
+    path: /group-volume/models/Qwen2.5-7B-Instruct
+    enabled: true
+
+common:
+  device: cuda
+  dtype: float32
+  trainable_scope: probe_block
+  representation_retain_mode: stream_cached
+  block_last_n: 8
+  # Pool size per request: 13 MMLU subjects — 57 subjects only admit four
+  # disjoint 13-subject pools (TOFU/RWKU use 30 whole-author pools). Pools
+  # are disjoint across development and every audit request.
+  universe_authors: 13
+  candidate_author_pools:
+    calibration: "2-14"
+    audit:
+      "10": "15-27"
+      "14": "28-40"
+      "18": "41-53"
+  batch_size: 4
+  sft_lr: 1.0e-5
+  # The WMDP request universe (40 forget + 104 MMLU candidates) is smaller
+  # than RWKU's ~950 probes; keep the RWKU-calibrated budget and let the
+  # canary decide. Target stays 0.8 (same memorization contract as every
+  # other campaign).
+  sft_steps: 800
+  sft_target_loss: 0.8
+  sft_eval_every: 100
+  require_sft_target: true
+  probe_dirs: 64
+  probe_norm_eta: 3.0e-3
+  probe_seed: 0
+  sentence_encoder: sentence-transformers/all-MiniLM-L6-v2
+
+# Frozen randomized-sensitivity operating point evaluated on the disjoint
+# development pool via fd_fidelity.py --dataset wmdp_bio_mmlu (the same
+# registry adapter as the gate runs). The 13-subject development pool holds
+# 13 x 8 = 104 candidates, so the certificate covers the complete pool.
+fidelity:
+  author: 0
+  n_candidates: 104
+  candidate_seed: 314159
+  min_rho_ab: 0.70
+  min_rho_bc: 0.80
+  min_rho_ac: 0.80
+  min_eff_ratio: 0.90
+  min_frac_changed: 0.90
+
+calibration:
+  authors: [0, 1]
+  seeds: [2025]
+  selection:
+    forget_recall_max: 0.10
+    mean_dnll_max: 2.0
+    # 16.0 carried from prereg/AMENDMENT-2026-07-23-cvar-bound.md (the
+    # measured 7B-scale graddiff frontier on RWKU floors at CVaR ~12).
+    # Adopted before any WMDP audit or probe outcome existed; revisit only
+    # via a pre-audit amendment.
+    cvar05_dnll_max: 16.0
+    require_every_development_run: true
+    tie_break: [mean_dnll, cvar05_dnll, steps, lr]
+    stress_rule: >-
+      Prefer settings reaching the forget criterion on every development run;
+      otherwise minimize worst development recall, then mean damage, CVaR,
+      steps, and learning rate. Stress controls may remain failed or collapsed
+      in audit and are never part of the core interaction.
+  # Round-1 grid seeded from the RWKU-7B calibration experience (the
+  # rwku_7b.yaml round-1 brackets); WMDP difficulty may differ, so treat this
+  # as a bracketing grid — later rounds are added from wmdp development
+  # diagnostics only. idkdpo stays excluded, parallel with RWKU.
+  objective_grid:
+    ga:
+      - {id: lr05_s60, lr: 5.0e-7, steps: 60}
+      - {id: lr1_s60, lr: 1.0e-6, steps: 60}
+    graddiff:
+      - {id: lr1_s120, lr: 1.0e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
+      - {id: lr2_s120, lr: 2.0e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
+    npo:
+      - {id: b01_lr2_s120, lr: 2.0e-6, steps: 120, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
+      - {id: b01_lr4_s120, lr: 4.0e-6, steps: 120, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
+    simnpo:
+      - {id: b45_lr2_s120, lr: 2.0e-6, steps: 120, beta: 4.5, forget_weight: 0.125, retain_weight: 1.0}
+      - {id: b45_lr4_s120, lr: 4.0e-6, steps: 120, beta: 4.5, forget_weight: 0.125, retain_weight: 1.0}
+    gru:
+      - {id: lr1_s120, lr: 1.0e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
+      - {id: lr2_s120, lr: 2.0e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
+    rmu:
+      - {id: a10_c3_lr1_s120, lr: 1.0e-6, steps: 120, rmu_alpha: 10.0, rmu_c: 3.0}
+      - {id: a10_c3_lr2_s120, lr: 2.0e-6, steps: 120, rmu_alpha: 10.0, rmu_c: 3.0}
+    repnoise:
+      - {id: a1_c3_lr1_s120, lr: 1.0e-6, steps: 120, rmu_alpha: 1.0, rmu_c: 3.0}
+      - {id: a10_c3_lr1_s120, lr: 1.0e-6, steps: 120, rmu_alpha: 10.0, rmu_c: 3.0}
+    circuit_breakers:
+      - {id: a1_lr1_s240, lr: 1.0e-6, steps: 240, rmu_alpha: 1.0}
+      - {id: a10_lr1_s240, lr: 1.0e-6, steps: 240, rmu_alpha: 10.0}
+
+audit:
+  offline: true
+  authors: [10, 14, 18]
+  seeds: [2025, 2026]
+  # Full 7-objective core roster with ga as the stress control; any roster
+  # reduction is decided from development calibration before the freeze,
+  # never from audit outcomes.
+  objectives: [graddiff, npo, simnpo, gru, rmu, repnoise, circuit_breakers]
+  stress_objectives: [ga]
+  predictors: [grad_norm, fd_norm, knn_feature, knn_embed, knn_lexical, fd, random_rank]
+  objective_freeze: objective_freeze_wmdp7b.yaml
+  fidelity_certificates:
+    qwen25_7b: runs/channel_matrix_wmdp7b/fidelity/qwen25_7b.json
