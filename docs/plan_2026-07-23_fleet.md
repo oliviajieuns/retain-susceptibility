@@ -98,6 +98,13 @@ alpha, audit 시드 추가)는 금지 — 남는 GPU는 아래 §3의 독립 트
   ~0.13 하강) → `1p5b_tofu.yaml sft_steps 1200`. 스케일별 SFT 예산:
   1.5B=1200 / 7B=400(실측 0.608 통과) / 14B=800. 교훈: probe_block 계약에서는
   블록 절대 크기가 암기 속도를 결정 — 새 스케일 추가 시 SFT 예산부터 캘리브레이션.
+- **1.5B calibration 라운드1 (07-23): 코어 7종 전부 UNRESOLVED** — 7B용 lr 그리드가
+  1.5B에선 언더슈팅(npo/simnpo/rmu/CB/repnoise: recall 0.55–0.85로 미도달) 또는
+  브래킷 오버슈팅(graddiff/gru lr2: recall은 근접하나 mean ΔNLL 4–6.8로 utility
+  붕괴). repnoise는 도달 전에 손상이 먼저 2 nats — noise 항이 지배.
+  조치: 그리드 라운드2 확장(17개 설정 추가; interior lr 1.5e-6, lr2 단축 스텝,
+  약한 목적함수는 lr ×2–4 + 240스텝) → `--unit-suffix r2`로 재적재.
+  이 언더/오버슈팅 스케일 의존성 자체가 페이퍼 §5 후보 관찰.
 - **T3 — 7B bf16 게이트 실패 아티팩트**: §5 주장("bf16은 게이트 실패") 뒷받침용
   `fd_fidelity.py` 7B bf16 1회. GPU 1장, 짧음.
 - **T4 — xprot 기존 arm 재실행**: remote-quantile 버그 수정된 새 코드로

@@ -44,11 +44,13 @@ def _enabled_models(cfg: dict, selected: set[str]) -> list[str]:
 
 
 def build_units(cfg: dict, config_rel: str, phase: str, models: list[str],
-                max_attempts: int) -> list[Unit]:
+                max_attempts: int, unit_suffix: str = "") -> list[Unit]:
     python = sys.executable or "python"
     units: list[Unit] = []
 
     def add(unit_id: str, cmd: list[str]) -> None:
+        if unit_suffix:
+            unit_id = f"{unit_id}__{unit_suffix}"
         units.append(Unit(unit_id=unit_id, cmd=cmd, gpus=1, max_attempts=max_attempts))
 
     if phase == "fidelity":
@@ -92,6 +94,9 @@ def main() -> None:
                         help="repeatable; phases are emitted in the given order")
     parser.add_argument("--model-id", action="append", default=[])
     parser.add_argument("--max-attempts", type=int, default=2)
+    parser.add_argument("--unit-suffix", default="",
+                        help="append __<suffix> to every unit id (e.g. r2 for a "
+                             "grid-extension re-enqueue; the queue is append-only per id)")
     parser.add_argument("--out", help="write units JSONL here instead of/in addition to --enqueue")
     parser.add_argument("--enqueue", action="store_true", help="enqueue directly into --queue")
     parser.add_argument("--queue", help="queue root (required with --enqueue)")
@@ -105,7 +110,8 @@ def main() -> None:
 
     units: list[Unit] = []
     for phase in args.phase:
-        units.extend(build_units(cfg, config_rel, phase, models, args.max_attempts))
+        units.extend(build_units(cfg, config_rel, phase, models, args.max_attempts,
+                                 unit_suffix=args.unit_suffix))
 
     ids = [u.unit_id for u in units]
     if len(ids) != len(set(ids)):

@@ -79,27 +79,56 @@ calibration:
     graddiff:
       - {id: lr1_s120, lr: 1.0e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
       - {id: lr2_s120, lr: 2.0e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
+      # Round-2 extension (2026-07-23): round-1 bracketed the target — lr1
+      # never reached recall<=0.10, lr2 reached on a198 but blew the utility
+      # bounds on a199 — so probe the interior and shorter-at-lr2 corners.
+      - {id: lr15_s120, lr: 1.5e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
+      - {id: lr2_s60, lr: 2.0e-6, steps: 60, forget_weight: 1.0, retain_weight: 1.0}
+      - {id: lr2_s80, lr: 2.0e-6, steps: 80, forget_weight: 1.0, retain_weight: 1.0}
     npo:
       - {id: b01_lr2_s120, lr: 2.0e-6, steps: 120, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
       - {id: b01_lr4_s120, lr: 4.0e-6, steps: 120, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
+      # Round-2: recall stuck at ~0.56-0.70 with tiny damage — push lr/steps up.
+      - {id: b01_lr8_s120, lr: 8.0e-6, steps: 120, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
+      - {id: b01_lr4_s240, lr: 4.0e-6, steps: 240, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
+      - {id: b01_lr8_s240, lr: 8.0e-6, steps: 240, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
     simnpo:
       - {id: b45_lr2_s120, lr: 2.0e-6, steps: 120, beta: 4.5, forget_weight: 0.125, retain_weight: 1.0}
       - {id: b45_lr4_s120, lr: 4.0e-6, steps: 120, beta: 4.5, forget_weight: 0.125, retain_weight: 1.0}
+      # Round-2: recall ~0.77-0.84, damage negative — far from reach, escalate hard.
+      - {id: b45_lr8_s240, lr: 8.0e-6, steps: 240, beta: 4.5, forget_weight: 0.125, retain_weight: 1.0}
+      - {id: b45_lr16_s240, lr: 1.6e-5, steps: 240, beta: 4.5, forget_weight: 0.125, retain_weight: 1.0}
     gru:
       - {id: lr1_s120, lr: 1.0e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
       - {id: lr2_s120, lr: 2.0e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
+      # Round-2: same bracket shape as graddiff (lr2 reaches but overshoots damage).
+      - {id: lr15_s120, lr: 1.5e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
+      - {id: lr2_s60, lr: 2.0e-6, steps: 60, forget_weight: 1.0, retain_weight: 1.0}
+      - {id: lr2_s80, lr: 2.0e-6, steps: 80, forget_weight: 1.0, retain_weight: 1.0}
     idkdpo:
       - {id: b01_lr2_s120, lr: 2.0e-6, steps: 120, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
       - {id: b01_lr4_s120, lr: 4.0e-6, steps: 120, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
     rmu:
       - {id: a10_c3_lr1_s120, lr: 1.0e-6, steps: 120, rmu_alpha: 10.0, rmu_c: 3.0}
       - {id: a10_c3_lr2_s120, lr: 2.0e-6, steps: 120, rmu_alpha: 10.0, rmu_c: 3.0}
+      # Round-2: recall ~0.77-0.82 with near-zero damage — large headroom, escalate.
+      - {id: a10_c3_lr4_s240, lr: 4.0e-6, steps: 240, rmu_alpha: 10.0, rmu_c: 3.0}
+      - {id: a10_c3_lr8_s240, lr: 8.0e-6, steps: 240, rmu_alpha: 10.0, rmu_c: 3.0}
     repnoise:
       - {id: a1_c3_lr1_s120, lr: 1.0e-6, steps: 120, rmu_alpha: 1.0, rmu_c: 3.0}
       - {id: a10_c3_lr1_s120, lr: 1.0e-6, steps: 120, rmu_alpha: 10.0, rmu_c: 3.0}
+      # Round-2: recall ~0.55-0.71 while mean damage already ~2 nats — the noise
+      # term drives damage before reach, so probe higher lr at low alpha and a
+      # longer low-lr schedule instead of raising alpha further.
+      - {id: a1_c3_lr2_s120, lr: 2.0e-6, steps: 120, rmu_alpha: 1.0, rmu_c: 3.0}
+      - {id: a1_c3_lr1_s240, lr: 1.0e-6, steps: 240, rmu_alpha: 1.0, rmu_c: 3.0}
     circuit_breakers:
       - {id: a1_lr1_s240, lr: 1.0e-6, steps: 240, rmu_alpha: 1.0}
       - {id: a10_lr1_s240, lr: 1.0e-6, steps: 240, rmu_alpha: 10.0}
+      # Round-2: recall ~0.79-0.85 with ~zero damage (CB historically notreached
+      # at 1.5B) — escalate lr before concluding not-reachable.
+      - {id: a10_lr2_s240, lr: 2.0e-6, steps: 240, rmu_alpha: 10.0}
+      - {id: a10_lr4_s240, lr: 4.0e-6, steps: 240, rmu_alpha: 10.0}
 
 audit:
   offline: true
