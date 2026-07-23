@@ -127,6 +127,41 @@ def test_missing_input_fails_closed_without_allow_partial(tmp_path: Path) -> Non
     assert "missing channel report" in proc.stderr
 
 
+def test_tikz_output_is_balanced_and_carries_data(tmp_path: Path) -> None:
+    report = tmp_path / "pooled_channel_report.csv"
+    _write_channel_report(report)
+    cert = tmp_path / "cert.json"
+    _write_certificate(cert, passed=True)
+    _write_protection(tmp_path)
+    tikz = tmp_path / "fig2.tex"
+    proc = _run([
+        "--channel-report", f"TOFU-7B={report}",
+        "--fidelity", f"7B fp32={cert}",
+        "--protection", f"TOFU-7B={tmp_path}",
+        "--tikz", str(tikz),
+    ])
+    assert proc.returncode == 0, proc.stderr
+    text = tikz.read_text(encoding="utf-8")
+    assert text.count("\\begin{tikzpicture}") == 1
+    assert text.count("\\begin{axis}") == text.count("\\end{axis}") == 6
+    assert text.count("{") == text.count("}")
+    assert "0.45" in text            # fixture fd_norm rho reaches the coordinates
+    assert "-2" in text              # contrast difference vs "none"
+    assert "pending" not in text     # full inputs leave no placeholder
+    # every fixture label with an underscore-free form must be TeX-escaped
+    assert "fd_norm" not in text.replace("fd\\_norm", "")
+
+
+def test_tikz_partial_renders_placeholders(tmp_path: Path) -> None:
+    tikz = tmp_path / "fig2_partial.tex"
+    proc = _run(["--allow-partial", "--tikz", str(tikz)])
+    assert proc.returncode == 0, proc.stderr
+    text = tikz.read_text(encoding="utf-8")
+    assert text.count("\\begin{tikzpicture}") == 1
+    assert "pending" in text
+    assert text.count("{") == text.count("}")
+
+
 def test_rejects_unlabeled_input(tmp_path: Path) -> None:
     proc = _run([
         "--channel-report", "no_label_here.csv",

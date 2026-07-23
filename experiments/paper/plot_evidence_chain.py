@@ -112,11 +112,10 @@ def _placeholder(ax, text: str) -> None:
 
 
 # ---------------------------------------------------------------- panel A
-def panel_a(ax_abs, ax_inc, reports: list[tuple[str, list[dict]]],
-            predictors: list[str], control: str) -> None:
-    """Absolute rho (95% CI) per core objective, and incremental rho over
-    the frozen random-rank control, grouped by campaign."""
-    groups = []  # (tick_label, {predictor: (rho, lo, hi)})
+def extract_a(reports: list[tuple[str, list[dict]]], predictors: list[str],
+              control: str) -> list[tuple[str, str, dict]]:
+    """(objective label, campaign label, {predictor: (rho, lo, hi)}) rows."""
+    groups = []
     for label, rows in reports:
         core = [r for r in rows if r.get("channel") in ("loss_gradient", "representation")]
         objectives = sorted({r["objective"] for r in core},
@@ -137,7 +136,16 @@ def panel_a(ax_abs, ax_inc, reports: list[tuple[str, list[dict]]],
                         _fnum(match[0], "rho_hi"),
                     )
             if cell:
-                groups.append((f"{OBJ_LABEL.get(objective, objective)}\n{label}", cell))
+                groups.append((OBJ_LABEL.get(objective, objective), label, cell))
+    return groups
+
+
+def panel_a(ax_abs, ax_inc, reports: list[tuple[str, list[dict]]],
+            predictors: list[str], control: str) -> None:
+    """Absolute rho (95% CI) per core objective, and incremental rho over
+    the frozen random-rank control, grouped by campaign."""
+    groups = [(f"{obj}\n{camp}", cell)
+              for obj, camp, cell in extract_a(reports, predictors, control)]
 
     if not groups:
         _placeholder(ax_abs, "Panel A pending:\nno pooled_channel_report.csv yet")
@@ -317,6 +325,291 @@ def panel_c(ax_damage, ax_feas, contrasts: list[tuple[str, list[dict]]],
         _placeholder(ax_feas, "feasibility / retention pending")
 
 
+# ---------------------------------------------------------------- tikz
+def _tex(text: str) -> str:
+    return str(text).replace("_", r"\_")
+
+
+def _tikz_pending(x: str, y: str, w: str, h: str, text: str) -> list[str]:
+    return [
+        f"\\begin{{axis}}[at={{({x},{y})}}, anchor=north west, width={w}, height={h},",
+        "  hide axis, xmin=0, xmax=1, ymin=0, ymax=1]",
+        f"\\node[align=center, text=evCtrl, font=\\footnotesize\\itshape]"
+        f" at (axis cs:0.5,0.5) {{{text}}};",
+        "\\end{axis}",
+    ]
+
+
+def _tikz_contrasts(rows: list[tuple[str, dict]], x: str, y: str, w: str, h: str,
+                    xlabel: str, title: str = "") -> list[str]:
+    labels, bars = [], []
+    for label, row in rows:
+        diff = _fnum(row, "mean_cvar_difference_deployed_minus_comparator")
+        lo = _fnum(row, "ci95_lo")
+        hi = _fnum(row, "ci95_hi")
+        comparator = {
+            "alpha0.0": r"vs frozen gradient prior ($\alpha{=}0$)",
+            "alpha1.0": r"vs frozen proximity prior ($\alpha{=}1$)",
+            "none": "vs no protection",
+            "random": "vs random allocation",
+            "exact_grad_norm": "vs exact grad-norm",
+        }.get(row["comparator"], _tex(row["comparator"]))
+        labels.append(f"{{{_tex(label)} {_tex(row.get('parent', ''))}\\\\{comparator}}}")
+        bars.append((diff, lo, hi))
+    out = [
+        f"\\begin{{axis}}[at={{({x},{y})}}, anchor=north west, width={w}, height={h},",
+        "  axis lines=left, y dir=reverse, xlabel style={font=\\scriptsize},",
+        f"  xlabel={{{xlabel}}},",
+        f"  ymin=-0.6, ymax={len(bars) - 0.4},",
+        f"  ytick={{{','.join(str(i) for i in range(len(bars)))}}},",
+        f"  yticklabels={{{','.join(labels)}}},",
+        "  yticklabel style={font=\\tiny, align=right},",
+        "  tick label style={font=\\scriptsize},",
+    ]
+    if title:
+        out.append(f"  title={{{title}}}, title style={{font=\\small, at={{(0,1.06)}},"
+                   " anchor=south west, align=left},")
+    out.append("]")
+    out.append("\\draw[evCtrl, densely dotted] (axis cs:0,-0.6) -- "
+               f"(axis cs:0,{len(bars) - 0.4});")
+    for i, (diff, lo, hi) in enumerate(bars):
+        if not math.isfinite(diff):
+            continue
+        color = "evMix" if diff < 0 else "evProx"
+        out.append(f"\\addplot[xbar, bar width=0.55, fill={color}, draw=white,"
+                   f" line width=0.3pt] coordinates {{({diff:.4g},{i})}};")
+        if math.isfinite(lo) and math.isfinite(hi):
+            out.append(f"\\draw[ink, line width=0.8pt] (axis cs:{lo:.4g},{i}) --"
+                       f" (axis cs:{hi:.4g},{i});")
+            for cap in (lo, hi):
+                out.append(f"\\draw[ink, line width=0.8pt] (axis cs:{cap:.4g},{i - 0.15})"
+                           f" -- (axis cs:{cap:.4g},{i + 0.15});")
+    out.append("\\end{axis}")
+    return out
+
+
+def emit_tikz(data: dict, predictors: list[str], control: str) -> str:
+    lines = [
+        "% Figure 2 evidence chain -- generated by",
+        "%   experiments/paper/plot_evidence_chain.py --tikz",
+        "% Preamble: \\usepackage{pgfplots} \\pgfplotsset{compat=1.17}",
+        "\\definecolor{evGrad}{HTML}{0072B2}",
+        "\\definecolor{evProx}{HTML}{D55E00}",
+        "\\definecolor{evMix}{HTML}{009E73}",
+        "\\definecolor{evCtrl}{HTML}{767676}",
+        "\\definecolor{ink}{HTML}{1A1A1A}",
+        "\\begin{tikzpicture}[font=\\small]",
+    ]
+    col = {"A": "0cm", "B": "6.9cm", "C": "13.4cm"}
+    top, bot = "0cm", "-5.0cm"
+    wide, tall, short = "6.0cm", "4.6cm", "3.0cm"
+
+    # ---- panel A
+    groups = extract_a(data["reports"], predictors, control)
+    title_a = ("\\textbf{A}\\; absolute and incremental prediction\\\\"
+               "(repair-held-out behaviors)")
+    if groups:
+        ticks = ",".join(str(i) for i in range(len(groups)))
+        tick_labels = ",".join(
+            f"{{{_tex(obj)}\\\\{_tex(camp)}}}" for obj, camp, _ in groups)
+        lines += [
+            f"\\begin{{axis}}[at={{({col['A']},{top})}}, anchor=north west,"
+            f" width={wide}, height={tall},",
+            "  axis lines=left, ylabel={Spearman $\\rho$},",
+            f"  title={{{title_a}}}, title style={{font=\\small, at={{(0,1.06)}},"
+            " anchor=south west, align=left},",
+            f"  xmin=-0.6, xmax={len(groups) - 0.4},",
+            f"  xtick={{{ticks}}}, xticklabels={{{tick_labels}}},",
+            "  xticklabel style={font=\\tiny, align=center},",
+            "  tick label style={font=\\scriptsize},",
+            "  legend style={font=\\tiny, draw=none, at={(0.98,0.98)},"
+            " anchor=north east}, legend cell align=left,",
+            "]",
+            f"\\draw[evCtrl, densely dotted] (axis cs:-0.6,0) -- "
+            f"(axis cs:{len(groups) - 0.4},0);",
+        ]
+        offsets = {p: (i - (len(predictors) - 1) / 2) * 0.22
+                   for i, p in enumerate(predictors)}
+        colors = {predictors[0]: "evGrad"}
+        if len(predictors) > 1:
+            colors[predictors[1]] = "evProx"
+        for extra in predictors[2:]:
+            colors[extra] = "evMix"
+        for predictor in predictors:
+            coords = []
+            for i, (_, _, cell) in enumerate(groups):
+                if predictor in cell:
+                    rho, lo, hi = cell[predictor]
+                    err_lo = max(0.0, rho - lo) if math.isfinite(lo) else 0.0
+                    err_hi = max(0.0, hi - rho) if math.isfinite(hi) else 0.0
+                    coords.append(f"({i + offsets[predictor]:.3f},{rho:.4g})"
+                                  f" += (0,{err_hi:.4g}) -= (0,{err_lo:.4g})")
+            if coords:
+                lines.append(
+                    f"\\addplot[only marks, mark=*, mark size=1.8pt, {colors[predictor]},"
+                    " error bars/.cd, y dir=both, y explicit]"
+                    f" coordinates {{{' '.join(coords)}}};")
+                lines.append(f"\\addlegendentry{{{_tex(PRED_LABEL.get(predictor, predictor))}}}")
+        ctrl = " ".join(f"({i},{cell[control][0]:.4g})"
+                        for i, (_, _, cell) in enumerate(groups) if control in cell)
+        if ctrl:
+            lines.append("\\addplot[only marks, mark=o, mark size=1.8pt, evCtrl]"
+                         f" coordinates {{{ctrl}}};")
+            lines.append(f"\\addlegendentry{{{_tex(PRED_LABEL.get(control, control))}}}")
+        lines.append("\\end{axis}")
+
+        lines += [
+            f"\\begin{{axis}}[at={{({col['A']},{bot})}}, anchor=north west,"
+            f" width={wide}, height={short},",
+            "  axis lines=left, ylabel={$\\Delta\\rho$ vs. control},",
+            "  ylabel style={font=\\scriptsize},",
+            f"  xmin=-0.6, xmax={len(groups) - 0.4},",
+            f"  xtick={{{ticks}}}, xticklabels={{{tick_labels}}},",
+            "  xticklabel style={font=\\tiny, align=center},",
+            "  tick label style={font=\\scriptsize},",
+            "]",
+        ]
+        for predictor in predictors:
+            coords = " ".join(
+                f"({i + offsets[predictor]:.3f},{cell[predictor][0] - cell[control][0]:.4g})"
+                for i, (_, _, cell) in enumerate(groups)
+                if predictor in cell and control in cell)
+            if coords:
+                lines.append(f"\\addplot[ybar, bar width=0.20, fill={colors[predictor]},"
+                             f" draw=white, line width=0.3pt] coordinates {{{coords}}};")
+        lines.append("\\end{axis}")
+    else:
+        lines += _tikz_pending(col["A"], top, wide, tall,
+                               "Panel A pending\\\\(audit not aggregated yet)")
+
+    # ---- panel B
+    title_b = "\\textbf{B}\\; loss-shake fidelity and joint-profile value"
+    certificates = data["certificates"]
+    if certificates:
+        n_certs = len(certificates)
+        height = 0.8 / n_certs
+        metric_labels = ",".join(f"{{{lbl}}}" for _, lbl in FIDELITY_METRICS)
+        lines += [
+            f"\\begin{{axis}}[at={{({col['B']},{top})}}, anchor=north west,"
+            f" width=5.8cm, height={tall},",
+            "  axis lines=left, y dir=reverse, xmin=0, xmax=1.05,",
+            f"  title={{{title_b}}}, title style={{font=\\small, at={{(0,1.06)}},"
+            " anchor=south west, align=left},",
+            f"  ymin=-0.6, ymax={len(FIDELITY_METRICS) - 0.4},",
+            f"  ytick={{{','.join(str(i) for i in range(len(FIDELITY_METRICS)))}}},",
+            f"  yticklabels={{{metric_labels}}},",
+            "  yticklabel style={font=\\scriptsize},",
+            "  xlabel={certificate value ($\\vert$ = frozen floor)},",
+            "  xlabel style={font=\\scriptsize}, tick label style={font=\\scriptsize},",
+            "]",
+        ]
+        for ci, (label, cert) in enumerate(certificates):
+            metrics = cert.get("metrics", {})
+            thresholds = cert.get("thresholds", {})
+            first_y = None
+            for mi, (key, _) in enumerate(FIDELITY_METRICS):
+                value = float(metrics.get(key, float("nan")))
+                floor = thresholds.get(key)
+                yy = mi + ci * height - 0.4 + height / 2
+                if first_y is None:
+                    first_y = yy
+                ok = (math.isfinite(value) and floor is not None
+                      and value >= float(floor))
+                color = "evGrad" if ok else "evProx"
+                if math.isfinite(value):
+                    lines.append(f"\\addplot[xbar, bar width={height * 0.9:.3f},"
+                                 f" fill={color}, draw=white, line width=0.3pt]"
+                                 f" coordinates {{({value:.4g},{yy:.3f})}};")
+                if floor is not None:
+                    lines.append(
+                        f"\\draw[ink, line width=1.0pt]"
+                        f" (axis cs:{float(floor):.4g},{yy - height * 0.45:.3f}) --"
+                        f" (axis cs:{float(floor):.4g},{yy + height * 0.45:.3f});")
+            lines.append(f"\\node[anchor=west, font=\\tiny, text=white]"
+                         f" at (axis cs:0.02,{first_y:.3f}) {{{_tex(label)}}};")
+        lines.append("\\end{axis}")
+    else:
+        lines += _tikz_pending(col["B"], top, "5.8cm", tall,
+                               "fidelity certificates pending")
+        if not data["contrasts"]:
+            # keep the panel header visible even when fully pending
+            lines.append(f"\\node[anchor=south west, font=\\small, align=left]"
+                         f" at ({col['B']},0.35cm) {{{title_b}}};")
+
+    prior_rows = [(label, r) for label, rs in data["contrasts"] for r in rs
+                  if r.get("comparator") in PRIOR_COMPARATORS]
+    if prior_rows:
+        lines += _tikz_contrasts(
+            prior_rows, col["B"], bot, "5.8cm", short,
+            "deployed mixture $-$ frozen prior, CVaR$_{05}$ $\\Delta$NLL (95\\% CI)")
+    else:
+        lines += _tikz_pending(col["B"], bot, "5.8cm", short,
+                               "joint-profile contrasts pending\\\\"
+                               "(alpha-audit not aggregated yet)")
+
+    # ---- panel C
+    title_c = "\\textbf{C}\\; constraint-matched\\\\fixed-budget protection"
+    budget_rows = [(label, r) for label, rs in data["contrasts"] for r in rs
+                   if r.get("comparator") in BUDGET_COMPARATORS]
+    if budget_rows:
+        lines += _tikz_contrasts(
+            budget_rows, col["C"], top, "5.8cm", tall,
+            "deployed $-$ comparator, CVaR$_{05}$ $\\Delta$NLL (95\\% CI)",
+            title=title_c)
+    else:
+        lines += _tikz_pending(col["C"], top, "5.8cm", tall,
+                               "Panel C pending\\\\(alpha-audit not aggregated yet)")
+        lines.append(f"\\node[anchor=south west, font=\\small, align=left]"
+                     f" at ({col['C']},0.35cm) {{{title_c}}};")
+
+    points = []
+    for label, rows_curve in data["curves"]:
+        for row in rows_curve:
+            if int(_fnum(row, "deployed_model_count") or 0) > 0:
+                n_total = _fnum(row, "n_total")
+                feas = _fnum(row, "n_reach") / n_total if n_total else float("nan")
+                points.append((
+                    f"{{{_tex(label)} {_tex(row.get('parent', ''))}\\\\"
+                    f"$\\hat\\alpha{{=}}{_fnum(row, 'alpha'):g}$}}",
+                    feas,
+                    _fnum(row, "mean_utility_retention_reached"),
+                ))
+    if points:
+        ticks = ",".join(str(i) for i in range(len(points)))
+        lines += [
+            f"\\begin{{axis}}[at={{({col['C']},{bot})}}, anchor=north west,"
+            f" width=5.8cm, height={short},",
+            "  axis lines=left, ymin=0, ymax=1.1,",
+            f"  xmin=-0.6, xmax={len(points) - 0.4},",
+            f"  xtick={{{ticks}}},",
+            f"  xticklabels={{{','.join(p[0] for p in points)}}},",
+            "  xticklabel style={font=\\tiny, align=center},",
+            "  tick label style={font=\\scriptsize},",
+            "  legend style={font=\\tiny, draw=none, at={(0.98,0.02)},"
+            " anchor=south east}, legend cell align=left,",
+            "]",
+            f"\\draw[evCtrl, densely dotted] (axis cs:-0.6,1) -- "
+            f"(axis cs:{len(points) - 0.4},1);",
+            f"\\draw[evProx, densely dashed] (axis cs:-0.6,0.9) -- "
+            f"(axis cs:{len(points) - 0.4},0.9);",
+        ]
+        feas_coords = " ".join(f"({i - 0.18},{p[1]:.4g})" for i, p in enumerate(points))
+        util_coords = " ".join(f"({i + 0.18},{p[2]:.4g})" for i, p in enumerate(points))
+        lines.append(f"\\addplot[ybar, bar width=0.32, fill=evGrad, draw=white,"
+                     f" line width=0.3pt] coordinates {{{feas_coords}}};")
+        lines.append("\\addlegendentry{feasibility (reach rate)}")
+        lines.append(f"\\addplot[ybar, bar width=0.32, fill=evMix, draw=white,"
+                     f" line width=0.3pt] coordinates {{{util_coords}}};")
+        lines.append("\\addlegendentry{utility retention}")
+        lines.append("\\end{axis}")
+    else:
+        lines += _tikz_pending(col["C"], bot, "5.8cm", short,
+                               "feasibility / retention pending")
+
+    lines.append("\\end{tikzpicture}")
+    return "\n".join(lines) + "\n"
+
+
 # ---------------------------------------------------------------- driver
 def load_inputs(args) -> dict:
     data = {"reports": [], "certificates": [], "contrasts": [], "curves": []}
@@ -359,13 +652,27 @@ def main() -> None:
                         help="frozen control predictor for the incremental row")
     parser.add_argument("--allow-partial", action="store_true",
                         help="render whichever panels have inputs; placeholders otherwise")
-    parser.add_argument("--out", required=True, help="output figure (.pdf/.png)")
+    parser.add_argument("--out", help="output figure (.pdf/.png)")
+    parser.add_argument("--tikz", help="also/instead write a pgfplots tikzpicture "
+                                       "(.tex) built from the same inputs")
     parser.add_argument("--dpi", type=int, default=200)
     args = parser.parse_args()
+    if not args.out and not args.tikz:
+        parser.error("need at least one of --out / --tikz")
 
     data = load_inputs(args)
     if not any(data.values()) and not args.allow_partial:
         raise SystemExit("no inputs given; pass --allow-partial to render placeholders")
+
+    predictors = [p.strip() for p in args.predictors.split(",") if p.strip()]
+    if args.tikz:
+        tikz_path = Path(args.tikz)
+        tikz_path.parent.mkdir(parents=True, exist_ok=True)
+        tikz_path.write_text(emit_tikz(data, predictors, args.control),
+                             encoding="utf-8")
+        print(f"wrote {tikz_path}")
+    if not args.out:
+        return
 
     fig = plt.figure(figsize=(13.5, 4.6))
     grid = fig.add_gridspec(2, 3, width_ratios=[1.35, 1.0, 1.0],
@@ -383,7 +690,6 @@ def main() -> None:
             ax.spines[spine].set_visible(False)
         ax.tick_params(labelsize=8, color=MUTED)
 
-    predictors = [p.strip() for p in args.predictors.split(",") if p.strip()]
     panel_a(ax_a_abs, ax_a_inc, data["reports"], predictors, args.control)
     panel_b(ax_b_fid, ax_b_joint, data["certificates"], data["contrasts"])
     panel_c(ax_c_damage, ax_c_feas, data["contrasts"], data["curves"])
