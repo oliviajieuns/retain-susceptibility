@@ -78,12 +78,27 @@ calibration:
     graddiff:
       - {id: lr1_s120, lr: 1.0e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
       - {id: lr2_s120, lr: 2.0e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
+      # Adopted 2026-07-23: settings already measured on a198 under the
+      # pre-reset branch grid (params transcribed from run manifests);
+      # a199 coverage completes via the fix2 queue unit.
+      - {id: lr15_s120, lr: 1.5e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
+      - {id: lr1_s240, lr: 1.0e-6, steps: 240, forget_weight: 1.0, retain_weight: 1.0}
     npo:
       - {id: b01_lr2_s120, lr: 2.0e-6, steps: 120, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
       - {id: b01_lr4_s120, lr: 4.0e-6, steps: 120, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
+      # Adopted 2026-07-23: settings already measured on a198 under the
+      # pre-reset branch grid (params transcribed from run manifests);
+      # a199 coverage completes via the fix2 queue unit.
+      - {id: b01_lr4_s240, lr: 4.0e-6, steps: 240, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
+      - {id: b01_lr8_s240, lr: 8.0e-6, steps: 240, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
     simnpo:
       - {id: b45_lr2_s120, lr: 2.0e-6, steps: 120, beta: 4.5, forget_weight: 0.125, retain_weight: 1.0}
       - {id: b45_lr4_s120, lr: 4.0e-6, steps: 120, beta: 4.5, forget_weight: 0.125, retain_weight: 1.0}
+      # Adopted 2026-07-23: settings already measured on a198 under the
+      # pre-reset branch grid (params transcribed from run manifests);
+      # a199 coverage completes via the fix2 queue unit.
+      - {id: b45_lr4_s240, lr: 4.0e-6, steps: 240, beta: 4.5, forget_weight: 0.125, retain_weight: 1.0}
+      - {id: b45_lr8_s240, lr: 8.0e-6, steps: 240, beta: 4.5, forget_weight: 0.125, retain_weight: 1.0}
     gru:
       - {id: lr1_s120, lr: 1.0e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
       - {id: lr2_s120, lr: 2.0e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
@@ -93,12 +108,27 @@ calibration:
     rmu:
       - {id: a10_c3_lr1_s120, lr: 1.0e-6, steps: 120, rmu_alpha: 10.0, rmu_c: 3.0}
       - {id: a10_c3_lr2_s120, lr: 2.0e-6, steps: 120, rmu_alpha: 10.0, rmu_c: 3.0}
+      # Adopted 2026-07-23: settings already measured on a198 under the
+      # pre-reset branch grid (params transcribed from run manifests);
+      # a199 coverage completes via the fix2 queue unit.
+      - {id: a10_c10_lr2_s120, lr: 2.0e-6, steps: 120, rmu_alpha: 10.0, rmu_c: 10.0}
+      - {id: a10_c30_lr2_s120, lr: 2.0e-6, steps: 120, rmu_alpha: 10.0, rmu_c: 30.0}
     repnoise:
       - {id: a1_c3_lr1_s120, lr: 1.0e-6, steps: 120, rmu_alpha: 1.0, rmu_c: 3.0}
       - {id: a10_c3_lr1_s120, lr: 1.0e-6, steps: 120, rmu_alpha: 10.0, rmu_c: 3.0}
+      # Adopted 2026-07-23: settings already measured on a198 under the
+      # pre-reset branch grid (params transcribed from run manifests);
+      # a199 coverage completes via the fix2 queue unit.
+      - {id: a1_c10_lr05_s120, lr: 5.0e-7, steps: 120, rmu_alpha: 1.0, rmu_c: 10.0}
+      - {id: a1_c10_lr1_s120, lr: 1.0e-6, steps: 120, rmu_alpha: 1.0, rmu_c: 10.0}
     circuit_breakers:
       - {id: a1_lr1_s240, lr: 1.0e-6, steps: 240, rmu_alpha: 1.0}
       - {id: a10_lr1_s240, lr: 1.0e-6, steps: 240, rmu_alpha: 10.0}
+      # Adopted 2026-07-23: settings already measured on a198 under the
+      # pre-reset branch grid (params transcribed from run manifests);
+      # a199 coverage completes via the fix2 queue unit.
+      - {id: a100_lr1_s240, lr: 1.0e-6, steps: 240, rmu_alpha: 100.0}
+      - {id: a10_lr2_s240, lr: 2.0e-6, steps: 240, rmu_alpha: 10.0}
 
 audit:
   offline: true
