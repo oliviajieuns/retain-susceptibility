@@ -256,6 +256,48 @@ def test_replicate_seed_expansion():
         mru.expand_seeds("2026,2026")
 
 
+def test_fleet_assignment_mismatch_detection(tmp_path):
+    import fleet_status as fs
+
+    cfg = tmp_path / "fleet.yaml"
+    cfg.write_text(
+        "assignments:\n"
+        "  node-a: runs/cluster_queue/wave1\n"
+        "  node-b: runs/cluster_queue/wave1_14b\n",
+        encoding="utf-8",
+    )
+    assignments = fs.load_assignments(cfg)
+    assert assignments == {"node-a": "runs/cluster_queue/wave1",
+                           "node-b": "runs/cluster_queue/wave1_14b"}
+    # node serving its own queue: fine (relative or absolute path spelling)
+    assert not fs.assignment_mismatch(assignments, "node-a", "runs/cluster_queue/wave1")
+    assert not fs.assignment_mismatch(
+        assignments, "node-a", fs.ROOT / "runs/cluster_queue/wave1")
+    # node grabbing another campaign's queue: flagged
+    assert fs.assignment_mismatch(assignments, "node-b", "runs/cluster_queue/wave1")
+    # unknown host: never flagged
+    assert not fs.assignment_mismatch(assignments, "node-c", "runs/cluster_queue/wave1")
+    assert fs.load_assignments(tmp_path / "missing.yaml") == {}
+
+
+def test_node_watch_snapshot_and_worker_parsing(tmp_path):
+    import node_watch as nw
+
+    parsed = nw.parse_worker_cmdline(
+        ["python", "-u", "experiments/cluster/worker.py",
+         "--queue", "runs/cluster_queue/wave1", "--gpu", "3", "--wait"])
+    assert parsed == {"queue": "runs/cluster_queue/wave1", "gpu": 3}
+    assert nw.parse_worker_cmdline(["python", "train.py", "--gpu", "3"]) is None
+    assert nw.parse_worker_cmdline(
+        ["python", "experiments/cluster/worker.py", "--gpu", "3"]) is None
+
+    path = nw.write_snapshot(tmp_path / "status", "test-host")
+    snap = json.loads(path.read_text(encoding="utf-8"))
+    assert snap["host"] == "test-host"
+    assert isinstance(snap["gpus"], list) and isinstance(snap["workers"], list)
+    assert snap["updated_epoch"] > 0
+
+
 def test_queue_cli_roundtrip(tmp_path):
     units_file = tmp_path / "units.jsonl"
     units_file.write_text(

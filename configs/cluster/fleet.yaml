@@ -1,0 +1,12 @@
+# Node -> queue assignments for the H100 fleet.
+#
+# launch_node.sh with no argument reads this file and serves the queue
+# assigned to the current hostname; passing a different queue explicitly is
+# refused unless FORCE_QUEUE=1. fleet_status flags any claimed unit whose
+# host is serving a queue it is not assigned to.
+#
+# Queue paths are relative to the repository root.
+assignments:
+  run261224-ul2: runs/cluster_queue/wave1            # 7B channel-matrix
+  run261216-unlearning: runs/cluster_queue/wave1_14b # 14B channel-matrix
+  run261225-ul3: runs/cluster_queue/t2_gate15b       # 1.5B channel-matrix
