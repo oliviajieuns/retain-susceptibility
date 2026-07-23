@@ -26,6 +26,9 @@ the TOFU ``Question:/Answer:`` layout.
 """
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 import torch
 
 from rsus.data.base import CandidateUniverse, Example, Request
@@ -38,18 +41,53 @@ CLOZE_BLANK = "___"
 FORGET_CONFIGS = ("forget_level1", "forget_level2")
 NEIGHBOR_CONFIGS = ("neighbor_level1", "neighbor_level2")
 
+CACHE_REPO_DIR = "jinzhuoran___rwku"
 
-def load_rwku_tables() -> dict[str, list[dict]]:
-    """Load the needed RWKU configs (from the local HF cache when offline)."""
+
+def find_cached_arrows(config: str, hf_home: str | Path | None = None) -> list[Path]:
+    """Arrow shards of a cached RWKU config, newest fingerprint first.
+
+    Reading the arrow files directly (``datasets.Dataset.from_file``) skips the
+    library's builder FileLock, which fails with PermissionError on the shared
+    read-only cache where lock files belong to another user.
+    """
+    home = Path(hf_home or os.environ.get("HF_HOME", Path.home() / ".cache" / "huggingface"))
+    config_dir = home / "datasets" / CACHE_REPO_DIR / config
+    if not config_dir.is_dir():
+        return []
+    infos = sorted(config_dir.glob("*/*/dataset_info.json"))
+    if not infos:
+        return []
+    return sorted(infos[-1].parent.glob("*.arrow"))
+
+
+def _load_config_rows(config: str) -> list[dict]:
+    arrows = find_cached_arrows(config)
+    if arrows:
+        from datasets import Dataset
+
+        rows: list[dict] = []
+        for arrow in arrows:
+            rows.extend(Dataset.from_file(str(arrow)))
+        return rows
+    # Cache miss: fall back to the normal loader (requires hub access or a
+    # writable cache; on the cluster the shared cache should always hit above).
     from datasets import load_dataset
 
+    ds = load_dataset("jinzhuoran/RWKU", config)
+    split = "train" if config == "forget_target" else "test"
+    return list(ds[split])
+
+
+def load_rwku_tables() -> dict[str, list[dict]]:
+    """Load the needed RWKU configs, preferring lock-free reads of the cache."""
     tables: dict[str, list[dict]] = {}
-    targets = load_dataset("jinzhuoran/RWKU", "forget_target")["train"]
+    targets = _load_config_rows("forget_target")
     if len(targets) != TARGETS_TOTAL:
         raise ValueError(f"RWKU forget_target has {len(targets)} rows, expected {TARGETS_TOTAL}")
-    tables["forget_target"] = list(targets)
+    tables["forget_target"] = targets
     for config in (*FORGET_CONFIGS, *NEIGHBOR_CONFIGS):
-        tables[config] = list(load_dataset("jinzhuoran/RWKU", config)["test"])
+        tables[config] = _load_config_rows(config)
     return tables
 
 

@@ -52,6 +52,21 @@ def fake_tables() -> dict[str, list[dict]]:
     }
 
 
+def test_find_cached_arrows_picks_newest_fingerprint(tmp_path):
+    from rsus.data.rwku import find_cached_arrows
+
+    base = tmp_path / "datasets" / "jinzhuoran___rwku" / "forget_level1"
+    old = base / "0.0.0" / "aaa"
+    new = base / "0.0.0" / "bbb"
+    for fingerprint in (old, new):
+        fingerprint.mkdir(parents=True)
+        (fingerprint / "dataset_info.json").write_text("{}", encoding="utf-8")
+        (fingerprint / "rwku-test.arrow").write_text("", encoding="utf-8")
+    arrows = find_cached_arrows("forget_level1", hf_home=tmp_path)
+    assert arrows == [new / "rwku-test.arrow"]
+    assert find_cached_arrows("missing_config", hf_home=tmp_path) == []
+
+
 def test_format_cloze_masks_prompt_and_appends_eos():
     ids, labels = format_cloze("Stephen King is an American ___", "author", MockTokenizer())
     n_prompt = int((labels == IGNORE).sum())
