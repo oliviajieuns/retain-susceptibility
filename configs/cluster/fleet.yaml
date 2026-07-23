@@ -14,6 +14,10 @@ assignments:
   # Table 1/2 expansion queues (enqueue_table12.sh). Fill in the hostname of
   # each newly grabbed 8-GPU node before launch_node.sh will serve the queue;
   # an unassigned node can serve one explicitly with FORCE_QUEUE=1.
-  # <new-node-1>: runs/cluster_queue/wave_wmdp       # WMDP-bio/MMLU W1
+  # NOTE: these queues are served from the branch WORKTREE
+  # (/group-volume/jieuns.shin/retain-susceptibility-table12), so the paths
+  # below are relative to that checkout, not the main clone.
+  # 2026-07-23: test1 serves WMDP W1 + RWKU fidelity (18 units, 8 GPUs).
+  run261294-test1: runs/cluster_queue/wave_wmdp      # WMDP-bio/MMLU W1 (+rwku fid)
   # <new-node-2>: runs/cluster_queue/wave_llama      # Llama-3.1-8B W1
   # <new-node-3>: runs/cluster_queue/wave_rwku       # RWKU audit (1 GPU enough)
