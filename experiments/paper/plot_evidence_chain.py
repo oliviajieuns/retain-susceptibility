@@ -35,10 +35,8 @@ import json
 import math
 from pathlib import Path
 
-import matplotlib
-
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt  # noqa: E402
+# matplotlib is imported lazily inside main(): the --tikz path must work in
+# environments without it (e.g. the cluster exp venv).
 
 # Validated categorical palette (scripts/validate_palette.js: ALL CHECKS PASS).
 C_GRAD = "#0072B2"   # gradient-family probe (fd_norm)
@@ -673,6 +671,15 @@ def main() -> None:
         print(f"wrote {tikz_path}")
     if not args.out:
         return
+
+    try:
+        import matplotlib
+    except ModuleNotFoundError:
+        raise SystemExit(
+            "matplotlib is required for --out (pip install matplotlib), "
+            "or use --tikz alone for the LaTeX figure")
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
 
     fig = plt.figure(figsize=(13.5, 4.6))
     grid = fig.add_gridspec(2, 3, width_ratios=[1.35, 1.0, 1.0],

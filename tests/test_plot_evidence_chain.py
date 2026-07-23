@@ -9,8 +9,6 @@ from pathlib import Path
 
 import pytest
 
-pytest.importorskip("matplotlib")
-
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = ROOT / "experiments" / "paper" / "plot_evidence_chain.py"
 
@@ -86,6 +84,7 @@ def _run(args: list[str]) -> subprocess.CompletedProcess:
 
 
 def test_full_inputs_render(tmp_path: Path) -> None:
+    pytest.importorskip("matplotlib")
     report = tmp_path / "pooled_channel_report.csv"
     _write_channel_report(report)
     cert = tmp_path / "cert.json"
@@ -104,6 +103,7 @@ def test_full_inputs_render(tmp_path: Path) -> None:
 
 
 def test_allow_partial_renders_placeholders(tmp_path: Path) -> None:
+    pytest.importorskip("matplotlib")
     cert = tmp_path / "cert_fail.json"
     _write_certificate(cert, passed=False)
     out = tmp_path / "fig2_partial.pdf"
