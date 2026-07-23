@@ -85,6 +85,12 @@ calibration:
       - {id: lr15_s120, lr: 1.5e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
       - {id: lr2_s60, lr: 2.0e-6, steps: 60, forget_weight: 1.0, retain_weight: 1.0}
       - {id: lr2_s80, lr: 2.0e-6, steps: 80, forget_weight: 1.0, retain_weight: 1.0}
+      # Round-3 (2026-07-23): the reach cliff sits between lr 1.5e-6
+      # (0.446, damage in bounds) and 2e-6/120 (0.189, damage blown) — probe
+      # the interior and longer schedules at the in-bounds lr.
+      - {id: lr175_s120, lr: 1.75e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
+      - {id: lr15_s180, lr: 1.5e-6, steps: 180, forget_weight: 1.0, retain_weight: 1.0}
+      - {id: lr15_s240, lr: 1.5e-6, steps: 240, forget_weight: 1.0, retain_weight: 1.0}
     npo:
       - {id: b01_lr2_s120, lr: 2.0e-6, steps: 120, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
       - {id: b01_lr4_s120, lr: 4.0e-6, steps: 120, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
@@ -114,6 +120,10 @@ calibration:
       # Round-2: recall ~0.77-0.82 with near-zero damage — large headroom, escalate.
       - {id: a10_c3_lr4_s240, lr: 4.0e-6, steps: 240, rmu_alpha: 10.0, rmu_c: 3.0}
       - {id: a10_c3_lr8_s240, lr: 8.0e-6, steps: 240, rmu_alpha: 10.0, rmu_c: 3.0}
+      # Round-3: monotone reach response (0.77 -> 0.51 -> 0.42) at ~zero damage —
+      # keep escalating lr toward the 0.10 criterion.
+      - {id: a10_c3_lr16_s240, lr: 1.6e-5, steps: 240, rmu_alpha: 10.0, rmu_c: 3.0}
+      - {id: a10_c3_lr32_s240, lr: 3.2e-5, steps: 240, rmu_alpha: 10.0, rmu_c: 3.0}
     repnoise:
       - {id: a1_c3_lr1_s120, lr: 1.0e-6, steps: 120, rmu_alpha: 1.0, rmu_c: 3.0}
       - {id: a10_c3_lr1_s120, lr: 1.0e-6, steps: 120, rmu_alpha: 10.0, rmu_c: 3.0}
