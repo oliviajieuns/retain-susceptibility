@@ -1,0 +1,30 @@
+# Generated only from complete development alpha-protection runs.  The audit
+# launcher rejects this draft.  Run `h100_campaign.sh select-alpha-freeze`,
+# review the recommendation, assign a dated freeze_id/timestamp, set the two
+# frozen fields to true, clear unresolved, commit, and only then run audit.
+freeze_id: PENDING-1P5B-ALPHA-DEVELOPMENT
+status: draft
+frozen_before_alpha_audit: false
+frozen_at_utc: null
+source_campaign: kdd27-channel-mixture-protection-1p5b-v1
+source_phase: development
+selection_rule: minimax_cvar05_subject_to_every_run_reach_and_utility
+normalization: empirical_midrank_discovery_only
+orientation: (1-alpha)*gradient + alpha*proximity
+models:
+  qwen25_1p5b:
+    graddiff: null
+    npo: null
+    simnpo: null
+    gru: null
+    rmu: null
+    repnoise: null
+    circuit_breakers: null
+unresolved:
+  - qwen25_1p5b/graddiff
+  - qwen25_1p5b/npo
+  - qwen25_1p5b/simnpo
+  - qwen25_1p5b/gru
+  - qwen25_1p5b/rmu
+  - qwen25_1p5b/repnoise
+  - qwen25_1p5b/circuit_breakers

@@ -1,0 +1,25 @@
+# Fill from development-only calibration and commit this file BEFORE launching
+# the audit phase.  run_campaign.py refuses to audit while status is not frozen.
+freeze_id: PENDING-1P5B-DEVELOPMENT-CALIBRATION
+status: draft
+frozen_before_audit: false
+frozen_at_utc: null
+source_campaign: kdd27-channel-matrix-1p5b-v1
+unresolved: [qwen25_1p5b/all-objectives]
+selection_rule: >-
+  Core objectives must satisfy forget_recall <= 0.10 and the fixed mean/CVaR
+  utility bounds on both development requests. Stress controls prefer settings
+  reaching the forget criterion; if none do, they minimize worst development
+  recall. All ties use retained damage, steps, then learning rate; no predictor
+  score or correlation is read.
+models:
+  qwen25_1p5b:
+    ga: {lr: null, steps: null}
+    graddiff: {lr: null, steps: null, forget_weight: 1.0, retain_weight: 1.0}
+    npo: {lr: null, steps: null, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
+    simnpo: {lr: null, steps: null, beta: 4.5, forget_weight: 0.125, retain_weight: 1.0}
+    gru: {lr: null, steps: null, forget_weight: 1.0, retain_weight: 1.0}
+    idkdpo: {lr: null, steps: null, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
+    rmu: {lr: null, steps: null, rmu_alpha: null, rmu_c: null}
+    repnoise: {lr: null, steps: null, rmu_alpha: null, rmu_c: null}
+    circuit_breakers: {lr: null, steps: null, rmu_alpha: null}
