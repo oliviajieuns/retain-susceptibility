@@ -1,0 +1,93 @@
+# RE-CALIBRATION (2026-07-24): rmu step budget raised 240 -> 400.
+# Basis: the sealed 240-step operating point reached recall<=0.10 on the
+# development authors (198/199, recall 0.086) but MISSED on the harder audit
+# authors (181/186/191, best recall 0.107). rmu's development utility was very
+# safe (0.91-0.99, CVaR 0.5), so more steps forget deeper with margin. The
+# recalibration target is forget-reach margin on DEVELOPMENT only; no audit
+# prediction outcome is consulted. This freeze drives a FRESH audit, kept
+# separate from the already-opened kdd27-channel-matrix-7b-v1 audit.
+freeze_id: FREEZE-2026-07-24-7B-RMU-REACH-RECAL
+status: frozen
+frozen_before_audit: true
+frozen_at_utc: 2026-07-24T04:00Z
+source_campaign: kdd27-channel-matrix-7b-v1
+selection_rule: Core objectives must satisfy forget_recall <= 0.10 and the fixed mean/CVaR
+  utility bounds on both development requests. Stress controls prefer settings reaching
+  the forget criterion; if none do, they minimize worst development recall. All ties
+  use retained damage, steps, then learning rate; no predictor score or correlation
+  is read.
+models:
+  qwen25_7b:
+    graddiff:
+      beta: 1.0
+      forget_weight: 1.0
+      retain_weight: 1.0
+      rmu_alpha: 10.0
+      rmu_c: 3.0
+      lr: 8e-07
+      steps: 240
+    rmu:
+      beta: 1.0
+      forget_weight: 1.0
+      retain_weight: 1.0
+      rmu_alpha: 10.0
+      rmu_c: 3.0
+      lr: 3.2e-05
+      steps: 400
+    ga:
+      beta: 1.0
+      forget_weight: 1.0
+      retain_weight: 1.0
+      rmu_alpha: 10.0
+      rmu_c: 3.0
+      lr: 1e-06
+      steps: 60
+    idkdpo:
+      beta: 0.1
+      forget_weight: 1.0
+      retain_weight: 1.0
+      rmu_alpha: 10.0
+      rmu_c: 3.0
+      lr: 4e-06
+      steps: 120
+    npo:
+      beta: 0.1
+      forget_weight: 1.0
+      retain_weight: 1.0
+      rmu_alpha: 10.0
+      rmu_c: 3.0
+      lr: 1.6e-05
+      steps: 240
+    simnpo:
+      beta: 4.5
+      forget_weight: 0.125
+      retain_weight: 1.0
+      rmu_alpha: 10.0
+      rmu_c: 3.0
+      lr: 1.6e-05
+      steps: 240
+    gru:
+      beta: 1.0
+      forget_weight: 1.0
+      retain_weight: 1.0
+      rmu_alpha: 10.0
+      rmu_c: 3.0
+      lr: 2e-06
+      steps: 120
+    repnoise:
+      beta: 1.0
+      forget_weight: 1.0
+      retain_weight: 1.0
+      rmu_alpha: 1.0
+      rmu_c: 3.0
+      lr: 1e-06
+      steps: 120
+    circuit_breakers:
+      beta: 1.0
+      forget_weight: 1.0
+      retain_weight: 1.0
+      rmu_alpha: 100.0
+      rmu_c: 3.0
+      lr: 1e-06
+      steps: 240
+unresolved: []

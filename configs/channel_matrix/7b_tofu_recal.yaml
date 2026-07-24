@@ -1,0 +1,394 @@
+# rmu REACH re-calibration campaign (2026-07-24). Identical to 7b_tofu.yaml
+# except: rmu-only roster, isolated output_root runs/channel_matrix_7b_recal,
+# and objective_freeze_7b_recal.yaml (rmu 400 steps). Run the alpha development
+# phase first to confirm reach margin + re-select alpha on 198/199; only then
+# freeze and run a FRESH audit. See objective_freeze_7b_recal.yaml header.
+campaign_id: kdd27-channel-matrix-7b-recal-v1
+output_root: runs/channel_matrix_7b_recal
+models:
+- id: qwen25_7b
+  path: /group-volume/models/Qwen2.5-7B-Instruct
+  enabled: true
+- id: llama31_8b
+  path: /group-volume/models/Llama-3.1-8B-Instruct
+  enabled: false
+common:
+  device: cuda
+  dtype: float32
+  trainable_scope: probe_block
+  representation_retain_mode: stream_cached
+  block_last_n: 8
+  universe_authors: 30
+  candidate_author_pools:
+    calibration: 0,2,4,6,8,10,12,14,16,18,20,22,24,26,28,30,32,34,36,38,40,42,44,46,48,50,52,54,56,58
+    audit:
+      '181': 60,63,66,69,72,75,78,81,84,87,90,93,96,99,102,105,108,111,114,117,120,123,126,129,132,135,138,141,144,147
+      '186': 61,64,67,70,73,76,79,82,85,88,91,94,97,100,103,106,109,112,115,118,121,124,127,130,133,136,139,142,145,148
+      '191': 62,65,68,71,74,77,80,83,86,89,92,95,98,101,104,107,110,113,116,119,122,125,128,131,134,137,140,143,146,149
+  batch_size: 4
+  sft_lr: 1.0e-05
+  sft_steps: 400
+  sft_target_loss: 0.8
+  sft_eval_every: 100
+  require_sft_target: true
+  probe_dirs: 64
+  probe_norm_eta: 0.003
+  probe_seed: 0
+  sentence_encoder: sentence-transformers/all-MiniLM-L6-v2
+fidelity:
+  author: 198
+  n_candidates: 128
+  candidate_seed: 314159
+  min_rho_ab: 0.7
+  min_rho_bc: 0.8
+  min_rho_ac: 0.8
+  min_eff_ratio: 0.9
+  min_frac_changed: 0.9
+calibration:
+  authors:
+  - 198
+  - 199
+  seeds:
+  - 2025
+  selection:
+    forget_recall_max: 0.1
+    mean_dnll_max: 2.0
+    cvar05_dnll_max: 16.0
+    require_every_development_run: true
+    tie_break:
+    - mean_dnll
+    - cvar05_dnll
+    - steps
+    - lr
+    stress_rule: Prefer settings reaching the forget criterion on every development
+      run; otherwise minimize worst development recall, then mean damage, CVaR, steps,
+      and learning rate. Stress controls may remain failed or collapsed in audit and
+      are never part of the core interaction.
+  objective_grid:
+    ga:
+    - id: lr05_s60
+      lr: 5.0e-07
+      steps: 60
+    - id: lr1_s60
+      lr: 1.0e-06
+      steps: 60
+    graddiff:
+    - id: lr1_s120
+      lr: 1.0e-06
+      steps: 120
+      forget_weight: 1.0
+      retain_weight: 1.0
+    - id: lr2_s120
+      lr: 2.0e-06
+      steps: 120
+      forget_weight: 1.0
+      retain_weight: 1.0
+    - id: lr15_s120
+      lr: 1.5e-06
+      steps: 120
+      forget_weight: 1.0
+      retain_weight: 1.0
+    - id: lr1_s240
+      lr: 1.0e-06
+      steps: 240
+      forget_weight: 1.0
+      retain_weight: 1.0
+    - id: lr05_s360
+      lr: 5.0e-07
+      steps: 360
+      forget_weight: 1.0
+      retain_weight: 1.0
+    - id: lr075_s240
+      lr: 7.5e-07
+      steps: 240
+      forget_weight: 1.0
+      retain_weight: 1.0
+    - id: lr1_s180
+      lr: 1.0e-06
+      steps: 180
+      forget_weight: 1.0
+      retain_weight: 1.0
+    - id: lr06_s300
+      lr: 6.0e-07
+      steps: 300
+      forget_weight: 1.0
+      retain_weight: 1.0
+    - id: lr07_s240
+      lr: 7.0e-07
+      steps: 240
+      forget_weight: 1.0
+      retain_weight: 1.0
+    - id: lr08_s240
+      lr: 8.0e-07
+      steps: 240
+      forget_weight: 1.0
+      retain_weight: 1.0
+    npo:
+    - id: b01_lr2_s120
+      lr: 2.0e-06
+      steps: 120
+      beta: 0.1
+      forget_weight: 1.0
+      retain_weight: 1.0
+    - id: b01_lr4_s120
+      lr: 4.0e-06
+      steps: 120
+      beta: 0.1
+      forget_weight: 1.0
+      retain_weight: 1.0
+    - id: b01_lr4_s240
+      lr: 4.0e-06
+      steps: 240
+      beta: 0.1
+      forget_weight: 1.0
+      retain_weight: 1.0
+    - id: b01_lr8_s240
+      lr: 8.0e-06
+      steps: 240
+      beta: 0.1
+      forget_weight: 1.0
+      retain_weight: 1.0
+    - id: b01_lr16_s240
+      lr: 1.6e-05
+      steps: 240
+      beta: 0.1
+      forget_weight: 1.0
+      retain_weight: 1.0
+    - id: b01_lr8_s480
+      lr: 8.0e-06
+      steps: 480
+      beta: 0.1
+      forget_weight: 1.0
+      retain_weight: 1.0
+    simnpo:
+    - id: b45_lr2_s120
+      lr: 2.0e-06
+      steps: 120
+      beta: 4.5
+      forget_weight: 0.125
+      retain_weight: 1.0
+    - id: b45_lr4_s120
+      lr: 4.0e-06
+      steps: 120
+      beta: 4.5
+      forget_weight: 0.125
+      retain_weight: 1.0
+    - id: b45_lr4_s240
+      lr: 4.0e-06
+      steps: 240
+      beta: 4.5
+      forget_weight: 0.125
+      retain_weight: 1.0
+    - id: b45_lr8_s240
+      lr: 8.0e-06
+      steps: 240
+      beta: 4.5
+      forget_weight: 0.125
+      retain_weight: 1.0
+    - id: b45_lr16_s240
+      lr: 1.6e-05
+      steps: 240
+      beta: 4.5
+      forget_weight: 0.125
+      retain_weight: 1.0
+    gru:
+    - id: lr1_s120
+      lr: 1.0e-06
+      steps: 120
+      forget_weight: 1.0
+      retain_weight: 1.0
+    - id: lr2_s120
+      lr: 2.0e-06
+      steps: 120
+      forget_weight: 1.0
+      retain_weight: 1.0
+    idkdpo:
+    - id: b01_lr2_s120
+      lr: 2.0e-06
+      steps: 120
+      beta: 0.1
+      forget_weight: 1.0
+      retain_weight: 1.0
+    - id: b01_lr4_s120
+      lr: 4.0e-06
+      steps: 120
+      beta: 0.1
+      forget_weight: 1.0
+      retain_weight: 1.0
+    rmu:
+    - id: a10_c3_lr1_s120
+      lr: 1.0e-06
+      steps: 120
+      rmu_alpha: 10.0
+      rmu_c: 3.0
+    - id: a10_c3_lr2_s120
+      lr: 2.0e-06
+      steps: 120
+      rmu_alpha: 10.0
+      rmu_c: 3.0
+    - id: a10_c10_lr2_s120
+      lr: 2.0e-06
+      steps: 120
+      rmu_alpha: 10.0
+      rmu_c: 10.0
+    - id: a10_c30_lr2_s120
+      lr: 2.0e-06
+      steps: 120
+      rmu_alpha: 10.0
+      rmu_c: 30.0
+    - id: a10_c3_lr8_s240
+      lr: 8.0e-06
+      steps: 240
+      rmu_alpha: 10.0
+      rmu_c: 3.0
+    - id: a10_c3_lr16_s240
+      lr: 1.6e-05
+      steps: 240
+      rmu_alpha: 10.0
+      rmu_c: 3.0
+    - id: a10_c3_lr32_s240
+      lr: 3.2e-05
+      steps: 240
+      rmu_alpha: 10.0
+      rmu_c: 3.0
+    repnoise:
+    - id: a1_c3_lr1_s120
+      lr: 1.0e-06
+      steps: 120
+      rmu_alpha: 1.0
+      rmu_c: 3.0
+    - id: a10_c3_lr1_s120
+      lr: 1.0e-06
+      steps: 120
+      rmu_alpha: 10.0
+      rmu_c: 3.0
+    - id: a1_c10_lr05_s120
+      lr: 5.0e-07
+      steps: 120
+      rmu_alpha: 1.0
+      rmu_c: 10.0
+    - id: a1_c10_lr1_s120
+      lr: 1.0e-06
+      steps: 120
+      rmu_alpha: 1.0
+      rmu_c: 10.0
+    circuit_breakers:
+    - id: a1_lr1_s240
+      lr: 1.0e-06
+      steps: 240
+      rmu_alpha: 1.0
+    - id: a10_lr1_s240
+      lr: 1.0e-06
+      steps: 240
+      rmu_alpha: 10.0
+    - id: a100_lr1_s240
+      lr: 1.0e-06
+      steps: 240
+      rmu_alpha: 100.0
+    - id: a10_lr2_s240
+      lr: 2.0e-06
+      steps: 240
+      rmu_alpha: 10.0
+audit:
+  offline: true
+  authors:
+  - 181
+  - 186
+  - 191
+  seeds:
+  - 2025
+  - 2026
+  objectives:
+  - rmu
+  stress_objectives: []
+  predictors:
+  - grad_norm
+  - fd_norm
+  - knn_feature
+  - knn_embed
+  - knn_lexical
+  - fd
+  - random_rank
+  objective_freeze: objective_freeze_7b_recal.yaml
+  fidelity_certificates:
+    qwen25_7b: runs/channel_matrix_7b/fidelity/qwen25_7b.json
+    llama31_8b: runs/channel_matrix_7b/fidelity/llama31_8b.json
+alpha_protection:
+  campaign_id: kdd27-channel-mixture-protection-7b-recal-v1
+  objective_freeze: objective_freeze_7b_recal.yaml
+  alpha_freeze: alpha_protection_freeze.yaml
+  parents:
+  - rmu
+  probes:
+    gradient: fd_norm
+    proximity: knn_feature
+  normalization: empirical_midrank_discovery_only
+  orientation: (1-alpha)*gradient + alpha*proximity
+  alpha_grid:
+  - 0
+  - 0.25
+  - 0.5
+  - 0.75
+  - 1
+  declared_prior:
+    loss_gradient: 0.0
+    representation: 1.0
+    hybrid: 0.5
+  development:
+    authors:
+    - 198
+    - 199
+    seeds:
+    - 2025
+  audit:
+    authors:
+    - 181
+    - 186
+    - 191
+    seeds:
+    - 2025
+    - 2026
+    run_descriptive_grid: true
+  utility_authors: 150-179
+  utility_examples_per_author: 4
+  partition:
+    pool_size: 30
+    min_pool_size: 8
+    tau_rem_abs_quantile: 0.5
+  parent:
+    recall_max: 0.1
+    checkpoint_every: 10
+  selection:
+    metric: cvar05_dnll
+    aggregation: minimax_across_development_requests_and_seeds
+    require_every_development_run: true
+    utility_retention_min: 0.9
+    tie_break:
+    - mean_cvar05_dnll
+    - distance_to_midpoint_0p5
+    - alpha
+    prohibited: audit_selection
+  comparators:
+    repeated_random:
+      B_rand: 5
+      seed_base: 271828
+  final_checkpoint:
+    required:
+    - direct_forgetting
+    - paraphrase_forgetting
+    - extraction_generation
+    - utility
+    direct_recall_max: 0.1
+    paraphrase_recall_max: 0.1
+    extraction_generation_max: 0.1
+    utility_retention_min: 0.9
+  stage2:
+    eta2: 3.0e-05
+    max_steps: 120
+    snapshots: 4
+    refresh_k: 4
+    delta_seq_sq: 0.01
+    delta_tok_sq: 0.1
+    mu_v: 0.7
+    rho_g: 10.0
+    shrink: 0.5
