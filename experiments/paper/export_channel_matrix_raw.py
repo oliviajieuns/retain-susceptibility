@@ -652,7 +652,7 @@ def main(argv: list[str] | None = None) -> int:
             fidelity_out = (
                 ROOT / args.fidelity_out
                 if args.fidelity_out
-                else ROOT / "docs" / "data" / "fidelity_summaries" / f"{args.setting_id}.json"
+                else ROOT / "results" / "paper" / "fidelity_summaries" / f"{args.setting_id}.json"
             )
             export_fidelity_summary(args, cfg, fidelity_out)
             print(f"fidelity summary: {fidelity_out}")

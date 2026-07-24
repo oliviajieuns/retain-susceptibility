@@ -18,11 +18,11 @@ outputs:
 # file keeps placeholders, and a summary whose setting or passed flag does
 # not match is rejected at load time.
 fidelity_inputs:
-  tofu_qwen25_7b: docs/data/fidelity_summaries/tofu_qwen25_7b.json
-  tofu_qwen25_14b: docs/data/fidelity_summaries/tofu_qwen25_14b.json
-  tofu_llama31_8b: docs/data/fidelity_summaries/tofu_llama31_8b.json
-  rwku_qwen25_7b: docs/data/fidelity_summaries/rwku_qwen25_7b.json
-  wmdp_bio_mmlu_qwen25_7b: docs/data/fidelity_summaries/wmdp_bio_mmlu_qwen25_7b.json
+  tofu_qwen25_7b: results/paper/fidelity_summaries/tofu_qwen25_7b.json
+  tofu_qwen25_14b: results/paper/fidelity_summaries/tofu_qwen25_14b.json
+  tofu_llama31_8b: results/paper/fidelity_summaries/tofu_llama31_8b.json
+  rwku_qwen25_7b: results/paper/fidelity_summaries/rwku_qwen25_7b.json
+  wmdp_bio_mmlu_qwen25_7b: results/paper/fidelity_summaries/wmdp_bio_mmlu_qwen25_7b.json
 
 decision:
   alpha: 0.05
