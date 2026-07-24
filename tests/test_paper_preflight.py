@@ -176,7 +176,9 @@ def test_tbd_missing_adapter_and_unprovisioned_model_are_explicit(tmp_path):
     assert report["datasets"]["WMDP-bio/MMLU"]["rosters"]["D_cal"][
         "reasons"
     ] == ["contains unresolved ids: TBD_WMDP_D_CAL_REQUEST_IDS"]
-    assert "Llama-3.1-8B" in report["summary"]["unprovisioned_models"]
+    # Llama-3.1-8B graduated on 2026-07-24: weights provisioned from the
+    # ungated mirror of the identical checkpoint.
+    assert "Llama-3.1-8B" not in report["summary"]["unprovisioned_models"]
 
 
 def test_missing_one_parent_and_invalid_dtype_fail_closed(tmp_path):
