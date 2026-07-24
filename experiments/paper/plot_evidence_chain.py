@@ -313,38 +313,40 @@ def render_tikz(data: dict, out: Path) -> Path:
     lines.append("\\resizebox{\\textwidth}{!}{%")
     lines.append("\\begin{tikzpicture}[font=\\small]")
 
-    # ---- header seal strip (one glyph, restraint) ------------------------
-    lines.append("\\filldraw[ink] (0.12cm,13.28cm) circle (1.7pt);")
+    # Column geometry for the 1-row x 3-col horizontal ladder, read left to
+    # right RQ2 (foundation) -> RQ1 (load-bearing core) -> RQ3 (payoff). The
+    # gaps between columns absorb each right panel's left-hand tick labels.
+    H = 5.6            # shared axis height
+    TOP = 7.0          # north-west y of every panel
+    X2, W2 = 0.0, 5.4    # RQ2
+    X1, W1 = 7.0, 6.4    # RQ1 (widest -- it is the core)
+    X3, W3 = 16.2, 5.4   # RQ3
+    RIGHT = X3 + W3      # right edge, for full-width header + caption
+
+    # ---- header seal strip (one glyph, restraint), spans the full width --
+    lines.append(f"\\filldraw[ink] (0.12cm,{TOP + 0.75:.2f}cm) circle (1.7pt);")
     lines.append(
-        "\\node[anchor=south west, font=\\small\\bfseries, text=ink] at (0.34cm,13.16cm) "
+        f"\\node[anchor=south west, font=\\small\\bfseries, text=ink] at (0.34cm,{TOP + 0.63:.2f}cm) "
         "{PREDECLARED FLOORS --- sealed at $\\theta_0$, before any outcome existed};")
 
-    # ---- RQ3 band (top): 8 damage UCBs vs 0, snapped rung ---------------
-    lines.append("\\begin{axis}[at={(0cm,13.0cm)}, anchor=north west, width=13.4cm, height=3.6cm,")
-    lines.append("  axis lines=left, y dir=reverse, xmin=-0.26, xmax=0.16,")
-    lines.append("  title={\\textbf{RQ3}\\; 8 damage upper bounds vs $0$ (mixture beats comparator)"
-                 "\\quad\\textcolor{evCtrl}{\\bfseries COMPOSITE CHAIN: NOT LICENSED here}},")
-    lines.append("  title style={font=\\footnotesize, at={(0,1.03)}, anchor=south west},")
-    ucb_items = list(rq3["ucbs"].items())
-    lines.append("  ytick={" + ",".join(str(i) for i in range(len(ucb_items))) + "},")
-    lines.append("  yticklabels={" + ",".join("{\\scriptsize " + k.replace("_", "\\_") + "}" for k, _ in ucb_items) + "},")
-    lines.append("  tick label style={font=\\scriptsize},")
-    lines.append("  xlabel={$\\Delta$NLL upper bound (want $<0$)}, xlabel style={font=\\scriptsize}]")
-    lines.append("\\draw[ink, line width=1.2pt] (axis cs:0,-0.6) -- (axis cs:0,7.6);")
-    for i, (k, ucb) in enumerate(ucb_items):
-        snapped = (k == rq3["snapped_arm"])
-        if snapped:
-            # snapped rung: dashed gray gap segment + open marker on wrong side
-            lines.append(f"\\draw[evCtrl, line width=0.8pt, dashed] (axis cs:0,{i}) -- (axis cs:{ucb:.3f},{i});")
-            lines.append(f"\\filldraw[evCtrl] (axis cs:{ucb:.3f},{i}) circle (2.4pt);")
-            lines.append(f"\\node[anchor=west, font=\\tiny, text=evCtrl] at (axis cs:{ucb:.3f},{i}) {{\\; infeasible @ frozen op-point}};")
-        else:
-            lo, hi = min(0.0, ucb), max(0.0, ucb)
-            lines.append(f"\\draw[evMix, line width=2.6pt] (axis cs:{lo:.3f},{i}) -- (axis cs:{hi:.3f},{i});")
-            lines.append(f"\\filldraw[evMix] (axis cs:{ucb:.3f},{i}) circle (2.4pt);")
+    # ---- RQ2 panel (left): xbar vs floor, bf16 collapse gray ------------
+    rows = rq2["rows"] + [rq2["bf16"]]
+    lines.append(f"\\begin{{axis}}[at={{({X2}cm,{TOP}cm)}}, anchor=north west, width={W2}cm, height={H}cm,")
+    lines.append("  axis lines=left, y dir=reverse, xmin=0, xmax=1.05,")
+    lines.append("  title={\\textbf{RQ2} $\\cdot$ loss-shake fidelity\\\\"
+                 "\\textcolor{evCtrl}{\\scriptsize gray = bf16 collapse (invalid)}},")
+    lines.append(f"  title style={{font=\\footnotesize, align=left, text width={W2 - 0.1:.1f}cm, at={{(0,1.02)}}, anchor=south west}},")
+    lines.append("  ytick={" + ",".join(str(i) for i in range(len(rows))) + "},")
+    lines.append("  yticklabels={" + ",".join("{" + r[0] + "}" for r in rows) + "},")
+    lines.append("  yticklabel style={font=\\scriptsize}, tick label style={font=\\scriptsize},")
+    lines.append("  xlabel={certificate value \\; ($|$ = floor)}, xlabel style={font=\\scriptsize}]")
+    for i, (label, val, floor, valid) in enumerate(rows):
+        col = "evGrad" if valid else "evCtrl"
+        lines.append(f"\\addplot[xbar, bar width=0.42, fill={col}, draw=white, line width=0.3pt] coordinates {{({val:.4f},{i})}};")
+        lines.append(f"\\draw[ink, line width=1.1pt] (axis cs:{floor},{i - 0.30}) -- (axis cs:{floor},{i + 0.30});")
     lines.append("\\end{axis}")
 
-    # ---- RQ1 band (middle): scatter + joint trend + ghost endpoints -----
+    # ---- RQ1 panel (center, the measured core): scatter + trend + ghosts -
     pts = rq1.get("points") or []
     xs = [x for x, _ in pts]
     ys = [y for _, y in pts]
@@ -357,50 +359,58 @@ def render_tikz(data: dict, out: Path) -> Path:
         a = my - b * mx
     else:
         a, b = 0.4, 0.8
-    lines.append("\\begin{axis}[at={(0cm,9.0cm)}, anchor=north west, width=13.4cm, height=4.4cm,")
+    lines.append(f"\\begin{{axis}}[at={{({X1}cm,{TOP}cm)}}, anchor=north west, width={W1}cm, height={H}cm,")
     lines.append("  axis lines=left, xmin=-0.03, xmax=1.03, ymin=-0.15,")
-    lines.append(f"  title={{\\textbf{{RQ1}}\\; sealed joint rank vs revealed damage"
-                 f"\\quad $\\rho={rq1['joint_rho']:.2f}$ [LB ${rq1['joint_lb']:+.2f}$]"
-                 f"\\quad\\textcolor{{evCtrl}}{{non-reach: {rq1.get('non_reach','?')} parents excluded}}}},")
-    lines.append("  title style={font=\\footnotesize, at={(0,1.02)}, anchor=south west},")
-    lines.append("  xlabel={sealed joint rank $S_\\alpha$ (frozen at $\\theta_0$)},")
+    lines.append(f"  title={{\\textbf{{RQ1}} $\\cdot$ prediction\\quad $\\rho={rq1['joint_rho']:.2f}$ [LB ${rq1['joint_lb']:+.2f}$]\\\\"
+                 f"\\textcolor{{evCtrl}}{{\\scriptsize non-reach: {rq1.get('non_reach','?')} parents excluded}}}},")
+    lines.append(f"  title style={{font=\\footnotesize, align=left, text width={W1 - 0.1:.1f}cm, at={{(0,1.02)}}, anchor=south west}},")
+    lines.append("  xlabel={sealed joint rank $S_\\alpha$ (frozen $\\theta_0$)},")
     lines.append("  ylabel={revealed damage $d_{t\\dagger}$ (nats)},")
-    lines.append("  xlabel style={font=\\scriptsize}, ylabel style={font=\\scriptsize}, tick label style={font=\\scriptsize}]")
+    lines.append("  xlabel style={font=\\scriptsize}, ylabel style={font=\\scriptsize}, tick label style={font=\\scriptsize},")
+    lines.append("  legend style={font=\\tiny, at={(0.03,0.97)}, anchor=north west, draw=none, fill=none}]")
     # scatter
     coord = " ".join(f"({x:.3f},{y:.3f})" for x, y in pts)
     lines.append(f"\\addplot[only marks, mark=*, mark size=1.1pt, color=evProx, opacity=0.75] coordinates {{{coord}}};")
     # ghost endpoints (faint) -- shallower slopes than the joint
     gg = rq1.get("ghost_qg_rho", 0.14) / max(1e-9, rq1["joint_rho"])
     gh = rq1.get("ghost_qh_rho", 0.16) / max(1e-9, rq1["joint_rho"])
-    lines.append(f"\\addplot[evGrad, line width=1.0pt, opacity=0.30, forget plot] coordinates {{(0,{a+0.05:.3f}) (1,{a+0.05 + b*gg:.3f})}};")
-    lines.append(f"\\addplot[evProx, line width=1.0pt, opacity=0.30, forget plot] coordinates {{(0,{a+0.02:.3f}) (1,{a+0.02 + b*gh:.3f})}};")
+    lines.append(f"\\addplot[evGrad, line width=1.0pt, opacity=0.30, forget plot] coordinates {{(0,{a + 0.05:.3f}) (1,{a + 0.05 + b * gg:.3f})}};")
+    lines.append(f"\\addplot[evProx, line width=1.0pt, opacity=0.30, forget plot] coordinates {{(0,{a + 0.02:.3f}) (1,{a + 0.02 + b * gh:.3f})}};")
     # flat control
     lines.append(f"\\addplot[evCtrl, line width=0.8pt, dashed, opacity=0.7, forget plot] coordinates {{(0,{a:.3f}) (1,{a:.3f})}};")
     # joint trend (hero)
-    lines.append(f"\\addplot[evMix, line width=2.2pt, forget plot] coordinates {{(0,{a:.3f}) (1,{a+b:.3f})}};")
+    lines.append(f"\\addplot[evMix, line width=2.2pt, forget plot] coordinates {{(0,{a:.3f}) (1,{a + b:.3f})}};")
     lines.append("\\legend{audit candidate}")
     lines.append("\\end{axis}")
 
-    # ---- RQ2 band (bottom): xbar vs floor, bf16 collapse gray ----------
-    rows = rq2["rows"] + [rq2["bf16"]]
-    lines.append("\\begin{axis}[at={(0cm,4.2cm)}, anchor=north west, width=13.4cm, height=3.4cm,")
-    lines.append("  axis lines=left, y dir=reverse, xmin=0, xmax=1.05,")
-    lines.append("  title={\\textbf{RQ2}\\; loss-shake fidelity vs frozen floors"
-                 "\\quad($|$ = floor;\\; \\textcolor{evCtrl}{gray = bf16 collapse, invalid})},")
-    lines.append("  title style={font=\\footnotesize, at={(0,1.03)}, anchor=south west},")
-    lines.append("  ytick={" + ",".join(str(i) for i in range(len(rows))) + "},")
-    lines.append("  yticklabels={" + ",".join("{" + r[0] + "}" for r in rows) + "},")
-    lines.append("  yticklabel style={font=\\scriptsize}, tick label style={font=\\scriptsize},")
-    lines.append("  xlabel={certificate value}, xlabel style={font=\\scriptsize}]")
-    for i, (label, val, floor, valid) in enumerate(rows):
-        col = "evGrad" if valid else "evCtrl"
-        lines.append(f"\\addplot[xbar, bar width=0.42, fill={col}, draw=white, line width=0.3pt] coordinates {{({val:.4f},{i})}};")
-        lines.append(f"\\draw[ink, line width=1.1pt] (axis cs:{floor},{i-0.30}) -- (axis cs:{floor},{i+0.30});")
+    # ---- RQ3 panel (right): 8 damage UCBs vs 0, snapped rung ------------
+    ucb_items = list(rq3["ucbs"].items())
+    lines.append(f"\\begin{{axis}}[at={{({X3}cm,{TOP}cm)}}, anchor=north west, width={W3}cm, height={H}cm,")
+    lines.append("  axis lines=left, y dir=reverse, xmin=-0.26, xmax=0.20,")
+    lines.append("  title={\\textbf{RQ3} $\\cdot$ protection\\\\"
+                 "\\textcolor{evCtrl}{\\scriptsize COMPOSITE CHAIN: NOT LICENSED here}},")
+    lines.append(f"  title style={{font=\\footnotesize, align=left, text width={W3 - 0.1:.1f}cm, at={{(0,1.02)}}, anchor=south west}},")
+    lines.append("  ytick={" + ",".join(str(i) for i in range(len(ucb_items))) + "},")
+    lines.append("  yticklabels={" + ",".join("{\\scriptsize " + k.replace("_", "\\_") + "}" for k, _ in ucb_items) + "},")
+    lines.append("  tick label style={font=\\scriptsize},")
+    lines.append("  xlabel={$\\Delta$NLL upper bound (want $<0$)}, xlabel style={font=\\scriptsize}]")
+    lines.append(f"\\draw[ink, line width=1.2pt] (axis cs:0,-0.6) -- (axis cs:0,{len(ucb_items) - 0.4:.1f});")
+    for i, (k, ucb) in enumerate(ucb_items):
+        snapped = (k == rq3["snapped_arm"])
+        if snapped:
+            # snapped rung: dashed gray gap segment + marker on the wrong side
+            lines.append(f"\\draw[evCtrl, line width=0.8pt, dashed] (axis cs:0,{i}) -- (axis cs:{ucb:.3f},{i});")
+            lines.append(f"\\filldraw[evCtrl] (axis cs:{ucb:.3f},{i}) circle (2.4pt);")
+            lines.append(f"\\node[anchor=west, font=\\tiny, text=evCtrl] at (axis cs:{ucb:.3f},{i}) {{\\; infeasible}};")
+        else:
+            lo, hi = min(0.0, ucb), max(0.0, ucb)
+            lines.append(f"\\draw[evMix, line width=2.6pt] (axis cs:{lo:.3f},{i}) -- (axis cs:{hi:.3f},{i});")
+            lines.append(f"\\filldraw[evMix] (axis cs:{ucb:.3f},{i}) circle (2.4pt);")
     lines.append("\\end{axis}")
 
-    # ---- burn-in caption --------------------------------------------------
+    # ---- burn-in caption, spans the full width ---------------------------
     lines.append(
-        "\\node[anchor=north west, font=\\footnotesize\\itshape, text=ink, text width=13cm] at (0cm,0.5cm) "
+        f"\\node[anchor=north west, font=\\footnotesize\\itshape, text=ink, text width={RIGHT - 0.5:.1f}cm] at (0cm,0.55cm) "
         "{Every claim is a bound that had to clear a floor set before any outcome "
         "existed --- and the chain stops the moment one doesn't.};")
 
