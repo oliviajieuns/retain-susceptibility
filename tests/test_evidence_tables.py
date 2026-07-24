@@ -153,6 +153,27 @@ def test_rq1_pass_requires_positive_joint_bound(tmp_path):
     assert not decision["claim_pass"]
 
 
+def test_robustness_worst_bounds_cover_all_three_rqs(tmp_path):
+    contract = _config(tmp_path)
+    ledger = _ledger([_row("primary")])
+    report = _report(contract, ledger)
+    fidelity = {
+        "primary": {"f_rho": 0.97, "f_k": 0.86, "f_rho_lb": 0.93, "f_k_lb": 0.79}
+    }
+    robustness = render_robustness_table(
+        contract, ledger, report, fidelity=fidelity
+    )
+    assert "worst RQ1/RQ2/RQ3 bounds" in robustness
+    # RQ1/RQ2 report least-favorable lower bounds (min over members, the
+    # fidelity floor margins included), RQ3 the largest damage upper bound.
+    assert "+0.050 / +0.050 / -0.050" in robustness
+    # A setting with no attempted rows keeps the whole cell a placeholder.
+    empty = render_robustness_table(
+        contract, EvidenceLedger.empty(), _report(contract, EvidenceLedger.empty())
+    )
+    assert "worst RQ1/RQ2/RQ3 bounds" in empty
+
+
 def test_rq2_cell_never_shows_eligible_for_ineligible_rows(tmp_path):
     contract = _config(tmp_path)
     raw = _row("primary")

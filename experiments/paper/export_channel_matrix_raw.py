@@ -440,6 +440,18 @@ def export_protection(
                     return
                 groups = row.get("candidate_groups") or {}
                 feasible = all(value >= 0.0 for value in margins.values())
+                # Stage-2 refresh telemetry: accepted refreshes and guarded
+                # rollbacks of the deployed arm fill the table's
+                # updates/rollback diagnostics.  Arms without a repair phase
+                # (no_repair placeholders) legitimately carry neither field.
+                stage2 = (row.get("trajectory_metadata") or {}).get("stage2") or {}
+                updates_accepted = stage2.get("n_accepted")
+                updates_rolled_back = stage2.get("n_rejected")
+                if (updates_accepted is None) != (updates_rolled_back is None):
+                    raise EvidenceValidationError(
+                        f"{results_path}: stage2 telemetry must report "
+                        "n_accepted and n_rejected together"
+                    )
                 for candidate_id, value in sorted(damage.items()):
                     record = {
                         "setting": args.setting_id,
@@ -463,6 +475,16 @@ def export_protection(
                         "native_metric": (
                             float(row["utility_retention"])
                             if row.get("utility_retention") is not None
+                            else None
+                        ),
+                        "updates_accepted": (
+                            float(updates_accepted)
+                            if updates_accepted is not None
+                            else None
+                        ),
+                        "updates_rolled_back": (
+                            float(updates_rolled_back)
+                            if updates_rolled_back is not None
                             else None
                         ),
                     }

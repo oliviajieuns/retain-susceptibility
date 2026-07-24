@@ -126,7 +126,7 @@ def test_worker_executes_units_and_records_results(tmp_path):
     q = WorkQueue(tmp_path / "q")
     marker = tmp_path / "ran.txt"
     q.enqueue([
-        Unit(unit_id="ok", cmd=["sh", "-c", f"echo hello > {marker}"], gpus=0),
+        Unit(unit_id="ok", cmd=["sh", "-c", f"echo hello > {marker.as_posix()}"], gpus=0),
         Unit(unit_id="boom", cmd=["sh", "-c", "exit 7"], gpus=0, max_attempts=1),
     ])
     log_dir = tmp_path / "logs"

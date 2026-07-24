@@ -60,7 +60,13 @@ def parse_worker_cmdline(parts: list[str]) -> dict | None:
 
 def gather_workers() -> list[dict]:
     workers = []
-    for pid_dir in Path("/proc").iterdir():
+    try:
+        pid_dirs = list(Path("/proc").iterdir())
+    except OSError:
+        # No procfs (e.g. the CPU-only Windows validation session): report an
+        # empty worker list instead of killing the whole snapshot.
+        return workers
+    for pid_dir in pid_dirs:
         if not pid_dir.name.isdigit():
             continue
         try:
