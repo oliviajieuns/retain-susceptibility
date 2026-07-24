@@ -1,0 +1,36 @@
+# Frozen prediction weight (RQ1) for the 7B TOFU setting.
+#
+# This is the PREDICTION estimand only — the separate protection weight
+# (alpha_protection_freeze.yaml) stays unresolved because RQ3 is infeasible
+# at 7B (docs/data/alpha_dev_7b/). Selected on development requests a198/a199
+# by equal-request Spearman of the frozen mixture against the entry-checkpoint
+# (no-repair) damage, then top-tail recall, then midpoint distance
+# (select_prediction_freeze.py). Reviewed and frozen 2026-07-24T03:20Z before
+# opening any sealed audit outcome for prediction.
+freeze_id: FREEZE-2026-07-24-7B-PREDICTION-ALPHA
+status: frozen
+frozen_before_audit: true
+frozen_at_utc: 2026-07-24T03:20:00Z
+source_campaign: kdd27-channel-mixture-protection-7b-v1
+source_phase: development
+selection_rule: equal_request_spearman_then_top_q_midpoint_smaller
+normalization: empirical_midrank_discovery_only
+orientation: (1-alpha)*gradient + alpha*proximity
+damage_source: development none-arm entry-checkpoint damage only
+# Development diagnostics (mean equal-request Spearman across a198/a199):
+#   graddiff: alpha 0->1 = -0.030, 0.096, 0.225, 0.319, 0.374  (monotone up;
+#             representation proximity best predicts the output-readout damage
+#             -- a channel-matching observation for Section 5)
+#   rmu:      alpha 0->1 = 0.165, 0.178, 0.187, 0.191, 0.172  (flat peak at 0.75)
+prediction_alpha:
+  graddiff: 1.0
+  rmu: 0.75
+# Objectives that did not reach the forgetting criterion in the reduced 7B
+# core roster carry no resolved prediction weight; their audit rows stay
+# ineligible (non-reach) rather than taking a fallback.
+unresolved:
+  - qwen25_7b/npo
+  - qwen25_7b/simnpo
+  - qwen25_7b/gru
+  - qwen25_7b/repnoise
+  - qwen25_7b/circuit_breakers
