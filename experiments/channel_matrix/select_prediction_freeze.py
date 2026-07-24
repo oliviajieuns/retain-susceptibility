@@ -62,14 +62,32 @@ def _top_q_recall(scores, damage, ids, q):
 
 
 def _profile_scores(cell: Path, scorer: str) -> tuple[dict[str, float], list[str]]:
+    """Read either profile-artifact shape.
+
+    gate.py cells carry a ``candidates`` list; alpha_protection cells carry a
+    flat ``scores`` mapping plus ``candidate_meta`` fold labels.
+    """
     payload = json.loads((cell / "profile_artifacts" / f"{scorer}.json").read_text())
-    scores, discovery = {}, []
-    for row in payload["candidates"]:
-        cid = str(row["candidate_id"])
-        if row.get("score") is not None:
-            scores[cid] = float(row["score"])
-        if row.get("fold") == "discovery":
-            discovery.append(cid)
+    scores: dict[str, float] = {}
+    discovery: list[str] = []
+    if "candidates" in payload:
+        for row in payload["candidates"]:
+            cid = str(row["candidate_id"])
+            if row.get("score") is not None:
+                scores[cid] = float(row["score"])
+            if row.get("fold") == "discovery":
+                discovery.append(cid)
+        return scores, discovery
+    meta = payload.get("candidate_meta") or {}
+    for cid, value in (payload.get("scores") or {}).items():
+        scores[str(cid)] = float(value)
+    discovery = [
+        str(cid) for cid, info in meta.items() if info.get("fold") == "discovery"
+    ]
+    if not scores or not discovery:
+        raise SystemExit(
+            f"{cell}/profile_artifacts/{scorer}.json has no usable scores/folds"
+        )
     return scores, discovery
 
 
