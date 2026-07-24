@@ -13,3 +13,14 @@ seals/*.parquet
 /*.out
 /*.pid
 /*.meta
+
+# Regenerable figure/selector outputs that were dirtying the cluster worktree
+# and blocking enqueue_table12.sh's clean-tree guard. The tracked figure
+# artifacts (fig6_evidence_chain_generated.tex, fig2_evidence_chain_data.json)
+# are NOT matched by these patterns; only the conceptual/preview scratch and
+# ad-hoc selector verdict dumps are.
+.ipynb_checkpoints/
+docs/figures/fig2_concept_*
+docs/figures/fig2_profile_*
+figures/*_concept.tex
+/*_verdict.json
