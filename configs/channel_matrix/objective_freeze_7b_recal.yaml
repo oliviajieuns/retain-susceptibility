@@ -10,7 +10,7 @@ freeze_id: FREEZE-2026-07-24-7B-RMU-REACH-RECAL
 status: frozen
 frozen_before_audit: true
 frozen_at_utc: 2026-07-24T04:00Z
-source_campaign: kdd27-channel-matrix-7b-v1
+source_campaign: kdd27-channel-matrix-7b-recal-v1
 selection_rule: Core objectives must satisfy forget_recall <= 0.10 and the fixed mean/CVaR
   utility bounds on both development requests. Stress controls prefer settings reaching
   the forget criterion; if none do, they minimize worst development recall. All ties
