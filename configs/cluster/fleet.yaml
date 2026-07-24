@@ -17,8 +17,10 @@ assignments:
   # NOTE: these queues are served from the branch WORKTREE
   # (/group-volume/jieuns.shin/retain-susceptibility-table12), so the paths
   # below are relative to that checkout, not the main clone.
-  # 2026-07-24: test1 died mid-wave; run261630-table takes over the WMDP W1
-  # retry (adapter token-budget fix landed in the same commit).
-  run261630-table: runs/cluster_queue/wave_wmdp      # WMDP-bio/MMLU W1 (+rwku fid)
+  # 2026-07-24: test1 died mid-wave; run261630-table took over the WMDP W1
+  # retry (adapter token-budget fix landed in the same commit). run261630-table
+  # then bounced too; run261723-unlearning4 (8x H100, all free) takes the
+  # WMDP fidelity+calibration wave (round-2 grid, commit 38e5130).
+  run261723-unlearning4: runs/cluster_queue/wave_wmdp # WMDP-bio/MMLU W1 (+rwku fid)
   # <new-node-2>: runs/cluster_queue/wave_llama      # Llama-3.1-8B W1
   # <new-node-3>: runs/cluster_queue/wave_rwku       # RWKU audit (1 GPU enough)
