@@ -89,24 +89,56 @@ calibration:
     graddiff:
       - {id: lr1_s120, lr: 1.0e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
       - {id: lr2_s120, lr: 2.0e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
+      # Round 2 (2026-07-24): round-1 bracketed reach between lr1 (recall
+      # 0.39/0.47, dnll ~1) and lr2 (recall 0.055/0.16 REACH but dnll 6.2/3.3
+      # collapse). Search the interior for reach with mean dnll <= 2.0, and
+      # try lr2 with fewer steps to reach before damage accumulates.
+      - {id: lr15_s120, lr: 1.5e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
+      - {id: lr175_s120, lr: 1.75e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
+      - {id: lr2_s80, lr: 2.0e-6, steps: 80, forget_weight: 1.0, retain_weight: 1.0}
+      - {id: lr15_s180, lr: 1.5e-6, steps: 180, forget_weight: 1.0, retain_weight: 1.0}
     npo:
       - {id: b01_lr2_s120, lr: 2.0e-6, steps: 120, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
       - {id: b01_lr4_s120, lr: 4.0e-6, steps: 120, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
+      # Round 2: round-1 plateaued (recall 0.30-0.41, dnll ~0). Press lr x2-4
+      # and double steps; low expectation (NPO plateaus across settings).
+      - {id: b01_lr8_s240, lr: 8.0e-6, steps: 240, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
+      - {id: b01_lr16_s240, lr: 1.6e-5, steps: 240, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
     simnpo:
       - {id: b45_lr2_s120, lr: 2.0e-6, steps: 120, beta: 4.5, forget_weight: 0.125, retain_weight: 1.0}
       - {id: b45_lr4_s120, lr: 4.0e-6, steps: 120, beta: 4.5, forget_weight: 0.125, retain_weight: 1.0}
+      # Round 2: round-1 plateaued (recall 0.75-0.78, dnll ~0). Press hard.
+      - {id: b45_lr8_s240, lr: 8.0e-6, steps: 240, beta: 4.5, forget_weight: 0.125, retain_weight: 1.0}
+      - {id: b45_lr16_s240, lr: 1.6e-5, steps: 240, beta: 4.5, forget_weight: 0.125, retain_weight: 1.0}
     gru:
       - {id: lr1_s120, lr: 1.0e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
       - {id: lr2_s120, lr: 2.0e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
+      # Round 2: reach bracketed between lr1 (recall 0.37/0.42, dnll ~1-1.7)
+      # and lr2 (recall 0.022/0.087 REACH but dnll 12.9/5.6 collapse). Same
+      # interior search as graddiff.
+      - {id: lr13_s120, lr: 1.3e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
+      - {id: lr15_s120, lr: 1.5e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
+      - {id: lr2_s80, lr: 2.0e-6, steps: 80, forget_weight: 1.0, retain_weight: 1.0}
     rmu:
       - {id: a10_c3_lr1_s120, lr: 1.0e-6, steps: 120, rmu_alpha: 10.0, rmu_c: 3.0}
       - {id: a10_c3_lr2_s120, lr: 2.0e-6, steps: 120, rmu_alpha: 10.0, rmu_c: 3.0}
+      # Round 2: round-1 was inert (recall 0.79-0.81, dnll ~0 — representation
+      # objective did not move WMDP MCQ knowledge). Raise intensity: higher lr
+      # and alpha, more steps.
+      - {id: a10_c3_lr4_s240, lr: 4.0e-6, steps: 240, rmu_alpha: 10.0, rmu_c: 3.0}
+      - {id: a30_c3_lr4_s240, lr: 4.0e-6, steps: 240, rmu_alpha: 30.0, rmu_c: 3.0}
     repnoise:
       - {id: a1_c3_lr1_s120, lr: 1.0e-6, steps: 120, rmu_alpha: 1.0, rmu_c: 3.0}
       - {id: a10_c3_lr1_s120, lr: 1.0e-6, steps: 120, rmu_alpha: 10.0, rmu_c: 3.0}
+      # Round 2: round-1 damage exploded before reach (recall 0.15, dnll 6.4-7.1
+      # -- noise term dominates). Slow the damage with a smaller lr.
+      - {id: a1_c3_lr05_s120, lr: 5.0e-7, steps: 120, rmu_alpha: 1.0, rmu_c: 3.0}
+      - {id: a1_c3_lr05_s240, lr: 5.0e-7, steps: 240, rmu_alpha: 1.0, rmu_c: 3.0}
     circuit_breakers:
       - {id: a1_lr1_s240, lr: 1.0e-6, steps: 240, rmu_alpha: 1.0}
       - {id: a10_lr1_s240, lr: 1.0e-6, steps: 240, rmu_alpha: 10.0}
+      # Round 2: press learning rate (round-1 CB is typically inert).
+      - {id: a10_lr4_s240, lr: 4.0e-6, steps: 240, rmu_alpha: 10.0}
 
 audit:
   offline: true
