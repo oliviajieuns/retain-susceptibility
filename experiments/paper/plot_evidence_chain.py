@@ -307,6 +307,10 @@ def render_tikz(data: dict, out: Path) -> Path:
         "%   experiments/paper/plot_evidence_chain.py --tikz",
         "% Design: docs/figures/FIGURE2_EVIDENCE_CHAIN_GUIDELINE.md",
         f"% data source: RQ2={rq2['source']}; RQ1={rq1['source']}; RQ3={rq3['source']}",
+        "% PLACEMENT: this body is ~21.6cm x ~8.3cm and resizes to \\textwidth. It",
+        "%   MUST be \\input inside a full-width float in the two-column layout, i.e.",
+        "%   \\begin{figure*}[!t]\\centering \\input{...} \\caption{...}\\label{fig:channel-main}\\end{figure*}",
+        "%   -- inside a single-column figure/inline it overflows the column and breaks.",
     ]
     for name, hexv in p.items():
         lines.append(f"\\definecolor{{{name}}}{{HTML}}{{{hexv}}}")

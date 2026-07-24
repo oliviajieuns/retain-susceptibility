@@ -2,6 +2,10 @@
 %   experiments/paper/plot_evidence_chain.py --tikz
 % Design: docs/figures/FIGURE2_EVIDENCE_CHAIN_GUIDELINE.md
 % data source: RQ2=fig6 fp32 values; RQ1=conceptual (rho~0.21, calibrated to 7B); RQ3=conceptual (frozen-op-point infeasible, per alpha_dev_7b)
+% PLACEMENT: this body is ~21.6cm x ~8.3cm and resizes to \textwidth. It
+%   MUST be \input inside a full-width float in the two-column layout, i.e.
+%   \begin{figure*}[!t]\centering \input{...} \caption{...}\label{fig:channel-main}\end{figure*}
+%   -- inside a single-column figure/inline it overflows the column and breaks.
 \definecolor{evGrad}{HTML}{0072B2}
 \definecolor{evProx}{HTML}{D55E00}
 \definecolor{evMix}{HTML}{009E73}
