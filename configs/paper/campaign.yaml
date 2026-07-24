@@ -143,7 +143,9 @@ models:
     source_kind: local_path
     dtype: float32
     num_hidden_layers: 32
-    provisioned: false  # listed in the old launcher but not yet provisioned
+    # 2026-07-24: provisioned from the ungated NousResearch mirror of the
+    # identical meta-llama checkpoint (same license; gated origin lacked a token).
+    provisioned: true
     parents:
       graddiff: true
       npo: true

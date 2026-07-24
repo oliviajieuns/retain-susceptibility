@@ -8,6 +8,9 @@ output_root: runs/channel_matrix_llama8b
 # is blocked/unstable from the cluster since 2026-07-23, see that script).
 models:
   - id: llama31_8b
+    # Weights provisioned 2026-07-24 from the ungated NousResearch mirror of
+    # meta-llama/Llama-3.1-8B-Instruct (identical checkpoint, same Llama 3.1
+    # license; the gated origin needed an account token the cluster lacks).
     path: /group-volume/models/Llama-3.1-8B-Instruct
     enabled: true
 
