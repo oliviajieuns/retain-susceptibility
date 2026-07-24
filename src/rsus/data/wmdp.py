@@ -130,11 +130,33 @@ def _choice_example(row: dict, example_id: str, group: str, tokenizer, max_lengt
                    text=f"Question: {question}\nAnswer: {answer}")
 
 
+def _try_choice_example(
+    row: dict, example_id: str, group: str, tokenizer, max_length: int
+) -> Example | None:
+    """Format one row, or None when the prompt alone exceeds the budget.
+
+    Real MMLU/WMDP questions include multi-hundred-token scenario passages
+    (professional law, clinical cases); a row whose answer would be fully
+    truncated is deterministically skipped rather than crashing the request.
+    The skip rule depends only on the frozen tokenizer and ``max_length``, so
+    slices and subject pools remain reproducible.
+    """
+    try:
+        return _choice_example(row, example_id, group, tokenizer, max_length)
+    except ValueError as error:
+        if "answer fully truncated" in str(error):
+            return None
+        raise
+
+
 def wmdp_request(
     tokenizer,
     request_index: int,
     candidate_subjects: list[int],
-    max_length: int = 256,
+    # 512 clears the long-passage MMLU subjects (professional law, clinical
+    # scenarios) that overflow 256 in the real cache; overlong rows are still
+    # deterministically skipped rather than crashing (2026-07-24 canary).
+    max_length: int = 512,
     chunk_size: int = CHUNK_SIZE,
     per_subject: int = PER_SUBJECT,
     max_candidates: int = MAX_CANDIDATES,
@@ -177,26 +199,51 @@ def wmdp_request(
     order = forget_order()
     start = request_index * chunk_size
     forget = [
-        _choice_example(tables["wmdp_bio"][row_idx], f"{request_id}-q{row_idx:05d}",
-                        f"slice-{request_index:03d}", tokenizer, max_length)
+        example
         for row_idx in order[start:start + chunk_size]
+        if (
+            example := _try_choice_example(
+                tables["wmdp_bio"][row_idx], f"{request_id}-q{row_idx:05d}",
+                f"slice-{request_index:03d}", tokenizer, max_length,
+            )
+        )
+        is not None
     ]
+    if not forget:
+        raise ValueError(
+            f"{request_id}: every question in the frozen slice exceeds "
+            f"max_length={max_length}; raise the budget"
+        )
 
+    # Per subject, walk the dataset order and keep the first ``per_subject``
+    # rows that fit the token budget, so every pool stays exactly
+    # ``per_subject`` wide even when a long-passage row is skipped.
     chosen = [subjects[index] for index in candidate_subjects]
     rows_by_subject: dict[str, list[tuple[int, dict]]] = {name: [] for name in chosen}
     for row_idx, row in enumerate(tables["mmlu"]):
         bucket = rows_by_subject.get(str(row["subject"]))
-        if bucket is not None and len(bucket) < per_subject:
+        if bucket is not None:
             bucket.append((row_idx, row))
 
     universe: list[Example] = []
     for name in chosen:
         if not rows_by_subject[name]:
             raise ValueError(f"MMLU subject {name!r} has no rows")
+        kept = 0
         for row_idx, row in rows_by_subject[name]:
-            universe.append(
-                _choice_example(row, f"mmlu-{row_idx:05d}", f"mmlu-{name}",
-                                tokenizer, max_length)
+            if kept == per_subject:
+                break
+            example = _try_choice_example(
+                row, f"mmlu-{row_idx:05d}", f"mmlu-{name}", tokenizer, max_length
+            )
+            if example is None:
+                continue
+            universe.append(example)
+            kept += 1
+        if kept < per_subject:
+            raise ValueError(
+                f"MMLU subject {name!r} has only {kept} rows within "
+                f"max_length={max_length}; need {per_subject} — raise the budget"
             )
     universe = universe[:max_candidates]
     native_audit_ids = {

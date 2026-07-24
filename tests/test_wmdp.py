@@ -218,3 +218,56 @@ def test_fd_fidelity_builds_pools_through_registry_adapters():
             "wmdp_bio_mmlu", MockTokenizer(), 0, universe_authors=2,
             candidate_authors=None, tables=fake_tables(),
         )
+
+
+class CharTokenizer:
+    """1 token per character, no cap — lets a long passage overflow max_length."""
+
+    eos_token_id = 9
+
+    def __call__(self, text, add_special_tokens=False):
+        return {"input_ids": [10 + (ord(c) % 50) for c in text]}
+
+
+def test_overlong_rows_are_skipped_deterministically_and_pools_stay_full():
+    tables = fake_tables()
+    # Make anatomy's first row a long-passage question that overflows the
+    # budget; the pool must refill from the next rows in dataset order.
+    long_row = next(
+        row for row in tables["mmlu"] if row["subject"] == "anatomy"
+    )
+    long_row["question"] = "clinical scenario " * 40  # ~720 tokens as chars
+    request = wmdp_request(
+        CharTokenizer(),
+        request_index=0,
+        candidate_subjects=[0],
+        max_length=256,
+        tables=tables,
+    )
+    anatomy = [e for e in request.universe.examples if e.group == "mmlu-anatomy"]
+    assert len(anatomy) == 8  # still exactly per_subject wide
+    assert all("clinical scenario" not in e.text for e in anatomy)
+    # Deterministic: same tables give the identical universe hash.
+    again = wmdp_request(
+        CharTokenizer(),
+        request_index=0,
+        candidate_subjects=[0],
+        max_length=256,
+        tables=tables,
+    )
+    assert request.universe.sha == again.universe.sha
+
+
+def test_subject_exhausted_by_token_budget_fails_loudly():
+    tables = fake_tables()
+    for row in tables["mmlu"]:
+        if row["subject"] == "anatomy":
+            row["question"] = "very long passage " * 40
+    with pytest.raises(ValueError, match="raise the budget"):
+        wmdp_request(
+            CharTokenizer(),
+            request_index=0,
+            candidate_subjects=[0],
+            max_length=256,
+            tables=tables,
+        )
