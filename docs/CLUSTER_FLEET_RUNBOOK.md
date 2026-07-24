@@ -11,6 +11,9 @@ experiments/cluster/
   worker.py        GPU 1장을 전담하는 워커 루프 (하트비트 + 로그 + 재시도)
   make_units.py    캠페인 config에서 작업 단위(JSONL) 생성/즉시 enqueue
   launch_node.sh   노드 부팅: venv 활성화 후 GPU당 워커 1개 nohup 기동
+  next_actions.py  읽기 전용 오라클: 지금 enqueue 허용된 페이즈/막힌 이유를
+                   동결 게이트 기준으로 보고 (자율 에이전트는 이걸 먼저 실행;
+                   레포 루트 AGENTS.md가 에이전트용 운영 계약)
 ```
 
 ## 핵심 설계
