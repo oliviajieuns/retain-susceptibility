@@ -9,11 +9,13 @@ set -euo pipefail
 #   bash experiments/cluster/enqueue_table12.sh audit-7b     7B TOFU audit (+alpha) -> wave2
 #   bash experiments/cluster/enqueue_table12.sh audit-14b    14B TOFU audit (+alpha) -> wave1_14b
 #   bash experiments/cluster/enqueue_table12.sh wmdp         WMDP fidelity+calibration -> wave_wmdp
+#   bash experiments/cluster/enqueue_table12.sh wmdp-14b     WMDP-14B fidelity+calibration -> wave_wmdp14b
 #   bash experiments/cluster/enqueue_table12.sh llama        Llama-8B fidelity+calibration -> wave_llama
 #   bash experiments/cluster/enqueue_table12.sh rwku-audit   RWKU 7B audit -> wave_rwku
 #
 # Wave -> table mapping: Table 1 <- wave2 (7B audit + alpha waves, all in
-# wave2); Table 2 rows <- wave1_14b, wave_rwku, wave_wmdp, wave_llama.
+# wave2); Table 2 rows <- wave1_14b, wave_rwku, wave_wmdp, wave_wmdp14b,
+# wave_llama.
 # New queues (wave_wmdp/wave_llama/wave_rwku) need a node assignment in
 # configs/cluster/fleet.yaml (or FORCE_QUEUE=1 on an unassigned node)
 # before launch_node.sh will serve them.
@@ -37,7 +39,7 @@ source "${VENV}/bin/activate"
 export HF_HOME="${HF_HOME:-/group-volume/data/hf_home}"
 
 CFG_DIR="configs/channel_matrix"
-STATUS_QUEUES=(wave1 wave2 wave1_14b wave_wmdp wave_llama wave_rwku)
+STATUS_QUEUES=(wave1 wave2 wave1_14b wave_wmdp wave_wmdp14b wave_llama wave_rwku)
 
 log()  { echo "[enqueue_table12] $*"; }
 die()  { echo "[enqueue_table12] ERROR: $*" >&2; exit 1; }
@@ -179,6 +181,16 @@ case "${cmd}" in
     post_enqueue_notes "${queue}"
     ;;
 
+  wmdp-14b)
+    cfg="${CFG_DIR}/wmdp_14b.yaml"
+    require_config "${cfg}"
+    require_clean_tree
+    queue="runs/cluster_queue/wave_wmdp14b"
+    enqueue_phase "WMDP-14B fidelity" "${queue}" "${cfg}" fidelity
+    enqueue_phase "WMDP-14B calibration" "${queue}" "${cfg}" calibration
+    post_enqueue_notes "${queue}"
+    ;;
+
   llama)
     cfg="${CFG_DIR}/llama8b_tofu.yaml"
     require_config "${cfg}"
@@ -208,6 +220,6 @@ case "${cmd}" in
     ;;
 
   *)
-    die "unknown subcommand '${cmd}' (expected: status | audit-7b | audit-14b | wmdp | llama | rwku-audit)"
+    die "unknown subcommand '${cmd}' (expected: status | audit-7b | audit-14b | wmdp | wmdp-14b | llama | rwku-audit)"
     ;;
 esac

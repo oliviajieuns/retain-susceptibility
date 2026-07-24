@@ -24,3 +24,7 @@ assignments:
   run261723-unlearning4: runs/cluster_queue/wave_wmdp # WMDP-bio/MMLU W1 (+rwku fid)
   # <new-node-2>: runs/cluster_queue/wave_llama      # Llama-3.1-8B W1
   # <new-node-3>: runs/cluster_queue/wave_rwku       # RWKU audit (1 GPU enough)
+  # WMDP on Qwen2.5-14B (enqueue_table12.sh wmdp-14b). Assign the grabbed
+  # 8-GPU node's hostname here, or serve it with FORCE_QUEUE=1. fp32 14B fits
+  # one H100 per worker (probe_block), so one 8-GPU node runs the wave.
+  # <new-node-4>: runs/cluster_queue/wave_wmdp14b    # WMDP-bio/MMLU on 14B

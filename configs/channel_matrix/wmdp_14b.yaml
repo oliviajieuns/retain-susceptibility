@@ -1,0 +1,150 @@
+campaign_id: kdd27-channel-matrix-wmdp14b-v1
+dataset: wmdp_bio_mmlu
+output_root: runs/channel_matrix_wmdp14b
+
+# WMDP-bio hazardous-knowledge removal with an MMLU retain universe on
+# Qwen2.5-14B. This is the 14B twin of configs/channel_matrix/wmdp_7b.yaml:
+# the WMDP task/data layout is IDENTICAL (same frozen seed-20260723 forget
+# slices, same MMLU subject pools, same offline cache) so the only variables
+# are the model, its memory/precision budget, and the objective grid brackets.
+# "Authors" throughout are WMDP-bio forget-slice indices (wmdp-r<idx>:
+# contiguous 40-question chunks, 31 slices); candidate pools index the sorted
+# MMLU subject list (57 subjects), a request's retain universe = the first 8
+# test questions of each pooled subject (src/rsus/data/wmdp.py). Development
+# slices 0-1, audit slices 10/14/18 -- kept identical to the 7B campaign so
+# the two settings are directly comparable.
+models:
+  - id: qwen25_14b
+    path: /group-volume/models/Qwen2.5-14B-Instruct
+    enabled: true
+
+common:
+  device: cuda
+  dtype: float32
+  trainable_scope: probe_block
+  representation_retain_mode: stream_cached
+  # 14B is 48 layers (vs 28 at 7B); the trainable block is still the last 8.
+  # fp32 14B weights (~56 GB) + probe-block grads fit a single H100 80GB, the
+  # same footprint that 14b_tofu.yaml runs at, so device stays single-GPU cuda.
+  block_last_n: 8
+  # WMDP subject-pool geometry, identical to wmdp_7b: 57 MMLU subjects admit
+  # four disjoint 13-subject pools; each request's retain universe is 13 x 8 =
+  # 104 candidates. Pools are disjoint across development and every audit slice.
+  universe_authors: 13
+  candidate_author_pools:
+    calibration: "2-14"
+    audit:
+      "10": "15-27"
+      "14": "28-40"
+      "18": "41-53"
+  batch_size: 4
+  sft_lr: 1.0e-5
+  # 14B needs the larger memorization budget measured on 14b_tofu (the 400-step
+  # a198 trajectory ended at NLL ~0.96 vs the 0.8 gate, ~0.2/100 steps); keep
+  # the 800-step ceiling. SFT reach is a precondition, never an outcome choice.
+  sft_steps: 800
+  sft_target_loss: 0.8
+  sft_eval_every: 100
+  require_sft_target: true
+  probe_dirs: 64
+  probe_norm_eta: 3.0e-3
+  probe_seed: 0
+  sentence_encoder: sentence-transformers/all-MiniLM-L6-v2
+
+# Frozen randomized-sensitivity operating point, evaluated on the disjoint
+# development pool (13 subjects x 8 = 104 candidates -> full pool coverage).
+# Numerical validation only; never inspects realized damage.
+fidelity:
+  author: 0
+  n_candidates: 104
+  candidate_seed: 314159
+  min_rho_ab: 0.70
+  min_rho_bc: 0.80
+  min_rho_ac: 0.80
+  min_eff_ratio: 0.90
+  min_frac_changed: 0.90
+
+calibration:
+  authors: [0, 1]
+  seeds: [2025]
+  selection:
+    forget_recall_max: 0.10
+    mean_dnll_max: 2.0
+    # 14B damage runs cooler than 7B at matched reach (14b_tofu measured the
+    # graddiff/gru frontier near CVaR ~8 vs the 7B ~12-16), so adopt the tighter
+    # 8.0 CVaR ceiling used for 14B-TOFU. Set before any WMDP-14B audit or probe
+    # outcome existed; revisit only via a pre-audit amendment.
+    cvar05_dnll_max: 8.0
+    require_every_development_run: true
+    tie_break: [mean_dnll, cvar05_dnll, steps, lr]
+    stress_rule: >-
+      Prefer settings reaching the forget criterion on every development run;
+      otherwise minimize worst development recall, then mean damage, CVaR,
+      steps, and learning rate. Stress controls may remain failed or collapsed
+      in audit and are never part of the core interaction.
+  # Bracketing grid seeded from (a) the frozen 7B objective values used as the
+  # cross-scale reference (npo 1.6e-5, graddiff 8e-7->interior, rmu 3.2e-5),
+  # (b) the WMDP-7B round-2 reach brackets, and (c) the 14B-TOFU scale evidence
+  # that the representation family is DOSE-FLAT at 14B (rmu 0.74->0.65 over
+  # lr1->lr32, vs 7B 0.78->0.21) so it must be pushed harder. Later rounds are
+  # added from WMDP-14B development diagnostics only; idkdpo stays excluded.
+  objective_grid:
+    ga:
+      - {id: lr05_s60, lr: 5.0e-7, steps: 60}
+      - {id: lr1_s60, lr: 1.0e-6, steps: 60}
+    graddiff:
+      # WMDP-7B bracketed reach between lr1 (recall ~0.4) and lr2 (reach but
+      # dnll collapse); search the interior and give 14B a touch more headroom.
+      - {id: lr1_s120, lr: 1.0e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
+      - {id: lr15_s120, lr: 1.5e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
+      - {id: lr2_s120, lr: 2.0e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
+      - {id: lr3_s120, lr: 3.0e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
+    npo:
+      # 7B frozen value is lr 1.6e-5 x 240 beta 0.1; NPO plateaus across scales,
+      # so bracket around it with one hard escalation probe.
+      - {id: b01_lr4_s120, lr: 4.0e-6, steps: 120, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
+      - {id: b01_lr8_s240, lr: 8.0e-6, steps: 240, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
+      - {id: b01_lr16_s240, lr: 1.6e-5, steps: 240, beta: 0.1, forget_weight: 1.0, retain_weight: 1.0}
+    simnpo:
+      - {id: b45_lr4_s120, lr: 4.0e-6, steps: 120, beta: 4.5, forget_weight: 0.125, retain_weight: 1.0}
+      - {id: b45_lr8_s240, lr: 8.0e-6, steps: 240, beta: 4.5, forget_weight: 0.125, retain_weight: 1.0}
+      - {id: b45_lr16_s240, lr: 1.6e-5, steps: 240, beta: 4.5, forget_weight: 0.125, retain_weight: 1.0}
+    gru:
+      # Same interior search as graddiff (7B bracketed reach lr1<->lr2).
+      - {id: lr1_s120, lr: 1.0e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
+      - {id: lr15_s120, lr: 1.5e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
+      - {id: lr2_s120, lr: 2.0e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
+      - {id: lr3_s120, lr: 3.0e-6, steps: 120, forget_weight: 1.0, retain_weight: 1.0}
+    rmu:
+      # 7B frozen value is lr 3.2e-5. 14B rmu is dose-flat, so climb the ladder
+      # to lr32 and add an alpha bump -- one representation-family pass is the
+      # Sec.5 chain condition for the setting.
+      - {id: a10_c3_lr4_s240, lr: 4.0e-6, steps: 240, rmu_alpha: 10.0, rmu_c: 3.0}
+      - {id: a10_c3_lr8_s240, lr: 8.0e-6, steps: 240, rmu_alpha: 10.0, rmu_c: 3.0}
+      - {id: a10_c3_lr16_s240, lr: 1.6e-5, steps: 240, rmu_alpha: 10.0, rmu_c: 3.0}
+      - {id: a10_c3_lr32_s240, lr: 3.2e-5, steps: 240, rmu_alpha: 10.0, rmu_c: 3.0}
+      - {id: a30_c3_lr16_s240, lr: 1.6e-5, steps: 240, rmu_alpha: 30.0, rmu_c: 3.0}
+    repnoise:
+      # 14B-TOFU: 0.696 at damage ~1.2 (in bounds, unlike smaller scales) -->
+      # escalate lr and schedule.
+      - {id: a1_c3_lr1_s120, lr: 1.0e-6, steps: 120, rmu_alpha: 1.0, rmu_c: 3.0}
+      - {id: a1_c3_lr2_s120, lr: 2.0e-6, steps: 120, rmu_alpha: 1.0, rmu_c: 3.0}
+      - {id: a1_c3_lr4_s240, lr: 4.0e-6, steps: 240, rmu_alpha: 1.0, rmu_c: 3.0}
+    circuit_breakers:
+      - {id: a1_lr1_s240, lr: 1.0e-6, steps: 240, rmu_alpha: 1.0}
+      - {id: a10_lr1_s240, lr: 1.0e-6, steps: 240, rmu_alpha: 10.0}
+      - {id: a10_lr4_s240, lr: 4.0e-6, steps: 240, rmu_alpha: 10.0}
+
+audit:
+  offline: true
+  authors: [10, 14, 18]
+  seeds: [2025, 2026]
+  # Full 7-objective core roster with ga as the stress control. Any roster
+  # reduction is decided from WMDP-14B development calibration before the
+  # freeze, never from audit outcomes (mirrors the 7B WMDP campaign).
+  objectives: [graddiff, npo, simnpo, gru, rmu, repnoise, circuit_breakers]
+  stress_objectives: [ga]
+  predictors: [grad_norm, fd_norm, knn_feature, knn_embed, knn_lexical, fd, random_rank]
+  objective_freeze: objective_freeze_wmdp14b.yaml
+  fidelity_certificates:
+    qwen25_14b: runs/channel_matrix_wmdp14b/fidelity/qwen25_14b.json
