@@ -61,6 +61,30 @@ def _top_q_recall(scores, damage, ids, q):
     return len(top(scores) & top(damage)) / count
 
 
+def _probe_scores(
+    probe_root: Path, model_id: str, author: int, scorer: str
+) -> tuple[dict[str, float], list[str], str | None] | None:
+    """Read a full-universe development probe file written by
+    score_dev_prediction_probes.py; None when absent (caller falls back to the
+    cell's discovery-only profile_artifacts)."""
+    path = probe_root / model_id / f"tofu-a{author}" / f"{scorer}.json"
+    if not path.exists():
+        return None
+    payload = json.loads(path.read_text())
+    if payload.get("schema") != "dev-prediction-probe-v1":
+        raise SystemExit(f"{path} has unexpected schema {payload.get('schema')!r}")
+    scores = {
+        str(cid): float(value) for cid, value in (payload.get("scores") or {}).items()
+    }
+    meta = payload.get("candidate_meta") or {}
+    discovery = [
+        str(cid) for cid, info in meta.items() if info.get("fold") == "discovery"
+    ]
+    if not scores or not discovery:
+        raise SystemExit(f"{path} has no usable scores/folds")
+    return scores, discovery, payload.get("candidate_universe_sha")
+
+
 def _profile_scores(cell: Path, scorer: str) -> tuple[dict[str, float], list[str]]:
     """Read either profile-artifact shape.
 
@@ -97,7 +121,18 @@ def main() -> None:
     parser.add_argument("--root", required=True, help="development result root only")
     parser.add_argument("--out", required=True)
     parser.add_argument("--top-q", type=float, default=0.10)
+    parser.add_argument(
+        "--probe-root",
+        default="",
+        help="root of full-universe development probe files written by "
+             "score_dev_prediction_probes.py; default <root>/../prediction_probes. "
+             "Cells without probe files fall back to their discovery-only "
+             "profile_artifacts.",
+    )
     args = parser.parse_args()
+    root = Path(args.root).resolve()
+    probe_root = (Path(args.probe_root).resolve() if args.probe_root
+                  else (root.parent / "prediction_probes"))
 
     cfg = _load_yaml(Path(args.config).resolve())
     _validate_contract(cfg)
@@ -114,9 +149,11 @@ def main() -> None:
             rows = []
             for author in phase["development"]["authors"]:
                 for seed in phase["development"]["seeds"]:
-                    cell = (Path(args.root).resolve() / model_id
+                    cell = (root / model_id
                             / f"tofu-a{author}" / f"seed-{seed}")
-                    results = json.loads((cell / "results.json").read_text())["results"]
+                    payload = json.loads((cell / "results.json").read_text())
+                    results = payload["results"]
+                    manifest = payload.get("manifest") or {}
                     none_row = next(
                         row for row in results
                         if row["parent"] == parent and row["selector"] == "none"
@@ -127,8 +164,26 @@ def main() -> None:
                         str(cid): float(value)
                         for cid, value in (none_row.get("candidate_damage") or {}).items()
                     }
-                    grad, discovery = _profile_scores(cell, probes["gradient"])
-                    prox, _ = _profile_scores(cell, probes["proximity"])
+                    grad_probe = _probe_scores(
+                        probe_root, model_id, author, probes["gradient"]
+                    )
+                    prox_probe = _probe_scores(
+                        probe_root, model_id, author, probes["proximity"]
+                    )
+                    if grad_probe is not None and prox_probe is not None:
+                        grad, discovery, grad_sha = grad_probe
+                        prox, _, prox_sha = prox_probe
+                        expected_sha = manifest.get("candidate_universe_sha")
+                        for sha in (grad_sha, prox_sha):
+                            if expected_sha and sha and sha != expected_sha:
+                                raise SystemExit(
+                                    "probe candidate-universe sha mismatch for "
+                                    f"{model_id}/tofu-a{author}: {sha} != cell "
+                                    f"manifest {expected_sha}"
+                                )
+                    else:
+                        grad, discovery = _profile_scores(cell, probes["gradient"])
+                        prox, _ = _profile_scores(cell, probes["proximity"])
                     ids = sorted(set(damage) & set(grad) & set(prox))
                     if len(ids) < 2:
                         continue
@@ -151,6 +206,19 @@ def main() -> None:
                             "spearman": rho,
                             "top_q_recall": _top_q_recall(scores, target, ids, args.top_q),
                         })
+            for alpha in grid:
+                alpha_rows = [row for row in rows if row["alpha"] == alpha]
+                rhos = [row["spearman"] for row in alpha_rows
+                        if row["spearman"] is not None]
+                recalls = [row["top_q_recall"] for row in alpha_rows]
+                mean_rho = (sum(rhos) / len(rhos)) if rhos else float("nan")
+                mean_rec = (sum(recalls) / len(recalls)) if recalls else float("nan")
+                print(
+                    f"{model_id}/{parent} alpha={alpha:g} "
+                    f"mean_spearman={mean_rho:.3f} "
+                    f"mean_top{args.top_q:g}_recall={mean_rec:.3f} "
+                    f"(n={len(alpha_rows)})"
+                )
             expected = [
                 (f"tofu-a{author}", int(seed))
                 for author in phase["development"]["authors"]

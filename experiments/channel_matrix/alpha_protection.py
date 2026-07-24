@@ -576,6 +576,85 @@ def _read_jsonl(path: Path) -> list[dict]:
             if line.strip()]
 
 
+def build_dev_request(
+    cfg: dict,
+    model_id: str,
+    author: int,
+    tokenizer,
+    *,
+    phase_name: str = "development",
+    seed: int | None = None,
+) -> SimpleNamespace:
+    """Build the exact per-cell Request and fold split the alpha worker uses.
+
+    Shared by the alpha-protection worker and the development
+    prediction-probe runner (``score_dev_prediction_probes.py``) so both see
+    the identical 600-candidate universe, the same 300/300 group-disjoint
+    discovery/audit split, and the same manifest shas.  Heavy imports stay
+    inside so contract tests can load this module without torch.
+    """
+    from rsus.data.base import CandidateUniverse, Request
+    from rsus.data.tofu import load_tofu_examples, tofu_request
+    from rsus.partition import make_folds
+
+    roster = cfg["alpha_protection"][phase_name]
+    if int(author) not in {int(value) for value in roster["authors"]}:
+        raise ValueError(f"author {author} is outside the alpha {phase_name} roster")
+    if seed is None:
+        seeds = [int(value) for value in roster["seeds"]]
+        if len(seeds) != 1:
+            raise ValueError(
+                f"alpha {phase_name} declares several seeds {seeds}; pass seed explicitly"
+            )
+        seed = seeds[0]
+    if int(seed) not in {int(value) for value in roster["seeds"]}:
+        raise ValueError(f"seed {seed} is outside the alpha {phase_name} roster")
+    seed = int(seed)
+
+    common = cfg["common"]
+    examples = load_tofu_examples(tokenizer)
+    candidate_authors = _expand_int_ranges(_candidate_pool(cfg, phase_name, author))
+    req = tofu_request(
+        author,
+        examples,
+        universe_authors=int(common["universe_authors"]),
+        seed=seed,
+        candidate_authors=candidate_authors,
+    )
+    by_id = {example.example_id: example for example in req.universe.examples}
+    folds = make_folds(
+        {example.example_id: example.group for example in req.universe.examples},
+        0.5,
+        seed,
+    )
+    audit_ids = {cid for cid, example in by_id.items() if folds[example.group] == "audit"}
+    discovery_ids = set(by_id) - audit_ids
+    if len(audit_ids) != 300 or len(discovery_ids) != 300:
+        raise ValueError(
+            f"expected 300/300 group split, got {len(discovery_ids)}/{len(audit_ids)}"
+        )
+    retain = [by_id[cid] for cid in sorted(discovery_ids)]
+    scoring_request = Request.build(
+        req.request_id,
+        list(req.forget),
+        CandidateUniverse.freeze(retain),
+    )
+    return SimpleNamespace(
+        model_id=model_id,
+        author=int(author),
+        seed=seed,
+        examples=examples,
+        candidate_authors=candidate_authors,
+        req=req,
+        by_id=by_id,
+        folds=folds,
+        audit_ids=audit_ids,
+        discovery_ids=discovery_ids,
+        retain=retain,
+        scoring_request=scoring_request,
+    )
+
+
 def _run_worker(
     config_path: Path,
     cfg: dict,
@@ -606,12 +685,11 @@ def _run_worker(
     from rsus.analysis.prediction import cvar_upper
     from rsus.blocks import load_params_, mlp_down_last_layers, save_params
     from rsus.costs import CostRecord
-    from rsus.data.base import CandidateUniverse, Request
-    from rsus.data.tofu import load_tofu_examples, load_tofu_paraphrases, tofu_request
+    from rsus.data.tofu import load_tofu_paraphrases
     from rsus.evalx.metrics import greedy_generation_recall, mean_recall
     from rsus.generators import TrajectoryConfig, run_trajectory
     from rsus.generators.repaired import RepairedConfig, run_repair_from_reached
-    from rsus.partition import Partition, PartitionParams, build_partition, make_folds
+    from rsus.partition import Partition, PartitionParams, build_partition
     from rsus.probe.base import ProbeSpec, ScoreProfile, get_scorer
     from rsus.stage1 import calibrate_floor
     from rsus.stage2 import Stage2Config
@@ -664,33 +742,18 @@ def _run_worker(
 
     torch.manual_seed(seed)
     tokenizer = AutoTokenizer.from_pretrained(runtime.model)
-    examples = load_tofu_examples(tokenizer)
-    candidate_authors = _expand_int_ranges(_candidate_pool(cfg, phase_name, author))
-    req = tofu_request(
-        author,
-        examples,
-        universe_authors=int(common["universe_authors"]),
-        seed=seed,
-        candidate_authors=candidate_authors,
+    cell = build_dev_request(
+        cfg, model_id, author, tokenizer, phase_name=phase_name, seed=seed
     )
-    by_id = {example.example_id: example for example in req.universe.examples}
-    folds = make_folds(
-        {example.example_id: example.group for example in req.universe.examples},
-        0.5,
-        seed,
-    )
-    audit_ids = {cid for cid, example in by_id.items() if folds[example.group] == "audit"}
-    discovery_ids = set(by_id) - audit_ids
-    if len(audit_ids) != 300 or len(discovery_ids) != 300:
-        raise ValueError(
-            f"expected 300/300 group split, got {len(discovery_ids)}/{len(audit_ids)}"
-        )
-    retain = [by_id[cid] for cid in sorted(discovery_ids)]
-    scoring_request = Request.build(
-        req.request_id,
-        list(req.forget),
-        CandidateUniverse.freeze(retain),
-    )
+    examples = cell.examples
+    candidate_authors = cell.candidate_authors
+    req = cell.req
+    by_id = cell.by_id
+    folds = cell.folds
+    audit_ids = cell.audit_ids
+    discovery_ids = cell.discovery_ids
+    retain = cell.retain
+    scoring_request = cell.scoring_request
 
     utility_authors = _expand_int_ranges(str(phase["utility_authors"]))
     per_author = int(phase["utility_examples_per_author"])
